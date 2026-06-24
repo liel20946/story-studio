@@ -7,7 +7,7 @@
  *
  * @example
  * ```typescript
- * import { ipcMain } from '@glaze/core/backend';
+ * import { ipcMain } from "electron";
  *
  * ipcMain.handle('app:myMethod', async (event, arg1, arg2) => {
  *   // Your logic here

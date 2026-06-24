@@ -30,7 +30,7 @@ export function registerHandlers(): void {
     return await appHandlers.getInfo();
   });
 
-  // Return the .glaze project path (used for deep links back to the host)
+  // Return the app root path (packaged resources directory).
   // __dirname = build/main, so two levels up is the app root
   ipcMain.handle("app:getProjectPath", async () => {
     return path.join(__dirname, "..", "..");

@@ -11,7 +11,6 @@ import { initPaths } from "./services/paths.js";
 import { initSettings } from "./handlers/settings.js";
 import { watchStories, stopWatchingStories } from "./services/stories-service.js";
 import { listRuns, buildLastRunMap } from "./services/run-service.js";
-import { migrateFromGlazeIfNeeded } from "./migrate-data.js";
 import { logger } from "./logger.js";
 import { applyAppBranding, getAppIcon } from "./app-icon.js";
 import { checkForUpdatesManually, initAutoUpdates } from "./services/auto-update-service.js";
@@ -171,7 +170,6 @@ app.whenReady().then(async () => {
     return net.fetch(`file://${path.normalize(filePath)}`);
   });
 
-  await migrateFromGlazeIfNeeded();
   await initPaths();
   await initSettings();
   registerHandlers();

@@ -109,7 +109,7 @@ export interface AppSettings {
 
 // ============================================================================
 // IPC CHANNELS
-// invoke = window.glazeAPI.glaze.ipc.invoke(channel, req) -> res  (ipcMain.handle)
+// invoke = window.electronAPI.invoke(channel, req) -> res  (ipcMain.handle)
 // notify = ipcMain.broadcast(channel, payload) -> onNotification(channel, cb)
 // ============================================================================
 //
@@ -118,7 +118,7 @@ export interface AppSettings {
 // invoke  stories:delete          req: { name: string }             res: { ok: true }
 // invoke  stories:import          req: { paths?: string[] }         res: StorySummary[]
 //                                  (no paths => backend opens an open-file dialog,
-//                                   default dir ~/.codex/rise-stories, multi-select *.story.md)
+//                                   default dir user home, multi-select *.story.md)
 //
 // invoke  recording:check         req: void                         res: RecordingAvailability
 // invoke  recording:installBrowser req: void                        res: { ok: boolean; error?: string }

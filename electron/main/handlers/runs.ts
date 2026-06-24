@@ -154,12 +154,9 @@ export function registerRunsHandlers(): void {
     return { ok: true as const };
   });
 
-  // Read a run screenshot off disk and return it as a base64 data URL. This
-  // replaces the custom `story-screenshot://` protocol scheme for display: the
-  // Glaze runtime creates the webview before the backend can register the
-  // scheme ("schemes registered after webview creation"), so the scheme is
-  // unavailable to <img> most of the time. Loading the PNG on demand over IPC
-  // sidesteps that race entirely. One screenshot per view → payload is fine.
+  // Read a run screenshot off disk and return it as a base64 data URL. Loading
+  // the PNG on demand over IPC avoids custom protocol registration races with
+  // the renderer webview. One screenshot per view → payload is fine.
   ipcMain.handle("runs:screenshot", async (_event, params: unknown) => {
     const requested = (params as { path?: unknown } | null)?.path;
     if (typeof requested !== "string" || !requested) return { dataUrl: null };
