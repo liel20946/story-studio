@@ -1,21 +1,56 @@
 # Story Studio
 
-Record and run automated browser sanity stories using your local **Codex CLI** and **Playwright**.
+A macOS app for recording and running browser sanity tests with your local **Codex CLI** and **Playwright**.
 
-Story Studio is a standalone macOS desktop app (Electron).
+Use it to capture a flow in the browser, turn it into a reusable story, and re-run it anytime with a live timeline, screenshots, and pass/fail results.
 
-## Prerequisites
+## Features
 
-Before using Story Studio, install and configure:
+- **Record** new stories from a browser session (Playwright codegen + Codex conversion)
+- **Run** stories with a live event timeline and screenshots
+- **Bulk run** up to three stories at once
+- **Organize** stories into sections with run history
+- **Auto-update** — installed copies check for new releases on launch
 
-1. **Codex CLI** — install via Homebrew or Cursor, then authenticate once in Terminal
-2. **Playwright** (for recording only) — run `npx playwright install chromium`
+## Requirements
 
-## Install (from a build)
+- macOS (Apple Silicon)
+- [Codex CLI](https://github.com/openai/codex) installed and authenticated in Terminal
+- [Playwright](https://playwright.dev/) Chromium (for recording only):
 
-1. Download `Story Studio.dmg` (or `.zip`) from [GitHub Releases](https://github.com/liel20946/story-studio/releases)
-2. Drag **Story Studio** to Applications
-3. First launch on unsigned builds: right-click the app → **Open**
+```bash
+npx playwright install chromium
+```
+
+Story Studio uses your local Codex setup — your auth and API usage stay on your machine.
+
+## Install
+
+1. Download the latest **Story Studio** `.dmg` from [GitHub Releases](https://github.com/liel20946/story-studio/releases)
+2. Drag the app to **Applications**
+3. On first launch, if macOS blocks the app: right-click **Story Studio** → **Open**
+
+## Updates
+
+After the first install, updates are automatic:
+
+- The app checks [GitHub Releases](https://github.com/liel20946/story-studio/releases) when it launches
+- You can also use **Story Studio → Check for Updates…** in the menu bar
+- When a new version is ready, you'll be prompted to restart
+
+## Getting started
+
+1. Open **Settings** and set your **Recording start URL** (default: `https://example.com`)
+2. **Record** a new story from the sidebar, or **import** existing `.story.md` files
+3. **Run** a story to watch the agent work through your steps in the browser
+
+### Where data is stored
+
+```
+~/Library/Application Support/story-studio/
+```
+
+Stories, run history, and settings are saved there.
 
 ## Development
 
@@ -24,52 +59,19 @@ npm install
 npm run dev
 ```
 
-## Build for distribution
+### Build a release locally
 
 ```bash
 npm run dist
 ```
 
-Output appears in `release/` (`.dmg` and `.zip` for macOS).
+Artifacts are written to `release/` (`.dmg` and `.zip`).
 
-## Publish updates (GitHub Releases)
+### Publish a release
 
-The app checks GitHub Releases for updates on launch and via **Story Studio → Check for Updates…**.
+For maintainers shipping a new version:
 
-1. Bump `version` in `package.json` (e.g. `1.0.0` → `1.0.1`)
-2. Authenticate with GitHub (`gh auth login`) or set `GH_TOKEN` to a personal access token with `repo` scope
-3. Publish:
+1. Bump `version` in `package.json`
+2. Run `npm run dist:publish` (requires `gh auth login` or `GH_TOKEN` with `repo` scope)
 
-```bash
-export GH_TOKEN=$(gh auth token)   # skip if already exported
-npm run dist:publish
-```
-
-This uploads the `.dmg`, `.zip`, and `latest-mac.yml` to a new GitHub Release. Installed copies download updates in the background and prompt to restart.
-
-**First install:** send friends the `.dmg` once. After that, updates are automatic.
-
-## Share with friends
-
-- Send the first `.dmg` from GitHub Releases or AirDrop
-- No App Store required
-- Friends need their own Codex CLI setup (the app uses their quota and auth)
-
-## Data location
-
-App data is stored under:
-
-`~/Library/Application Support/story-studio/`
-
-Stories, runs, and settings live in that folder.
-
-## Features
-
-- Run browser sanity stories with live timeline and screenshots
-- Bulk run (up to 3 concurrent)
-- Record new stories via Playwright codegen + Codex conversion
-- Story library with sections, run history, and settings
-
-## Default recording URL
-
-New recordings pre-fill the start URL from **Settings → Recording**. The factory default is `https://example.com` — change it to your app's URL before recording.
+Installed apps will pick up the new release automatically.
