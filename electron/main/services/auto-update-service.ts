@@ -1,7 +1,9 @@
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
 
 import { app, dialog } from "../electron-api.js";
 import { logger } from "../logger.js";
+
+const { autoUpdater } = electronUpdater;
 
 let downloadedVersion: string | null = null;
 

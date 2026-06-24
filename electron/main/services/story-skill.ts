@@ -61,10 +61,20 @@ export const BULK_RUN_ORCHESTRATOR_PLAYBOOK = `You are orchestrating a bulk run 
 
 ## Your job
 - Use spawn_agent to delegate EVERY story to its own subagent. Do NOT run any story yourself.
-- Spawn ALL story subagents in parallel (one spawn_agent call per story in the same round).
+- Each subagent uses one Playwright MCP browser session. The app enforces a global Playwright limit — the bulk-run prompt tells you how many subagents may run in parallel right now.
+- Spawn up to that parallel limit at a time. When a subagent finishes (wait_agent + close_agent), spawn the next queued story. Parallel is fine when slots are free; queue when Playwright is saturated.
 - After spawning, use wait_agent to wait for each subagent to finish. Prefer waiting on multiple agent ids together when possible.
 - Call close_agent on each subagent after it completes and you have confirmed its result file was written.
 - Do NOT use the Playwright MCP yourself — only your subagents run browser tests.
+
+## User cancellation (critical)
+The runs directory may contain \`{runId}.cancel\` marker files when the user cancels a single story mid-bulk-run.
+Before EVERY tool call (including spawn_agent, wait_agent, and close_agent):
+1. Check the runs directory for any \`*.cancel\` files.
+2. Do NOT spawn_agent for a runId that already has a cancel marker.
+3. For any cancel marker whose runId matches a subagent you already spawned, call close_agent on that agent immediately (read optional \`agentId\` from the marker JSON body if present).
+4. Exclude cancelled agents from wait_agent targets — close them first, then continue waiting on the rest.
+5. Keep orchestrating the remaining (non-cancelled) stories until they all finish or are cancelled.
 
 ## Subagent message format
 Each spawn_agent message must be self-contained and include:

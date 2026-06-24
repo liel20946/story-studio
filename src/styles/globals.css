@@ -243,15 +243,15 @@ body {
   -webkit-app-region: no-drag;
 }
 
-button:focus {
-  outline: none;
-}
-
+button:focus,
 button:focus-visible,
+[role="menuitem"]:focus,
 [role="menuitem"]:focus-visible,
-[role="radio"]:focus-visible {
-  outline: 2px solid rgb(from var(--accent) r g b / 45%);
-  outline-offset: 1px;
+[role="radio"]:focus,
+[role="radio"]:focus-visible,
+[role="tab"]:focus,
+[role="tab"]:focus-visible {
+  outline: none;
 }
 
 .bg-well {

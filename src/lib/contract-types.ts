@@ -9,6 +9,7 @@ export interface StorySummary {
   name: string; // kebab-case id = filename without ".story.md"
   title: string; // frontmatter `title` (fallback: first # heading, fallback: name)
   baseUrl?: string; // frontmatter `base_url`
+  createdAt: number; // frontmatter `created_at` (fallback: file birthtime / mtime)
   lastRun?: { status: RunStatus; finishedAt: number } | null;
 }
 

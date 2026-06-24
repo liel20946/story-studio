@@ -16,6 +16,11 @@ import type {
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
 import { getRunsDir } from "./paths.js";
 import { RUN_STORY_PLAYBOOK } from "./story-skill.js";
+import {
+  acquirePlaywrightSlot,
+  releasePlaywrightSlot,
+  MAX_CONCURRENT_PLAYWRIGHT,
+} from "./playwright-slots.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -24,14 +29,10 @@ const execFileAsync = promisify(execFile);
 const RUN_MODEL = "gpt-5.5";
 const RUN_REASONING_EFFORT = "medium";
 
-// How many single-story runs may run AT ONCE. Bulk runs use one Codex thread with
-// subagents and only occupy a single slot. Without a cap, many codex processes
-// Chromium) would launch together and exhaust the machine and the user's Codex
-// quota. Beyond this cap, runs QUEUE and start as slots free up. The runs that do
-// overlap are now genuinely parallel: each run's Playwright MCP uses an isolated,
-// in-memory browser profile (`--isolated`), so they no longer fight over a single
-// shared on-disk profile lock (which is why only one run used to make progress).
-const MAX_CONCURRENT_RUNS = 3;
+// How many codex exec processes may run AT ONCE (single-story runs + one bulk
+// orchestrator). Playwright MCP browser sessions are capped separately — see
+// playwright-slots.ts — because the bulk orchestrator uses codex but not Playwright.
+const MAX_CONCURRENT_RUNS = MAX_CONCURRENT_PLAYWRIGHT;
 let _activeRuns = 0;
 const _runWaiters: Array<() => void> = [];
 
@@ -338,16 +339,36 @@ export async function startRun(
   events.push(startEvent);
   broadcast("run:event", startEvent);
 
-  // Wait for a concurrency slot. When a bulk run fires more stories than
-  // MAX_CONCURRENT_RUNS, the extra runs queue here and start as slots free up.
+  // Wait for a codex exec slot, then a Playwright MCP slot. Singles use both;
+  // bulk orchestrators only take a codex slot (subagents acquire Playwright later).
   await acquireRunSlot();
   state.queued = false;
 
-  // If the user cancelled while this run was still queued, finalize it as
-  // cancelled without ever spawning codex (and give the slot back).
   if (state.cancelled) {
     _runs.delete(runId);
     releaseRunSlot();
+    const cancelledResult: RunResult = {
+      runId,
+      storyName,
+      storyTitle,
+      status: "cancelled",
+      summary: "",
+      assertions: [],
+      screenshotPath,
+      screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+      startedAt,
+      finishedAt: Date.now(),
+      error: "Cancelled by user",
+    };
+    return finalizeRun(cancelledResult, events);
+  }
+
+  await acquirePlaywrightSlot();
+
+  if (state.cancelled) {
+    _runs.delete(runId);
+    releaseRunSlot();
+    releasePlaywrightSlot();
     const cancelledResult: RunResult = {
       runId,
       storyName,
@@ -500,9 +521,11 @@ export async function startRun(
     });
   });
 
-  // Release the concurrency slot when the run settles (success, failure, or
-  // spawn error all resolve the promise), letting the next queued run start.
-  void runPromise.finally(() => releaseRunSlot());
+  // Release codex + Playwright slots when the run settles.
+  void runPromise.finally(() => {
+    releaseRunSlot();
+    releasePlaywrightSlot();
+  });
   return runPromise;
 }
 

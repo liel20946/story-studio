@@ -74,6 +74,39 @@ function parseAssertions(body: string): string[] {
     .filter((l) => l.length > 0);
 }
 
+function resolveCreatedAt(meta: Record<string, string>, stat: fsSync.Stats): number {
+  const fromMeta = meta["created_at"];
+  if (fromMeta) {
+    const parsed = Number(fromMeta);
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  }
+  const birth = stat.birthtimeMs;
+  return birth > 0 ? birth : stat.mtimeMs;
+}
+
+function ensureCreatedAtInContent(content: string, createdAt: number): string {
+  const lines = content.split("\n");
+  if (lines[0]?.trim() === "---") {
+    let end = -1;
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i]?.trim() === "---") {
+        end = i;
+        break;
+      }
+    }
+    if (end !== -1) {
+      for (let i = 1; i < end; i++) {
+        if (/^created_at\s*:/.test(lines[i].trim())) {
+          return content;
+        }
+      }
+      lines.splice(end, 0, `created_at: ${createdAt}`);
+      return lines.join("\n");
+    }
+  }
+  return `---\ncreated_at: ${createdAt}\n---\n${content}`;
+}
+
 // ---------- Story loading ----------
 async function loadStoryDetail(
   filePath: string,
@@ -81,12 +114,14 @@ async function loadStoryDetail(
   lastRun?: StorySummary["lastRun"],
 ): Promise<StoryDetail> {
   const raw = await fs.readFile(filePath, "utf-8");
+  const stat = await fs.stat(filePath);
   const { meta, body } = parseFrontmatter(raw);
   const title = parseTitle(meta, body, name);
   return {
     name,
     title,
     baseUrl: meta["base_url"] ?? undefined,
+    createdAt: resolveCreatedAt(meta, stat),
     lastRun: lastRun ?? null,
     filePath,
     variables: parseVariables(body),
@@ -113,12 +148,14 @@ export async function listStories(
     const filePath = path.join(storiesDir, entry);
     try {
       const raw = await fs.readFile(filePath, "utf-8");
+      const stat = await fs.stat(filePath);
       const { meta, body } = parseFrontmatter(raw);
       const title = parseTitle(meta, body, name);
       results.push({
         name,
         title,
         baseUrl: meta["base_url"] ?? undefined,
+        createdAt: resolveCreatedAt(meta, stat),
         lastRun: lastRunMap.get(name) ?? null,
       });
     } catch {
@@ -168,12 +205,14 @@ export async function importStories(
     try {
       await fs.copyFile(srcPath, destPath);
       const raw = await fs.readFile(destPath, "utf-8");
+      const stat = await fs.stat(destPath);
       const { meta, body } = parseFrontmatter(raw);
       const title = parseTitle(meta, body, name);
       results.push({
         name,
         title,
         baseUrl: meta["base_url"] ?? undefined,
+        createdAt: resolveCreatedAt(meta, stat),
         lastRun: lastRunMap.get(name) ?? null,
       });
       console.log("[stories] imported", name, "from", srcPath);
@@ -279,7 +318,9 @@ export async function renameStory(
 export async function writeStoryFile(name: string, content: string): Promise<string> {
   const storiesDir = getStoriesDir();
   const filePath = path.join(storiesDir, `${name}.story.md`);
-  await fs.writeFile(filePath, content, "utf-8");
+  const createdAt = Date.now();
+  const stamped = ensureCreatedAtInContent(content, createdAt);
+  await fs.writeFile(filePath, stamped, "utf-8");
   console.log("[stories] wrote story file", filePath);
   return filePath;
 }

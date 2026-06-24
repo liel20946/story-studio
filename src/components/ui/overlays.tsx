@@ -5,6 +5,7 @@ import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
+import { KeyboardShortcut, type ShortcutKey } from "./keyboard-shortcut";
 
 export function Dialog({
   open,
@@ -82,7 +83,7 @@ export function DialogContent({
 }
 
 export function DialogHeader({ children }: { children: React.ReactNode }) {
-  return <div className="border-b border-separator px-4 py-3">{children}</div>;
+  return <div className="px-4 py-3">{children}</div>;
 }
 
 export function DialogTitle({ children }: { children: React.ReactNode }) {
@@ -107,7 +108,7 @@ export function DialogBody({ children }: { children: React.ReactNode }) {
 
 export function DialogFooter({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex justify-end gap-2 border-t border-separator px-4 py-3">{children}</div>
+    <div className="flex justify-end gap-2 px-4 py-3">{children}</div>
   );
 }
 
@@ -240,7 +241,7 @@ export function TooltipContent({
   shortcut,
 }: {
   children: React.ReactNode;
-  shortcut?: string[];
+  shortcut?: ShortcutKey[];
 }) {
   return (
     <TooltipPrimitive.Portal>
@@ -251,15 +252,7 @@ export function TooltipContent({
       >
         <span className="flex items-center gap-2">
           {children}
-          {shortcut?.length ? (
-            <span className="flex gap-0.5 text-tertiary">
-              {shortcut.map((k) => (
-                <kbd key={k} className="rounded border border-separator px-1 text-mini">
-                  {k}
-                </kbd>
-              ))}
-            </span>
-          ) : null}
+          {shortcut?.length ? <KeyboardShortcut keys={shortcut} /> : null}
         </span>
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>

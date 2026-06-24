@@ -448,7 +448,7 @@
 /* Quick action — minimal list row */
 .home-link-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 4.75rem 0.75rem;
+  grid-template-columns: minmax(0, 1fr) 4.5rem 0.75rem;
   align-items: center;
   column-gap: 0.5rem;
   padding: 0.35rem 0;
@@ -470,7 +470,7 @@
 .home-link-row-status {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: flex-end;
 }
 
 .home-link-row:hover {

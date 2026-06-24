@@ -61,7 +61,7 @@ import {
 
 const RECENT_RUNS = 15;
 // Sections show this many rows at first, revealing another page per "Show more".
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 7;
 
 // A text-only expander control: no row-style background highlight, just the
 // label brightening on hover (group-hover) like Codex's Show more / Show less.
@@ -181,14 +181,17 @@ function StatusPill({
 }
 
 // Compact relative time — no "ago" suffix ("6m", "1h", "2d"), "now" for <1m.
-function formatRelative(epochMs: number): string {
+function formatRelative(epochMs: number): string | undefined {
+  if (!Number.isFinite(epochMs) || epochMs <= 0) return undefined;
   const secs = Math.floor((Date.now() - epochMs) / 1000);
   if (secs < 60) return "now";
   const mins = Math.floor(secs / 60);
   if (mins < 60) return `${mins}m`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h`;
-  return `${Math.floor(hrs / 24)}d`;
+  const days = Math.floor(hrs / 24);
+  if (!Number.isFinite(days)) return undefined;
+  return `${days}d`;
 }
 
 // Shared trailing accessory: fixed-width slot; time and archive occupy the same
@@ -348,7 +351,7 @@ function StoryRow({
       <ContextMenuTrigger asChild>
         <div className="group/row w-full">
           {/* Single-row story: no leading icon — status reads from a pill, and
-              the right-side accessory shows the relative time at rest and
+              the right-side accessory shows the relative creation time at rest and
               reveals a grey archive button on hover (time hides). */}
           <SidebarListItem
             selected={selected}
@@ -365,9 +368,7 @@ function StoryRow({
             <RowAccessory
               isRunning={isRunning}
               time={
-                !isRunning && story.lastRun
-                  ? formatRelative(story.lastRun.finishedAt)
-                  : undefined
+                !isRunning ? formatRelative(story.createdAt) : undefined
               }
               archiveTitle="Remove story"
               confirmTitle={`Remove "${story.title}"?`}
@@ -441,8 +442,6 @@ function HistoryRunRow({
         <SidebarListItemContent>
           <SidebarListItemTitle>{run.storyTitle}</SidebarListItemTitle>
         </SidebarListItemContent>
-        {/* Fixed slot width keeps timestamps aligned; badges sit at the trailing
-            edge of the slot so they sit closer to the relative-time column. */}
         <span className="col-start-2 flex w-[4.5rem] shrink-0 items-center justify-end self-center">
           <StatusPill status={run.status} />
         </span>
@@ -797,8 +796,8 @@ export function AppSidebar() {
   const hasStories = stories.length > 0;
   const dialogMeta = DIALOG_META[dialog.kind];
 
-  // Window keyboard shortcuts for the toolbar actions: ⌘N records a story,
-  // ⇧⌘N creates a section, ⇧⌘R opens bulk run. Keyed off e.code so they're
+  // Window keyboard shortcuts for the toolbar actions: mod+N records a story,
+  // shift+mod+N creates a section, shift+mod+R opens bulk run. Keyed off e.code so they're
   React.useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!e.metaKey || e.ctrlKey || e.altKey) return;
@@ -859,7 +858,7 @@ export function AppSidebar() {
                       <ListChecksIcon className="size-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent shortcut={["⇧", "⌘", "R"]}>
+                  <TooltipContent shortcut={["shift", "mod", "R"]}>
                     Run stories
                   </TooltipContent>
                 </Tooltip>
@@ -882,7 +881,7 @@ export function AppSidebar() {
                     <FolderPlusIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent shortcut={["⇧", "⌘", "N"]}>
+                <TooltipContent shortcut={["shift", "mod", "N"]}>
                   New section
                 </TooltipContent>
               </Tooltip>
@@ -900,7 +899,7 @@ export function AppSidebar() {
                     <PlusIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent shortcut={["⌘", "N"]}>
+                <TooltipContent shortcut={["mod", "N"]}>
                   Record story
                 </TooltipContent>
               </Tooltip>
