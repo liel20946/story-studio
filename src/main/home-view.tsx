@@ -1,10 +1,11 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   CircleDotIcon,
   ListChecksIcon,
-  HistoryIcon,
   ChevronRightIcon,
+  FolderPlusIcon,
 } from "lucide-react";
 import {
   ScrollArea,
@@ -14,12 +15,56 @@ import {
   ToolbarTitle,
   Button,
   EmptyState,
+  Dialog,
+  Input,
+  Badge,
 } from "@/components/ui";
 import { storiesList, runsList } from "../lib/ipc";
-import { cn } from "@/lib/utils";
+import { useSections } from "../lib/sections-store";
+import type { RunStatus } from "../lib/contract-types";
+
+function statusBadgeColor(
+  status: RunStatus,
+): "green" | "red" | "secondary" {
+  switch (status) {
+    case "passed":
+      return "green";
+    case "cancelled":
+      return "secondary";
+    default:
+      return "red";
+  }
+}
+
+function statusBadgeLabel(status: RunStatus): string {
+  switch (status) {
+    case "passed":
+      return "Passed";
+    case "failed":
+      return "Failed";
+    case "error":
+      return "Error";
+    case "cancelled":
+      return "Cancelled";
+  }
+}
 
 export function HomeView() {
   const navigate = useNavigate();
+  const { createSection } = useSections();
+  const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
+  const [sectionName, setSectionName] = useState("");
+
+  useEffect(() => {
+    if (sectionDialogOpen) setSectionName("");
+  }, [sectionDialogOpen]);
+
+  function handleCreateSection() {
+    const name = sectionName.trim();
+    if (!name) return;
+    createSection(name);
+    setSectionDialogOpen(false);
+  }
 
   const storiesQuery = useQuery({
     queryKey: ["stories:list"],
@@ -99,10 +144,10 @@ export function HomeView() {
             variant="filled"
             size="medium"
             radius="full"
-            onClick={() => navigate({ to: "/history" })}
+            onClick={() => setSectionDialogOpen(true)}
           >
-            <HistoryIcon className="size-4" />
-            History
+            <FolderPlusIcon className="size-4" />
+            New section
           </Button>
         </div>
       </div>
@@ -123,20 +168,11 @@ export function HomeView() {
                   })
                 }
               >
-                <span className="min-w-0 flex-1 truncate text-left text-[12px] leading-4">
-                  {run.storyTitle}
-                </span>
-                <span
-                  className={cn(
-                    "justify-self-end text-[10px] leading-none tabular-nums",
-                    run.status === "passed"
-                      ? "text-support-green"
-                      : run.status === "cancelled"
-                        ? "text-tertiary"
-                        : "text-support-red",
-                  )}
-                >
-                  {run.status}
+                <span className="home-link-row-title">{run.storyTitle}</span>
+                <span className="home-link-row-status">
+                  <Badge color={statusBadgeColor(run.status)} size="xs">
+                    {statusBadgeLabel(run.status)}
+                  </Badge>
                 </span>
                 <ChevronRightIcon className="size-3 shrink-0 text-quaternary" />
               </button>
@@ -144,6 +180,28 @@ export function HomeView() {
           </div>
         </div>
       )}
+
+      <Dialog
+        open={sectionDialogOpen}
+        onOpenChange={setSectionDialogOpen}
+        title="New Section"
+        confirmLabel="Create"
+        confirmDisabled={!sectionName.trim()}
+        onConfirm={handleCreateSection}
+      >
+        <Input
+          autoFocus
+          value={sectionName}
+          placeholder="Section name"
+          onChange={(e) => setSectionName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && sectionName.trim()) {
+              e.preventDefault();
+              handleCreateSection();
+            }
+          }}
+        />
+      </Dialog>
     </ScrollArea>
   );
 }

@@ -93,11 +93,16 @@ export interface RecordingAvailability {
 }
 
 // ---------- Settings ----------
+export type AgentProvider = "codex" | "claude-code";
+export type ThemePreference = "system" | "light" | "dark";
+
 export interface AppSettings {
+  agentProvider: AgentProvider; // which CLI runs stories (default: codex)
   codexBinaryPath: string | null; // null => auto-resolve
+  claudeBinaryPath: string | null; // null => auto-resolve
   storiesDir: string;
   runsDir: string;
-  theme: "dark" | "light"; // app appearance (dark is the default look)
+  theme: ThemePreference; // app appearance (dark is the default look)
   startingUrl: string; // pre-filled Start URL when recording a new story
-  runHook: string; // appended to the end of the run prompt sent to codex
+  runHook: string; // appended to the end of the run prompt sent to the agent
 }

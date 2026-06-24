@@ -86,7 +86,7 @@
   --glass-shadow: transparent;
   --accent-contrast: #ffffff;
   --accent-glow: rgb(from var(--accent) r g b / 18%);
-  --radius-card: 10px;
+  --radius-card: 12px;
   --radius-control: 8px;
   --radius-pill: 9999px;
   --spacing: 0.25rem;
@@ -131,6 +131,17 @@ body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+/* macOS Electron — let the OS own corner radius; clip web content to the window. */
+.mac-window-chrome,
+.mac-window-chrome body {
+  background: transparent;
+}
+
+.mac-window-chrome #root {
+  overflow: hidden;
+  background: var(--color-window-bg);
 }
 
 #root {
@@ -208,6 +219,34 @@ body {
 
 .bg-surface-hover {
   background-color: var(--color-surface-hover);
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  width: 5px;
+  margin-right: -2px;
+  transform: translateX(50%);
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  border-radius: 9999px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:active::after {
+  background: rgb(from var(--accent) r g b / 35%);
 }
 
 .drag-region {
@@ -289,7 +328,7 @@ button.bg-accent:disabled {
 
 .font-display {
   font-family: var(--font-family-display);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.02em;
 }
 

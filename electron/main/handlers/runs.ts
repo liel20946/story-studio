@@ -4,7 +4,9 @@ import { readFile } from "fs/promises";
 import * as path from "path";
 import { listRuns, getRun, deleteRun, clearRuns } from "../services/run-service.js";
 import { getStory } from "../services/stories-service.js";
-import { startRun, cancelRun, resolveCodexBinary } from "../services/codex-runner.js";
+import { startBulkRun } from "../services/codex-bulk-runner.js";
+import { startAgentRun, cancelAgentRun } from "../services/agent-runner.js";
+import { resolveAgentBinary } from "../services/agent-provider.js";
 import { buildLastRunMap } from "../services/run-service.js";
 import { getRunsDir } from "../services/paths.js";
 import { getSettingsValue } from "./settings.js";
@@ -21,8 +23,11 @@ export function registerRunsHandlers(): void {
     const { storyName } = params as { storyName: string };
     const settings = getSettingsValue();
 
-    // Resolve codex binary up front to give an immediate error
-    const codexBinary = await resolveCodexBinary(settings.codexBinaryPath);
+    const agentBinary = await resolveAgentBinary(
+      settings.agentProvider,
+      settings.codexBinaryPath,
+      settings.claudeBinaryPath,
+    );
 
     // Get story detail for filePath and title
     const runs = await listRuns();
@@ -32,13 +37,74 @@ export function registerRunsHandlers(): void {
     const runId = randomUUID();
 
     // Fire and forget — results come via broadcast; caller gets runId immediately.
-    startRun(runId, storyName, story.title, story.filePath, codexBinary, settings.runHook).catch(
-      (err) => {
-        console.error("[codex:run] unhandled run error", { runId, err: String(err) });
-      },
-    );
+    startAgentRun(
+      settings.agentProvider,
+      runId,
+      storyName,
+      story.title,
+      story.filePath,
+      agentBinary,
+      settings.runHook,
+    ).catch((err) => {
+      console.error("[agent:run] unhandled run error", { runId, err: String(err) });
+    });
 
     return { runId };
+  });
+
+  ipcMain.handle("run:bulkStart", async (_event, params: unknown) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      !Array.isArray((params as Record<string, unknown>)["storyNames"])
+    ) {
+      throw new Error("run:bulkStart requires { storyNames: string[] }");
+    }
+    const { storyNames } = params as { storyNames: string[] };
+    if (storyNames.length === 0) {
+      throw new Error("run:bulkStart requires at least one story");
+    }
+
+    const settings = getSettingsValue();
+    if (settings.agentProvider === "claude-code") {
+      throw new Error("Bulk runs are only supported with Codex. Switch the agent provider to Codex in Settings.");
+    }
+
+    const agentBinary = await resolveAgentBinary(
+      settings.agentProvider,
+      settings.codexBinaryPath,
+      settings.claudeBinaryPath,
+    );
+
+    const runs = await listRuns();
+    const lastRunMap = buildLastRunMap(runs);
+
+    const bulkId = randomUUID();
+    const items: { storyName: string; storyTitle: string; runId: string }[] = [];
+    const bulkStories: {
+      runId: string;
+      storyName: string;
+      storyTitle: string;
+      storyContents: string;
+    }[] = [];
+
+    for (const storyName of storyNames) {
+      const story = await getStory(storyName, lastRunMap);
+      const runId = randomUUID();
+      items.push({ storyName, storyTitle: story.title, runId });
+      bulkStories.push({
+        runId,
+        storyName,
+        storyTitle: story.title,
+        storyContents: story.raw,
+      });
+    }
+
+    startBulkRun(bulkId, bulkStories, agentBinary, settings.runHook).catch((err) => {
+      console.error("[codex:bulk] unhandled bulk run error", { bulkId, err: String(err) });
+    });
+
+    return { bulkId, items };
   });
 
   ipcMain.handle("run:cancel", async (_event, params: unknown) => {
@@ -50,7 +116,7 @@ export function registerRunsHandlers(): void {
       throw new Error("run:cancel requires { runId: string }");
     }
     const { runId } = params as { runId: string };
-    cancelRun(runId);
+    cancelAgentRun(runId);
     return { ok: true as const };
   });
 

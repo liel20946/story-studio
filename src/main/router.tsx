@@ -9,7 +9,6 @@ import { QueryClient } from "@tanstack/react-query";
 import { ErrorBoundaryView } from "@/components/ui";
 import { StoryView } from "./story-view";
 import { RunView, HistoryRunDetailView } from "./run-view";
-import { HistoryView } from "./history-view";
 import { RecordView } from "./record-view";
 import { BulkRunView } from "./bulk-run-view";
 import { HomeView } from "./home-view";
@@ -53,15 +52,6 @@ const runRoute = createRoute({
   path: "/run/$runId",
   component: RunView,
   staticData: { title: "Run" },
-});
-
-// "/history" — full run-history list in the main pane (recent runs also live
-// in the sidebar's History section).
-const historyRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/history",
-  component: HistoryView,
-  staticData: { title: "History" },
 });
 
 // "/history/$runId" — single historical run detail in the main pane
@@ -108,7 +98,6 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   storyRoute,
   runRoute,
-  historyRoute,
   historyRunRoute,
   recordRoute,
   bulkRunRoute,

@@ -54,3 +54,24 @@ Locate inputs by name / type / placeholder / aria-label (e.g. email and password
 - Capture a final screenshot of the visible state, whether the story passes or fails.
 - Report pass/fail with concise evidence for each assertion.
 - Do not create real customer-facing side effects unless the story explicitly requires them.`;
+
+// Bulk-run orchestrator — one Codex thread spawns a subagent per story via
+// spawn_agent instead of launching a separate codex exec per story.
+export const BULK_RUN_ORCHESTRATOR_PLAYBOOK = `You are orchestrating a bulk run of multiple saved web UI "stories".
+
+## Your job
+- Use spawn_agent to delegate EVERY story to its own subagent. Do NOT run any story yourself.
+- Spawn ALL story subagents in parallel (one spawn_agent call per story in the same round).
+- After spawning, use wait_agent to wait for each subagent to finish. Prefer waiting on multiple agent ids together when possible.
+- Call close_agent on each subagent after it completes and you have confirmed its result file was written.
+- Do NOT use the Playwright MCP yourself — only your subagents run browser tests.
+
+## Subagent message format
+Each spawn_agent message must be self-contained and include:
+1. The full story-run playbook (provided below under "Story-run playbook for subagents").
+2. The story markdown for that assignment.
+3. The runId, screenshot path, result JSON path, and schema path for that assignment.
+4. An instruction to write the final structured JSON result to the result path (matching the schema file) and save the screenshot to the screenshot path.
+
+## Story-run playbook for subagents
+${RUN_STORY_PLAYBOOK}`;

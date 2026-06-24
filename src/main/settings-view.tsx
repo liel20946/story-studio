@@ -17,25 +17,33 @@ import {
   SETTINGS_SECTION_LABELS,
   type SettingsSection,
 } from "../components/settings-sections";
+import { ProviderSegment } from "../components/provider-segment";
+import type { AgentProvider, ThemePreference } from "../lib/contract-types";
+import { applyTheme } from "../lib/theme";
 
 function ThemeSegment({
   value,
   onChange,
 }: {
-  value: "light" | "dark";
-  onChange: (value: "light" | "dark") => void;
+  value: ThemePreference;
+  onChange: (value: ThemePreference) => void;
 }) {
   const options = [
+    { value: "system" as const, label: "System" },
     { value: "light" as const, label: "Light" },
     { value: "dark" as const, label: "Dark" },
   ];
 
+  const activeIndex = options.findIndex((opt) => opt.value === value);
+
   return (
     <div
-      className="segment-control segment-control--labeled shrink-0"
+      className="segment-control segment-control--labeled segment-control--three shrink-0"
       role="tablist"
       aria-label="Theme"
+      data-active-index={activeIndex}
     >
+      <span className="segment-control-thumb" aria-hidden />
       {options.map((opt) => {
         const active = value === opt.value;
         return (
@@ -101,18 +109,37 @@ function SettingsField({
   );
 }
 
+function AgentPanel({
+  provider,
+  onProviderChange,
+}: {
+  provider: AgentProvider;
+  onProviderChange: (provider: AgentProvider) => void;
+}) {
+  return (
+    <div className="settings-panel-open">
+      <SettingsRow
+        label="Provider"
+        description="Choose which coding agent runs your stories."
+      >
+        <ProviderSegment value={provider} onChange={onProviderChange} />
+      </SettingsRow>
+    </div>
+  );
+}
+
 function AppearancePanel({
   theme,
   onThemeChange,
 }: {
-  theme: "light" | "dark";
-  onThemeChange: (theme: "light" | "dark") => void;
+  theme: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
 }) {
   return (
     <div className="settings-panel-open">
       <SettingsRow
         label="Theme"
-        description="Use light or dark appearance."
+        description="Match your system appearance or choose light or dark."
       >
         <ThemeSegment value={theme} onChange={onThemeChange} />
       </SettingsRow>
@@ -154,7 +181,7 @@ function RecordingPanel({
 
           <SettingsField
             label="Hook"
-            description="Added to the end of the prompt sent to Codex when starting a run."
+            description="Added to the end of the prompt sent to the agent when starting a run."
           >
             <Textarea
               placeholder="e.g. Treat any console error as a failure."
@@ -258,8 +285,18 @@ export function SettingsView() {
     void refreshAppSettings();
   }, []);
 
-  const handleThemeChange = async (theme: "light" | "dark") => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+  const handleProviderChange = async (agentProvider: AgentProvider) => {
+    if (agentProvider === appSettings?.agentProvider) return;
+    try {
+      const updated = await settingsSet({ agentProvider });
+      setAppSettings(updated);
+    } catch (error) {
+      toast.error(`Failed to set provider: ${error}`);
+    }
+  };
+
+  const handleThemeChange = async (theme: ThemePreference) => {
+    applyTheme(theme);
     try {
       const updated = await settingsSet({ theme });
       setAppSettings(updated);
@@ -320,7 +357,6 @@ export function SettingsView() {
   };
 
   const pageTitle = SETTINGS_SECTION_LABELS[activeSection];
-  const theme = appSettings?.theme === "light" ? "light" : "dark";
 
   return (
     <ScrollArea
@@ -335,8 +371,18 @@ export function SettingsView() {
         <div className="settings-page-inner">
           <h1 className="settings-page-title">{pageTitle}</h1>
 
-          {activeSection === "appearance" ? (
-            <AppearancePanel theme={theme} onThemeChange={handleThemeChange} />
+          {activeSection === "appearance" && appSettings ? (
+            <AppearancePanel
+              theme={appSettings.theme}
+              onThemeChange={handleThemeChange}
+            />
+          ) : null}
+
+          {activeSection === "agent" && appSettings ? (
+            <AgentPanel
+              provider={appSettings.agentProvider}
+              onProviderChange={handleProviderChange}
+            />
           ) : null}
 
           {activeSection === "recording" ? (

@@ -24,8 +24,8 @@ const execFileAsync = promisify(execFile);
 const RUN_MODEL = "gpt-5.5";
 const RUN_REASONING_EFFORT = "medium";
 
-// How many stories may run AT ONCE. A bulk run fires every selected story; without
-// a cap, dozens of codex processes (each ~100k input tokens plus its own headless
+// How many single-story runs may run AT ONCE. Bulk runs use one Codex thread with
+// subagents and only occupy a single slot. Without a cap, many codex processes
 // Chromium) would launch together and exhaust the machine and the user's Codex
 // quota. Beyond this cap, runs QUEUE and start as slots free up. The runs that do
 // overlap are now genuinely parallel: each run's Playwright MCP uses an isolated,
@@ -37,7 +37,7 @@ const _runWaiters: Array<() => void> = [];
 
 // Counting semaphore: every acquire is paired with exactly one release, so the
 // active count stays correct even for runs cancelled while still queued.
-function acquireRunSlot(): Promise<void> {
+export function acquireRunSlot(): Promise<void> {
   if (_activeRuns < MAX_CONCURRENT_RUNS) {
     _activeRuns++;
     return Promise.resolve();
@@ -45,7 +45,7 @@ function acquireRunSlot(): Promise<void> {
   return new Promise<void>((resolve) => _runWaiters.push(resolve));
 }
 
-function releaseRunSlot(): void {
+export function releaseRunSlot(): void {
   const next = _runWaiters.shift();
   if (next) next(); // hand the slot to the next queued run (count unchanged)
   else _activeRuns = Math.max(0, _activeRuns - 1);
@@ -78,7 +78,7 @@ const _runs = new Map<string, RunState>();
 // JSON Schema consumed by `codex exec --output-schema`. Must be written to disk
 // before spawn or codex exits with "Failed to read output schema file". Strict-mode
 // compatible (all properties required; optionals are nullable).
-const RUN_OUTPUT_SCHEMA = {
+export const RUN_OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
@@ -666,7 +666,15 @@ async function finalizeRun(result: RunResult, events: RunEvent[]): Promise<RunRe
   return result;
 }
 
+// Optional hook registered by codex-bulk-runner to cancel shared bulk threads.
+let _bulkCancel: ((runId: string) => boolean) | null = null;
+export function registerBulkCancel(fn: (runId: string) => boolean): void {
+  _bulkCancel = fn;
+}
+
 export function cancelRun(runId: string): boolean {
+  if (_bulkCancel?.(runId)) return true;
+
   const state = _runs.get(runId);
   if (!state) {
     console.log("[codex:run] cancel ignored — run not active", { runId });

@@ -4,6 +4,8 @@ import { fileURLToPath } from "url";
 import { app, BrowserWindow, Menu, protocol, net } from "./electron-api.js";
 import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getMainWindowLoadOptions } from "./windows/window-paths.js";
+import { getMacWindowChromeOptions } from "./windows/window-chrome.js";
+import { disableReloadShortcut } from "./windows/disable-reload-shortcut.js";
 import { setMainWindow, navigateMainWindow } from "./windows/main-window.js";
 import { initPaths } from "./services/paths.js";
 import { initSettings } from "./handlers/settings.js";
@@ -16,7 +18,7 @@ import { applyAppBranding, getAppIcon } from "./app-icon.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-applyAppBranding();
+app.setName("Story Studio");
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -61,6 +63,7 @@ async function createMainWindow(): Promise<void> {
     backgroundColor: "#141416",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 12, y: 12 },
+    ...getMacWindowChromeOptions(),
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
@@ -79,6 +82,7 @@ async function createMainWindow(): Promise<void> {
   });
 
   setMainWindow(mainWindow);
+  disableReloadShortcut(mainWindow.webContents);
 
   const load = getMainWindowLoadOptions();
   logger.info("main", "Loading main window", load);
@@ -119,7 +123,6 @@ function setupApplicationMenu(): void {
     {
       label: "View",
       submenu: [
-        { role: "reload" },
         { role: "toggleDevTools" },
         { type: "separator" },
         { role: "resetZoom" },

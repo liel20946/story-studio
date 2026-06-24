@@ -441,7 +441,9 @@ function HistoryRunRow({
         <SidebarListItemContent>
           <SidebarListItemTitle>{run.storyTitle}</SidebarListItemTitle>
         </SidebarListItemContent>
-        <span className="col-start-2 shrink-0 self-center">
+        {/* Fixed slot width: per-row `auto` column 2 shrinks with shorter labels
+            (e.g. Passed vs Failed), so left edges drift without a shared width. */}
+        <span className="col-start-2 flex w-[4.5rem] shrink-0 items-center justify-start self-center">
           <StatusPill status={run.status} />
         </span>
         <RowAccessory
@@ -616,6 +618,12 @@ export function AppSidebar() {
     activeSelection.historyRunId ? "runs" : "stories",
   );
   const [searchQuery, setSearchQuery] = React.useState("");
+
+  React.useEffect(() => {
+    if (activeSelection.historyRunId) {
+      setTab("runs");
+    }
+  }, [activeSelection.historyRunId]);
 
   // One unified dialog state for section create/rename and story rename.
   const [dialog, setDialog] = React.useState<{

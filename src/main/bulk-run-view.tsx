@@ -24,7 +24,7 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { storiesList, runStart } from "../lib/ipc";
+import { storiesList, runBulkStart } from "../lib/ipc";
 import type { StorySummary, RunStatus } from "../lib/contract-types";
 import {
   useSections,
@@ -303,23 +303,33 @@ export function BulkRunView() {
     const chosen = stories.filter((s) => selected.has(s.name));
     setIsStarting(true);
     try {
-      // Fire every selected story at once. If a story is already running in the
-      // background, reuse its in-flight run instead of starting a duplicate.
-      const results: BulkLaunchedItem[] = await Promise.all(
-        chosen.map(async (story) => {
-          const existing = activeRuns.get(story.name);
-          if (existing)
-            return {
-              storyName: story.name,
-              storyTitle: story.title,
-              runId: existing,
-            };
-          const { runId } = await runStart(story.name);
-          registerRun(runId, story.name, story.title);
-          return { storyName: story.name, storyTitle: story.title, runId };
-        }),
-      );
-      setLaunched(results);
+      // One Codex thread orchestrates subagents for stories that are not already
+      // running individually. Reuse any in-flight single-story runs as-is.
+      const alreadyRunning: BulkLaunchedItem[] = [];
+      const toBulk: typeof chosen = [];
+      for (const story of chosen) {
+        const existing = activeRuns.get(story.name);
+        if (existing) {
+          alreadyRunning.push({
+            storyName: story.name,
+            storyTitle: story.title,
+            runId: existing,
+          });
+        } else {
+          toBulk.push(story);
+        }
+      }
+
+      let bulkLaunched: BulkLaunchedItem[] = [];
+      if (toBulk.length > 0) {
+        const { items } = await runBulkStart(toBulk.map((s) => s.name));
+        for (const item of items) {
+          registerRun(item.runId, item.storyName, item.storyTitle);
+        }
+        bulkLaunched = items;
+      }
+
+      setLaunched([...alreadyRunning, ...bulkLaunched]);
     } catch (err) {
       console.error("[BulkRunView] bulk run start failed", err);
     } finally {
@@ -380,7 +390,7 @@ export function BulkRunView() {
                 </Button>
               )}
               <Button
-                variant="glass"
+                variant="accent"
                 size="medium"
                 radius="full"
                 onClick={handleRun}

@@ -62,6 +62,13 @@ export const recordingCancel = (): Promise<{ ok: true }> =>
 export const runStart = (storyName: string): Promise<{ runId: string }> =>
   ipcInvoke("run:start", { storyName });
 
+export const runBulkStart = (
+  storyNames: string[],
+): Promise<{
+  bulkId: string;
+  items: { storyName: string; storyTitle: string; runId: string }[];
+}> => ipcInvoke("run:bulkStart", { storyNames });
+
 export const runCancel = (runId: string): Promise<{ ok: true }> =>
   ipcInvoke("run:cancel", { runId });
 
@@ -85,7 +92,15 @@ export const settingsGet = (): Promise<AppSettings> =>
 
 export const settingsSet = (
   patch: Partial<
-    Pick<AppSettings, "codexBinaryPath" | "theme" | "startingUrl" | "runHook">
+    Pick<
+      AppSettings,
+      | "agentProvider"
+      | "codexBinaryPath"
+      | "claudeBinaryPath"
+      | "theme"
+      | "startingUrl"
+      | "runHook"
+    >
   >,
 ): Promise<AppSettings> => ipcInvoke("settings:set", patch);
 

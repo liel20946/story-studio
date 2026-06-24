@@ -87,7 +87,7 @@ export function DialogHeader({ children }: { children: React.ReactNode }) {
 
 export function DialogTitle({ children }: { children: React.ReactNode }) {
   return (
-    <DialogPrimitive.Title className="font-display text-strong font-semibold tracking-tight">
+    <DialogPrimitive.Title className="font-display text-regular tracking-tight">
       {children}
     </DialogPrimitive.Title>
   );
@@ -134,7 +134,7 @@ export function AlertDialog({
       <AlertDialogPrimitive.Portal>
         <AlertDialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50" />
         <AlertDialogPrimitive.Content className="dialog-surface fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-card border border-separator bg-popover p-4">
-          <AlertDialogPrimitive.Title className="font-display text-strong font-semibold tracking-tight">
+          <AlertDialogPrimitive.Title className="font-display text-regular tracking-tight">
             {title}
           </AlertDialogPrimitive.Title>
           <AlertDialogPrimitive.Description className="text-small text-secondary mt-2">

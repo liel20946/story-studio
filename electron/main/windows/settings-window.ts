@@ -1,6 +1,8 @@
 import { BrowserWindow } from "../electron-api.js";
 import { getAppIcon } from "../app-icon.js";
 import { getPreloadPath, getSettingsWindowLoadOptions } from "./window-paths.js";
+import { getMacWindowChromeOptions } from "./window-chrome.js";
+import { disableReloadShortcut } from "./disable-reload-shortcut.js";
 import { logger } from "../logger.js";
 
 let settingsWindow: BrowserWindow | null = null;
@@ -26,6 +28,7 @@ export async function openSettingsWindow(): Promise<void> {
     backgroundColor: "#141416",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 12, y: 12 },
+    ...getMacWindowChromeOptions(),
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
@@ -41,6 +44,8 @@ export async function openSettingsWindow(): Promise<void> {
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
+
+  disableReloadShortcut(settingsWindow.webContents);
 
   const load = getSettingsWindowLoadOptions();
   logger.info("settings", "Loading settings window", load);

@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ChevronLeftIcon } from "lucide-react";
-import { Sidebar } from "@/components/ui";
+import { Sidebar, Toolbar, ToolbarRow } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import {
   SETTINGS_NAV,
@@ -20,18 +20,24 @@ export function SettingsSidebar() {
   }
 
   return (
-    <Sidebar className="!p-0 [&>div]:rounded-none">
-      <div className="drag-region sidebar-titlebar-spacer" aria-hidden />
-      <div className="px-2 pb-3 pt-1">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left text-[12px] leading-4 text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
-        >
-          <ChevronLeftIcon className="size-3.5 shrink-0" />
-          Back to app
-        </button>
-      </div>
+    <Sidebar
+      className="!p-0 [&>div]:rounded-none"
+      toolbar={
+        <Toolbar className="border-b-0 bg-surface-sidebar">
+          <div className="drag-region sidebar-titlebar-spacer" aria-hidden />
+          <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-1.5">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left text-[12px] leading-4 text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
+            >
+              <ChevronLeftIcon className="size-3.5 shrink-0" />
+              Back to app
+            </button>
+          </ToolbarRow>
+        </Toolbar>
+      }
+    >
       <nav className="px-1.5">
         <span className="sidebar-section-label">Story Studio</span>
         <ul className="flex flex-col gap-0.5">

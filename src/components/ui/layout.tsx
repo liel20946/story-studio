@@ -2,6 +2,79 @@ import * as React from "react";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { cn } from "@/lib/utils";
 
+const SIDEBAR_WIDTH_KEY = "story-studio-sidebar-width-v1";
+const DEFAULT_SIDEBAR_WIDTH = 248;
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 420;
+
+function readSidebarWidth(): number {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (!raw) return DEFAULT_SIDEBAR_WIDTH;
+    const width = Number(raw);
+    if (Number.isNaN(width)) return DEFAULT_SIDEBAR_WIDTH;
+    return clampSidebarWidth(width);
+  } catch {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+}
+
+function clampSidebarWidth(width: number): number {
+  const max = Math.min(MAX_SIDEBAR_WIDTH, Math.round(window.innerWidth * 0.5));
+  return Math.min(max, Math.max(MIN_SIDEBAR_WIDTH, width));
+}
+
+function useSidebarWidth() {
+  const [width, setWidth] = React.useState(readSidebarWidth);
+  const widthRef = React.useRef(width);
+  widthRef.current = width;
+
+  React.useEffect(() => {
+    const onResize = () => {
+      setWidth((current) => clampSidebarWidth(current));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const persistWidth = React.useCallback((next: number) => {
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+    } catch {
+      // ignore quota failures — sidebar width is non-critical
+    }
+  }, []);
+
+  const startResize = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = widthRef.current;
+
+      const onPointerMove = (moveEvent: PointerEvent) => {
+        const next = clampSidebarWidth(startWidth + (moveEvent.clientX - startX));
+        setWidth(next);
+      };
+
+      const stopResize = () => {
+        document.removeEventListener("pointermove", onPointerMove);
+        document.removeEventListener("pointerup", stopResize);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        persistWidth(widthRef.current);
+      };
+
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("pointermove", onPointerMove);
+      document.addEventListener("pointerup", stopResize);
+    },
+    [persistWidth],
+  );
+
+  return { width, startResize };
+}
+
 export function SplitView({
   sidebar,
   children,
@@ -11,12 +84,28 @@ export function SplitView({
   children: React.ReactNode;
   className?: string;
 }) {
+  const { width, startResize } = useSidebarWidth();
+  const maxWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.round(window.innerWidth * 0.5));
+
   return (
-    <div className={cn("flex h-full min-h-0", className)}>
-      <aside className="w-[15.5rem] max-w-[min(15.5rem,40vw)] shrink-0 border-r border-separator bg-surface-sidebar min-h-0 flex flex-col">
-        {sidebar}
-      </aside>
-      <main className="main-pane flex-1 min-w-0 min-h-0 flex flex-col">{children}</main>
+    <div className={cn("flex h-full min-h-0 gap-x-1.5 bg-surface-sidebar", className)}>
+      <div
+        className="relative shrink-0 min-h-0 flex flex-col bg-surface-sidebar"
+        style={{ width }}
+      >
+        <aside className="min-h-0 flex flex-1 flex-col overflow-hidden">{sidebar}</aside>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={width}
+          aria-valuemin={MIN_SIDEBAR_WIDTH}
+          aria-valuemax={maxWidth}
+          aria-label="Resize sidebar"
+          className="sidebar-resize-handle"
+          onPointerDown={startResize}
+        />
+      </div>
+      <main className="main-pane flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
     </div>
   );
 }
@@ -212,7 +301,7 @@ export function ToolbarContent({
 
 export function ToolbarTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h1 className="truncate max-w-[min(100%,32rem)] text-regular font-medium text-primary">
+    <h1 className="truncate max-w-[min(100%,32rem)] text-strong text-primary">
       {children}
     </h1>
   );

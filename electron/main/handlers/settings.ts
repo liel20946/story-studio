@@ -3,7 +3,21 @@ import * as path from "path";
 import { ipcMain, app, nativeTheme } from "../electron-api.js";
 import { broadcast } from "../broadcast.js";
 import type { AppSettings } from "../services/contract-types.js";
+import {
+  DEFAULT_AGENT_PROVIDER,
+  parseAgentProvider,
+} from "../services/agent-provider.js";
 import { getStoriesDir, getRunsDir, overridePaths } from "../services/paths.js";
+
+function parseTheme(
+  value: unknown,
+  fallback: AppSettings["theme"],
+): AppSettings["theme"] {
+  if (value === "system" || value === "light" || value === "dark") {
+    return value;
+  }
+  return fallback;
+}
 
 // Defaults for the user-facing settings (kept in one place so load + set agree).
 const DEFAULT_THEME: AppSettings["theme"] = "dark";
@@ -14,12 +28,30 @@ const SETTINGS_FILE = () =>
 
 let _settings: AppSettings | null = null;
 
+function toAppSettings(
+  parsed: Partial<AppSettings>,
+  defaults: AppSettings,
+): AppSettings {
+  return {
+    agentProvider: parseAgentProvider(parsed.agentProvider ?? defaults.agentProvider),
+    codexBinaryPath: parsed.codexBinaryPath ?? defaults.codexBinaryPath,
+    claudeBinaryPath: parsed.claudeBinaryPath ?? defaults.claudeBinaryPath,
+    storiesDir: parsed.storiesDir ?? defaults.storiesDir,
+    runsDir: parsed.runsDir ?? defaults.runsDir,
+    theme: parseTheme(parsed.theme, defaults.theme),
+    startingUrl: parsed.startingUrl ?? defaults.startingUrl,
+    runHook: parsed.runHook ?? defaults.runHook,
+  };
+}
+
 async function loadSettings(): Promise<AppSettings> {
   if (_settings) return _settings;
   const storiesDir = getStoriesDir();
   const runsDir = getRunsDir();
   const defaults: AppSettings = {
+    agentProvider: DEFAULT_AGENT_PROVIDER,
     codexBinaryPath: null,
+    claudeBinaryPath: null,
     storiesDir,
     runsDir,
     theme: DEFAULT_THEME,
@@ -28,15 +60,15 @@ async function loadSettings(): Promise<AppSettings> {
   };
   try {
     const data = await fs.readFile(SETTINGS_FILE(), "utf-8");
-    const parsed = JSON.parse(data) as Partial<AppSettings>;
-    _settings = {
-      codexBinaryPath: parsed.codexBinaryPath ?? defaults.codexBinaryPath,
-      storiesDir: parsed.storiesDir ?? defaults.storiesDir,
-      runsDir: parsed.runsDir ?? defaults.runsDir,
-      theme: parsed.theme === "light" ? "light" : defaults.theme,
-      startingUrl: parsed.startingUrl ?? defaults.startingUrl,
-      runHook: parsed.runHook ?? defaults.runHook,
+    const parsed = JSON.parse(data) as Partial<AppSettings> & {
+      appearance?: unknown;
     };
+    _settings = toAppSettings(parsed, defaults);
+
+    // Drop legacy appearance keys from disk on next read if they were present.
+    if ("appearance" in parsed) {
+      await persistSettings(_settings);
+    }
   } catch {
     _settings = defaults;
   }
@@ -52,7 +84,9 @@ export function getSettingsValue(): AppSettings {
   if (!_settings) {
     // Return safe defaults before first async load completes
     return {
+      agentProvider: DEFAULT_AGENT_PROVIDER,
       codexBinaryPath: null,
+      claudeBinaryPath: null,
       storiesDir: getStoriesDir(),
       runsDir: getRunsDir(),
       theme: DEFAULT_THEME,
@@ -76,6 +110,14 @@ export function registerSettingsHandlers(): void {
     const current = await loadSettings();
 
     // Settable fields (dirs are computed from userData, never set here).
+    if ("agentProvider" in p) {
+      const val = p["agentProvider"];
+      if (val !== "codex" && val !== "claude-code") {
+        throw new Error("settings:set agentProvider must be 'codex' | 'claude-code'");
+      }
+      current.agentProvider = val;
+    }
+
     if ("codexBinaryPath" in p) {
       const val = p["codexBinaryPath"];
       if (val !== null && typeof val !== "string") {
@@ -84,14 +126,23 @@ export function registerSettingsHandlers(): void {
       current.codexBinaryPath = val as string | null;
     }
 
+    if ("claudeBinaryPath" in p) {
+      const val = p["claudeBinaryPath"];
+      if (val !== null && typeof val !== "string") {
+        throw new Error("settings:set claudeBinaryPath must be string | null");
+      }
+      current.claudeBinaryPath = val as string | null;
+    }
+
     if ("theme" in p) {
       const val = p["theme"];
-      if (val !== "dark" && val !== "light") {
-        throw new Error("settings:set theme must be 'dark' | 'light'");
+      const theme = parseTheme(val, current.theme);
+      if (val !== theme) {
+        throw new Error("settings:set theme must be 'system' | 'dark' | 'light'");
       }
-      current.theme = val;
+      current.theme = theme;
       // Apply immediately so all open windows update without a restart.
-      nativeTheme.themeSource = val;
+      nativeTheme.themeSource = theme;
     }
 
     if ("startingUrl" in p) {
@@ -113,6 +164,9 @@ export function registerSettingsHandlers(): void {
     _settings = current;
     await persistSettings(current);
     broadcast("settings:codexBinaryPath-changed", { value: current.codexBinaryPath });
+    if ("theme" in p) {
+      broadcast("settings:theme-changed", { theme: current.theme });
+    }
     console.log("[settings] saved", current);
     return current;
   });

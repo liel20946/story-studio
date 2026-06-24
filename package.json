@@ -7,7 +7,7 @@
   "main": "./out/main/index.mjs",
   "author": "Story Studio",
   "scripts": {
-    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
+    "dev": "node scripts/dev.mjs",
     "build": "electron-vite build",
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "pack": "npm run build && electron-builder --dir",

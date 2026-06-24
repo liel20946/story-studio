@@ -16,8 +16,9 @@ import {
   Button,
   toast,
 } from "@/components/ui";
+import { applyTheme } from "../lib/theme";
 import { settingsGet, settingsSet, storiesImport, closeSettings } from "../lib/ipc";
-import type { AppSettings } from "../lib/contract-types";
+import type { AppSettings, ThemePreference } from "../lib/contract-types";
 import { FolderOpenIcon, Loader2Icon } from "lucide-react";
 
 /** Standalone settings window (legacy). Main app uses `main/settings-view.tsx`. */
@@ -70,8 +71,9 @@ export function SettingsWindowView() {
   }, []);
 
   const handleThemeChange = async (value: string) => {
-    const theme = value === "light" ? "light" : "dark";
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    const theme: ThemePreference =
+      value === "light" ? "light" : value === "system" ? "system" : "dark";
+    applyTheme(theme);
     try {
       const updated = await settingsSet({ theme });
       setAppSettings(updated);
@@ -157,6 +159,10 @@ export function SettingsWindowView() {
                 onValueChange={handleThemeChange}
                 orientation="horizontal"
               >
+                <Label>
+                  <RadioGroupItem value="system" />
+                  System
+                </Label>
                 <Label>
                   <RadioGroupItem value="dark" />
                   Dark
