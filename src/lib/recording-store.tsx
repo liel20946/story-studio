@@ -21,6 +21,8 @@ interface RecordingState {
   storyName: string | null;
   draftId: string | null;
   error: string | null;
+  errorTitle: string | null;
+  errorDetail: string | null;
 }
 
 interface RecordingValue extends RecordingState {
@@ -36,6 +38,8 @@ const initialState: RecordingState = {
   storyName: null,
   draftId: null,
   error: null,
+  errorTitle: null,
+  errorDetail: null,
 };
 
 const RecordingContext = React.createContext<RecordingValue | null>(null);
@@ -52,6 +56,8 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
           phase: p.phase as RecordingPhase,
           message: p.message,
           draftId: p.draftId ?? s.draftId,
+          errorTitle: p.errorTitle ?? s.errorTitle,
+          errorDetail: p.detail ?? s.errorDetail,
         };
       });
     });
@@ -67,6 +73,8 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
       storyName: null,
       draftId: null,
       error: null,
+      errorTitle: null,
+      errorDetail: null,
     });
     try {
       const res = await recordingStart(name.trim(), url.trim());
@@ -88,15 +96,24 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
         }));
       } else {
         const err = res.error ?? "Recording failed.";
-        setState((s) => ({ ...s, phase: "error", message: err, error: err }));
+        setState((s) => ({
+          ...s,
+          phase: "error",
+          message: err,
+          error: err,
+          errorTitle: res.errorTitle ?? "Recording failed",
+          errorDetail: res.errorDetail ?? null,
+        }));
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setState((s) => ({
         ...s,
         phase: "error",
-        message: `Recording failed: ${msg}`,
+        message: msg,
         error: msg,
+        errorTitle: "Recording failed",
+        errorDetail: msg,
       }));
     }
   }, []);

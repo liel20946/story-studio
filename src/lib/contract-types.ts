@@ -100,6 +100,8 @@ export interface RecordingProgress {
   phase: "starting" | "recording" | "converting" | "done" | "error" | "review";
   message: string;
   draftId?: string;
+  errorTitle?: string;
+  detail?: string;
 }
 
 export interface RecordingAvailability {

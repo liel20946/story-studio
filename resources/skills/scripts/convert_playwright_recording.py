@@ -254,26 +254,170 @@ def derive_tags(url: str, story_name: str) -> list[str]:
     return tags[:4]
 
 
+# Keyboard navigation / edit keys captured while fixing typos — not story intent.
+_CORRECTION_KEY_BASES = frozenset(
+    {
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Home",
+        "End",
+        "Backspace",
+        "Delete",
+    }
+)
+
+
+def is_correction_press(step: str) -> bool:
+    match = re.match(r'^Press "([^"]+)" on ', step)
+    if not match:
+        return False
+    base_key = match.group(1).split("+")[-1]
+    return base_key in _CORRECTION_KEY_BASES
+
+
+def fill_or_type_target(step: str) -> str | None:
+    fill_match = re.match(r"^Fill (.+?) with ", step)
+    if fill_match:
+        return fill_match.group(1).strip()
+    type_match = re.match(r'^Type ".+" into (.+)$', step)
+    if type_match:
+        return type_match.group(1).strip()
+    return None
+
+
+def rebuild_fill_indices(steps: list[str]) -> dict[str, int]:
+    indices: dict[str, int] = {}
+    for index, step in enumerate(steps):
+        target = fill_or_type_target(step)
+        if target:
+            indices[target] = index
+    return indices
+
+
+def clean_recorded_steps(steps: list[str]) -> list[str]:
+    """Remove typo-correction noise and keep the final value per field."""
+    result: list[str] = []
+    last_fill_index: dict[str, int] = {}
+    previous: str | None = None
+
+    for step in steps:
+        if is_correction_press(step):
+            continue
+
+        if previous is not None and step == previous and step.startswith("Click "):
+            continue
+
+        fill_match = re.match(r'^(Fill .+? with )"(.+)"$', step)
+        type_match = re.match(r'^(Type )"(.+)" (into .+)$', step)
+
+        if fill_match or type_match:
+            target = fill_or_type_target(step)
+            assert target is not None
+            if target in last_fill_index:
+                result.pop(last_fill_index[target])
+                last_fill_index = rebuild_fill_indices(result)
+            last_fill_index[target] = len(result)
+            result.append(step)
+        else:
+            result.append(step)
+
+        previous = step
+
+    return result
+
+
+def infer_variable_key(target: str, value: str) -> str:
+    lowered = target.lower()
+    if "password" in lowered:
+        return "login_password"
+    if "email" in lowered or "e-mail" in lowered:
+        return "login_email"
+    if "username" in lowered or "user name" in lowered:
+        return "login_username"
+    if "phone" in lowered or "mobile" in lowered:
+        return "phone"
+    if "search" in lowered:
+        return "search_query"
+    label_match = re.search(r'"([^"]+)"', target)
+    if label_match:
+        key = slugify(label_match.group(1)).replace("-", "_")
+        if key:
+            return key
+    key = slugify(target).replace("-", "_")
+    return key or "input_value"
+
+
+def apply_variables_to_steps(steps: list[str]) -> tuple[list[str], dict[str, str]]:
+    variables: dict[str, str] = {}
+    updated: list[str] = []
+    fill_re = re.compile(r'^(Fill .+ with )"([^"]+)"$')
+    type_re = re.compile(r'^(Type )"([^"]+)" (into .+)$')
+
+    for step in steps:
+        fill_match = fill_re.match(step)
+        if fill_match:
+            prefix, value = fill_match.group(1), fill_match.group(2)
+            if value.startswith("{{") and value.endswith("}}"):
+                updated.append(step)
+                continue
+            target = prefix.removeprefix("Fill ").removesuffix(" with ")
+            key = infer_variable_key(target, value)
+            base_key = key
+            suffix = 2
+            while key in variables and variables[key] != value:
+                key = f"{base_key}_{suffix}"
+                suffix += 1
+            variables[key] = value
+            updated.append(f'{prefix}"{{{{{key}}}}}"')
+            continue
+
+        type_match = type_re.match(step)
+        if type_match:
+            prefix, value, suffix = type_match.group(1), type_match.group(2), type_match.group(3)
+            if value.startswith("{{") and value.endswith("}}"):
+                updated.append(step)
+                continue
+            key = infer_variable_key(suffix.removeprefix("into "), value)
+            base_key = key
+            n = 2
+            while key in variables and variables[key] != value:
+                key = f"{base_key}_{n}"
+                n += 1
+            variables[key] = value
+            updated.append(f'{prefix}"{{{{{key}}}}}" {suffix}')
+            continue
+
+        updated.append(step)
+
+    return updated, variables
+
+
 def build_review_markdown(
     story_id: str,
     story_name: str,
     url: str,
-    recording_path: Path,
     steps: list[str],
     *,
     mode: str,
     tags: list[str],
+    variables: dict[str, str] | None = None,
 ) -> str:
     numbered_steps = "\n".join(f"{index}. {step}" for index, step in enumerate(steps, start=1))
     tags_text = ", ".join(tags) if tags else "none"
+    variables_section = ""
+    if variables:
+        var_lines = "\n".join(f"- `{key}`: {value}" for key, value in variables.items())
+        variables_section = f"## Variables\n\n{var_lines}\n\n"
     return (
         f"# Draft UI Story\n\n"
         f"**ID:** {story_id}\n"
         f"**Story:** {story_name}\n"
         f"**URL:** {url}\n"
         f"**Mode:** {mode}\n"
-        f"**Tags:** {tags_text}\n"
-        f"**Source Recording:** `{recording_path}`\n\n"
+        f"**Tags:** {tags_text}\n\n"
+        f"{variables_section}"
         f"## Workflow\n\n"
         f"{numbered_steps}\n"
     )
@@ -283,12 +427,26 @@ def yaml_quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def build_yaml(story_id: str, story_name: str, url: str, steps: list[str], *, mode: str, tags: list[str]) -> str:
+def build_yaml(
+    story_id: str,
+    story_name: str,
+    url: str,
+    steps: list[str],
+    *,
+    mode: str,
+    tags: list[str],
+    variables: dict[str, str] | None = None,
+) -> str:
     workflow = "\n".join(f"      {step}" for step in steps)
     tags_yaml = ""
     if tags:
         tag_items = ", ".join(yaml_quote(tag) for tag in tags)
         tags_yaml = f"    tags: [{tag_items}]\n"
+    variables_yaml = ""
+    if variables:
+        variables_yaml = "    variables:\n"
+        for key, value in variables.items():
+            variables_yaml += f"      {key}: {yaml_quote(value)}\n"
     return (
         "stories:\n"
         f"  - id: {yaml_quote(story_id)}\n"
@@ -296,6 +454,7 @@ def build_yaml(story_id: str, story_name: str, url: str, steps: list[str], *, mo
         f"    url: {yaml_quote(url)}\n"
         f"{tags_yaml}"
         f"    mode: {yaml_quote(mode)}\n"
+        f"{variables_yaml}"
         "    workflow: |\n"
         f"{workflow}\n"
     )
@@ -326,6 +485,8 @@ def convert_recording_file(
     final_name = story_name or derive_default_name(detected_url, steps)
     story_id = derive_story_id(detected_url, final_name)
     tags = derive_tags(detected_url, final_name)
+    steps = clean_recorded_steps(steps)
+    steps, variables = apply_variables_to_steps(steps)
 
     return {
         "story_id": story_id,
@@ -337,12 +498,12 @@ def convert_recording_file(
             story_id,
             final_name,
             detected_url,
-            recording_path,
             steps,
             mode=mode,
             tags=tags,
+            variables=variables or None,
         ),
-        "yaml": build_yaml(story_id, final_name, detected_url, steps, mode=mode, tags=tags),
+        "yaml": build_yaml(story_id, final_name, detected_url, steps, mode=mode, tags=tags, variables=variables or None),
     }
 
 

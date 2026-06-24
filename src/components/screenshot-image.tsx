@@ -1,20 +1,40 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ImageOffIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, ImageOffIcon, XIcon } from "lucide-react";
 import { runsScreenshot } from "../lib/ipc";
+import { cn } from "@/lib/utils";
 
-export function ScreenshotImage({ path, alt = "Screenshot" }: { path?: string; alt?: string }) {
-  const { data, isLoading } = useQuery({
+function useScreenshotDataUrl(path?: string) {
+  return useQuery({
     queryKey: ["runs:screenshot", path],
     queryFn: () => runsScreenshot(path as string),
     enabled: !!path,
     staleTime: Infinity,
   });
+}
+
+export function ScreenshotImage({
+  path,
+  alt = "Screenshot",
+  onClick,
+  className,
+  fit = "cover",
+}: {
+  path?: string;
+  alt?: string;
+  onClick?: () => void;
+  className?: string;
+  fit?: "cover" | "contain";
+}) {
+  const { data, isLoading } = useScreenshotDataUrl(path);
 
   if (path && isLoading) {
     return (
       <div
-        className="w-full animate-pulse rounded-card border border-separator bg-well"
+        className={cn(
+          "w-full animate-pulse rounded-card border border-separator bg-well",
+          className,
+        )}
         style={{ aspectRatio: "16 / 10" }}
       />
     );
@@ -29,12 +49,151 @@ export function ScreenshotImage({ path, alt = "Screenshot" }: { path?: string; a
     );
   }
 
+  const image = (
+    <img
+      src={data.dataUrl}
+      alt={alt}
+      className={cn(
+        "size-full",
+        fit === "contain" ? "object-contain" : "object-cover object-top",
+      )}
+    />
+  );
+
+  const frameClass = cn(
+    "w-full overflow-hidden rounded-card border border-separator bg-well",
+    onClick && "cursor-pointer transition-opacity hover:opacity-90",
+    className,
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={cn(frameClass, "block p-0 text-left")}
+        style={{ aspectRatio: "16 / 10" }}
+        onClick={onClick}
+        aria-label="Open screenshot full view"
+      >
+        {image}
+      </button>
+    );
+  }
+
   return (
-    <div
-      className="w-full overflow-hidden rounded-card border border-separator bg-well"
-      style={{ aspectRatio: "16 / 10" }}
+    <div className={frameClass} style={{ aspectRatio: "16 / 10" }}>
+      {image}
+    </div>
+  );
+}
+
+function LightboxNavButton({
+  direction,
+  disabled,
+  onClick,
+}: {
+  direction: "prev" | "next";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const Icon = direction === "prev" ? ChevronLeftIcon : ChevronRightIcon;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      aria-label={direction === "prev" ? "Previous screenshot" : "Next screenshot"}
+      className={cn(
+        "flex size-8 shrink-0 items-center justify-center rounded-full border border-separator bg-popover/90 text-primary shadow-lg backdrop-blur-sm transition-opacity",
+        disabled ? "cursor-not-allowed opacity-30" : "hover:bg-surface-hover",
+      )}
     >
-      <img src={data.dataUrl} alt={alt} className="size-full object-cover object-top" />
+      <Icon className="size-4" />
+    </button>
+  );
+}
+
+export function ScreenshotLightbox({
+  paths,
+  index,
+  open,
+  onOpenChange,
+  onIndexChange,
+}: {
+  paths: string[];
+  index: number;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onIndexChange: (index: number) => void;
+}) {
+  const path = paths[index];
+  const { data, isLoading } = useScreenshotDataUrl(open ? path : undefined);
+  const hasMultiple = paths.length > 1;
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onOpenChange(false);
+      if (e.key === "ArrowLeft" && index > 0) onIndexChange(index - 1);
+      if (e.key === "ArrowRight" && index < paths.length - 1) onIndexChange(index + 1);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, index, paths.length, onOpenChange, onIndexChange]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/80"
+        onClick={() => onOpenChange(false)}
+        aria-label="Close screenshot view"
+      />
+      <button
+        type="button"
+        className="absolute right-4 top-4 z-10 flex size-8 items-center justify-center rounded-full border border-separator bg-popover/90 text-primary shadow-lg backdrop-blur-sm hover:bg-surface-hover"
+        onClick={() => onOpenChange(false)}
+        aria-label="Close"
+      >
+        <XIcon className="size-4" />
+      </button>
+
+      {hasMultiple && (
+        <div className="absolute left-4 top-1/2 z-10 -translate-y-1/2">
+          <LightboxNavButton
+            direction="prev"
+            disabled={index === 0}
+            onClick={() => onIndexChange(index - 1)}
+          />
+        </div>
+      )}
+
+      <div className="relative z-[1] flex max-h-[90vh] max-w-[90vw] items-center justify-center">
+        {isLoading || !data?.dataUrl ? (
+          <div className="size-[min(90vw,960px)] animate-pulse rounded-card bg-well" style={{ aspectRatio: "16 / 10" }} />
+        ) : (
+          <img
+            src={data.dataUrl}
+            alt={`Screenshot ${index + 1}`}
+            className="max-h-[90vh] max-w-[90vw] rounded-card object-contain shadow-2xl"
+          />
+        )}
+      </div>
+
+      {hasMultiple && (
+        <div className="absolute right-4 top-1/2 z-10 -translate-y-1/2">
+          <LightboxNavButton
+            direction="next"
+            disabled={index === paths.length - 1}
+            onClick={() => onIndexChange(index + 1)}
+          />
+        </div>
+      )}
     </div>
   );
 }

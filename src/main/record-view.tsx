@@ -43,6 +43,50 @@ type PrepPhase =
 
 type Phase = PrepPhase | RecordingPhase;
 
+function RecordingErrorBanner({
+  title,
+  message,
+  detail,
+}: {
+  title: string;
+  message: string;
+  detail?: string | null;
+}) {
+  const [showDetail, setShowDetail] = React.useState(false);
+
+  return (
+    <div className="rounded-card border border-support-red/20 bg-support-red-10 p-3">
+      <div className="flex items-start gap-2.5">
+        <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-support-red" />
+        <div className="min-w-0 flex-1">
+          <Text variant="small" className="font-medium text-support-red">
+            {title}
+          </Text>
+          <Text variant="small" color="secondary" className="mt-1">
+            {message}
+          </Text>
+          {detail ? (
+            <>
+              <button
+                type="button"
+                className="mt-2 text-mini text-tertiary transition-colors hover:text-secondary"
+                onClick={() => setShowDetail((open) => !open)}
+              >
+                {showDetail ? "Hide details" : "Show details"}
+              </button>
+              {showDetail ? (
+                <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-control bg-well p-2 font-mono text-[10px] leading-relaxed text-tertiary">
+                  {detail}
+                </pre>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PhaseIcon({ phase }: { phase: Phase }) {
   switch (phase) {
     case "checking":
@@ -134,7 +178,7 @@ export function RecordView() {
         } else if (!avail.browserInstalled) {
           setPrepPhase("install-browser");
           setPrepMessage(
-            "Chromium browser not installed. Install it to enable recording.",
+            "Playwright browser not found. Install Chromium below, or install Google Chrome.",
           );
         } else {
           setPrepPhase("ready");
@@ -209,8 +253,14 @@ export function RecordView() {
   const isInstalling = prepPhase === "installing";
   const isChecking = prepPhase === "checking";
 
+  const canRetry = rec.active && isError;
   const canStart =
-    isReady && storyName.trim().length > 0 && url.trim().length > 0;
+    storyName.trim().length > 0 &&
+    url.trim().length > 0 &&
+    (isReady || canRetry) &&
+    !isActive &&
+    !isDone &&
+    !isChecking;
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen && !isActive) {
@@ -260,24 +310,29 @@ export function RecordView() {
           </div>
 
           {/* Status area */}
-          {phase !== "idle" && (
-            <div
-              className={cn(
-                "flex items-start gap-2.5 rounded-card p-3 bg-well",
-                isError && "bg-well",
-              )}
-            >
+          {phase !== "idle" && !isError && (
+            <div className="flex items-start gap-2.5 rounded-card bg-well p-3">
               <PhaseIcon phase={phase} />
               <Text
                 variant="small"
-                color={
-                  isError ? "primary" : isDone ? "primary" : "secondary"
-                }
-                className={cn(isError && "text-support-red", isDone && "text-support-green")}
+                color={isDone ? "primary" : "secondary"}
+                className={cn(isDone && "text-support-green")}
               >
                 {phaseMessage}
               </Text>
             </div>
+          )}
+
+          {isError && (
+            <RecordingErrorBanner
+              title={
+                rec.active
+                  ? rec.errorTitle ?? "Recording failed"
+                  : "Can't record"
+              }
+              message={phaseMessage}
+              detail={rec.active ? rec.errorDetail : installError}
+            />
           )}
 
           {/* Install browser step */}
@@ -290,12 +345,6 @@ export function RecordView() {
               <DownloadIcon className="size-4.5" />
               Install Chromium
             </Button>
-          )}
-
-          {installError && (
-            <Text variant="small" color="tertiary">
-              Error: {installError}
-            </Text>
           )}
         </div>
       </DialogBody>
@@ -330,6 +379,8 @@ export function RecordView() {
                 <CheckCircle2Icon className="size-4.5" />
                 Done
               </>
+            ) : isError ? (
+              "Try again"
             ) : (
               "Start recording"
             )}

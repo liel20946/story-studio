@@ -69,6 +69,87 @@ export function parseWorkflowLines(workflow: string): string[] {
     .filter((l) => l.length > 0);
 }
 
+const CORRECTION_KEY_BASES = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "Backspace",
+  "Delete",
+]);
+
+function isCorrectionPress(step: string): boolean {
+  const match = step.match(/^Press "([^"]+)" on /);
+  if (!match) return false;
+  const baseKey = match[1].split("+").pop() ?? "";
+  return CORRECTION_KEY_BASES.has(baseKey);
+}
+
+function fillOrTypeTarget(step: string): string | null {
+  const fillMatch = step.match(/^Fill (.+?) with /);
+  if (fillMatch) return fillMatch[1].trim();
+  const typeMatch = step.match(/^Type ".+" into (.+)$/);
+  if (typeMatch) return typeMatch[1].trim();
+  return null;
+}
+
+/** Remove typo-correction noise and keep the final value per field. */
+export function cleanRecordedSteps(steps: string[]): string[] {
+  const result: string[] = [];
+  const lastFillIndex = new Map<string, number>();
+  let previous: string | null = null;
+
+  for (const step of steps) {
+    if (isCorrectionPress(step)) continue;
+    if (previous !== null && step === previous && step.startsWith("Click ")) continue;
+
+    const target = fillOrTypeTarget(step);
+    if (target) {
+      const existing = lastFillIndex.get(target);
+      if (existing !== undefined) {
+        result.splice(existing, 1);
+        lastFillIndex.clear();
+        for (let i = 0; i < result.length; i++) {
+          const fillTarget = fillOrTypeTarget(result[i]);
+          if (fillTarget) lastFillIndex.set(fillTarget, i);
+        }
+      }
+      lastFillIndex.set(target, result.length);
+    }
+
+    result.push(step);
+    previous = step;
+  }
+
+  return result;
+}
+
+function collapseNumberedVariables(variables: Record<string, string>): Record<string, string> {
+  const groups = new Map<string, Array<[string, string]>>();
+  for (const [key, value] of Object.entries(variables)) {
+    const base = key.replace(/_\d+$/, "");
+    const list = groups.get(base) ?? [];
+    list.push([key, value]);
+    groups.set(base, list);
+  }
+
+  const merged: Record<string, string> = {};
+  for (const [base, entries] of groups) {
+    if (entries.length === 1) {
+      merged[entries[0][0]] = entries[0][1];
+      continue;
+    }
+    const sorted = [...entries].sort((a, b) => {
+      const suffix = (key: string) => (key === base ? 1 : Number.parseInt(key.slice(base.length + 1), 10));
+      return suffix(a[0]) - suffix(b[0]);
+    });
+    merged[base] = sorted[sorted.length - 1][1];
+  }
+  return merged;
+}
+
 export function splitWorkflowSteps(workflowLines: string[]): {
   steps: string[];
   assertions: string[];
@@ -85,9 +166,69 @@ export function splitWorkflowSteps(workflowLines: string[]): {
   return { steps, assertions };
 }
 
-function parseVariablesFromEntry(entry: BowserStoryEntry): StoryVariable[] {
-  if (!entry.variables) return [];
-  return Object.entries(entry.variables).map(([key, value]) => ({
+function inferVariableKeyFromTarget(target: string, _value: string): string {
+  const lowered = target.toLowerCase();
+  if (lowered.includes("password")) return "login_password";
+  if (lowered.includes("email") || lowered.includes("e-mail")) return "login_email";
+  if (lowered.includes("username") || lowered.includes("user name")) return "login_username";
+  if (lowered.includes("phone") || lowered.includes("mobile")) return "phone";
+  if (lowered.includes("search")) return "search_query";
+  const labelMatch = target.match(/"([^"]+)"/);
+  if (labelMatch) {
+    const key = slugify(labelMatch[1]).replace(/-/g, "_");
+    if (key) return key;
+  }
+  return slugify(target).replace(/-/g, "_") || "input_value";
+}
+
+/** Infer variables from Fill/Type workflow lines when YAML has no variables block. */
+export function inferVariablesFromWorkflow(workflow: string): Record<string, string> {
+  const variables: Record<string, string> = {};
+  const lines = cleanRecordedSteps(parseWorkflowLines(workflow));
+  for (const line of lines) {
+    const fillPlaceholder = line.match(/^Fill .+ with "\{\{(\w+)\}\}"$/i);
+    if (fillPlaceholder) continue;
+
+    const fillLiteral = line.match(/^Fill (.+?) with "([^"]+)"$/i);
+    if (fillLiteral) {
+      const [, target, value] = fillLiteral;
+      let key = inferVariableKeyFromTarget(target, value);
+      const baseKey = key;
+      let n = 2;
+      while (variables[key] !== undefined && variables[key] !== value) {
+        key = `${baseKey}_${n}`;
+        n++;
+      }
+      variables[key] = value;
+      continue;
+    }
+
+    const typeLiteral = line.match(/^Type "([^"]+)" into (.+)$/i);
+    if (typeLiteral) {
+      const [, value, target] = typeLiteral;
+      let key = inferVariableKeyFromTarget(target, value);
+      const baseKey = key;
+      let n = 2;
+      while (variables[key] !== undefined && variables[key] !== value) {
+        key = `${baseKey}_${n}`;
+        n++;
+      }
+      variables[key] = value;
+    }
+  }
+  return variables;
+}
+
+function parseVariablesFromEntry(
+  entry: BowserStoryEntry,
+  workflowLines: string[],
+): StoryVariable[] {
+  const explicit = entry.variables ?? {};
+  const merged =
+    Object.keys(explicit).length > 0
+      ? collapseNumberedVariables(explicit)
+      : inferVariablesFromWorkflow(workflowLines.join("\n"));
+  return Object.entries(merged).map(([key, value]) => ({
     key,
     value,
     secret: /password|secret|token/i.test(key),
@@ -102,7 +243,7 @@ function entryToDetail(
   lastRun?: StorySummary["lastRun"],
 ): StoryDetail {
   const name = compositeStoryName(siteSlug, entry.id);
-  const workflowLines = parseWorkflowLines(entry.workflow);
+  const workflowLines = cleanRecordedSteps(parseWorkflowLines(entry.workflow));
   const { steps, assertions } = splitWorkflowSteps(workflowLines);
   return {
     name,
@@ -115,7 +256,7 @@ function entryToDetail(
     storyId: entry.id,
     tags: entry.tags ?? [],
     mode: entry.mode ?? "recorded",
-    variables: parseVariablesFromEntry(entry),
+    variables: parseVariablesFromEntry(entry, workflowLines),
     steps,
     assertions,
     workflow: workflowLines,

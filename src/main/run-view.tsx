@@ -20,6 +20,8 @@ import {
   XCircleIcon,
   XIcon,
   CopyIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -47,7 +49,7 @@ import { InlineCode } from "../components/inline-code";
 import { useRun } from "../lib/run-store";
 import { formatRunLogs } from "../lib/format-run-logs";
 import { filterTimelineEvents } from "../lib/run-events";
-import { ScreenshotImage } from "../components/screenshot-image";
+import { ScreenshotImage, ScreenshotLightbox } from "../components/screenshot-image";
 
 // ---------- copy run logs (toolbar action) ----------
 function CopyLogsButton({
@@ -274,7 +276,17 @@ function ResultPanel({ result }: { result: RunResult }) {
           ? [result.screenshotPath]
           : [];
   const [selected, setSelected] = React.useState(0);
+  const [lightboxOpen, setLightboxOpen] = React.useState(false);
   const previewPath = galleryPaths[selected] ?? result.screenshotPath;
+  const hasMultiple = galleryPaths.length > 1;
+
+  function goPrev() {
+    setSelected((i) => Math.max(0, i - 1));
+  }
+
+  function goNext() {
+    setSelected((i) => Math.min(galleryPaths.length - 1, i + 1));
+  }
 
   return (
     <>
@@ -306,45 +318,51 @@ function ResultPanel({ result }: { result: RunResult }) {
       {!cancelled && (
         <Section title="Screenshots">
           <div className="flex flex-col gap-2 py-1">
-            {galleryPaths.length > 1 && (
-              <div className="flex gap-1 overflow-x-auto pb-1">
-                {galleryPaths.map((p, i) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setSelected(i)}
-                    className={cn(
-                      "shrink-0 rounded-control border px-2 py-1 text-[10px]",
-                      i === selected ? "border-support-blue bg-support-blue-10 text-support-blue" : "border-separator text-tertiary",
-                    )}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
+            <ScreenshotImage
+              path={previewPath}
+              alt={`Step ${selected + 1}`}
+              onClick={previewPath ? () => setLightboxOpen(true) : undefined}
+            />
+            {hasMultiple && (
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  disabled={selected === 0}
+                  onClick={goPrev}
+                  aria-label="Previous screenshot"
+                  className={cn(
+                    "flex size-6 items-center justify-center rounded-control border border-separator",
+                    selected === 0 ? "cursor-not-allowed opacity-30" : "hover:bg-surface-hover",
+                  )}
+                >
+                  <ChevronLeftIcon className="size-3.5" />
+                </button>
+                <span className="min-w-[3rem] text-center text-[10px] tabular-nums text-tertiary">
+                  {selected + 1} / {galleryPaths.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={selected === galleryPaths.length - 1}
+                  onClick={goNext}
+                  aria-label="Next screenshot"
+                  className={cn(
+                    "flex size-6 items-center justify-center rounded-control border border-separator",
+                    selected === galleryPaths.length - 1
+                      ? "cursor-not-allowed opacity-30"
+                      : "hover:bg-surface-hover",
+                  )}
+                >
+                  <ChevronRightIcon className="size-3.5" />
+                </button>
               </div>
             )}
-            <ScreenshotImage path={previewPath} alt={`Step ${selected + 1}`} />
-            {result.steps && result.steps.length > 0 && (
-              <div className="flex flex-col gap-0.5">
-                {result.steps.map((step) => (
-                  <button
-                    key={step.index}
-                    type="button"
-                    className="flex items-center gap-2 rounded-control px-1 py-0.5 text-left hover:bg-surface-hover"
-                    onClick={() => {
-                      if (step.screenshot) {
-                        const idx = galleryPaths.indexOf(step.screenshot);
-                        if (idx >= 0) setSelected(idx);
-                      }
-                    }}
-                  >
-                    <span className="text-[10px] tabular-nums text-tertiary">{step.index + 1}</span>
-                    <span className="min-w-0 flex-1 truncate text-[11px] text-secondary">{step.text}</span>
-                    {step.screenshot ? <ImageIcon className="size-3 shrink-0 text-tertiary" /> : null}
-                  </button>
-                ))}
-              </div>
-            )}
+            <ScreenshotLightbox
+              paths={galleryPaths}
+              index={selected}
+              open={lightboxOpen}
+              onOpenChange={setLightboxOpen}
+              onIndexChange={setSelected}
+            />
             {galleryPaths.length === 0 && (
               <Text variant="mini" color="tertiary">No step screenshots (legacy run)</Text>
             )}

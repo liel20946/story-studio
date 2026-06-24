@@ -11,6 +11,7 @@ import type { RecordingProgress, RecordingAvailability } from "./contract-types.
 import { resolveCodexBinary } from "./codex-runner.js";
 import { createDraftDir, discardDraftDir } from "./stories-service.js";
 import { convertPlaywrightRecording } from "./skills-python.js";
+import { formatRecordingFailure } from "./recording-errors.js";
 import { siteSlugFromUrl } from "./bowser-stories-service.js";
 import { getRunsDir } from "./paths.js";
 
@@ -44,7 +45,30 @@ function getPlaywrightBrowsersCacheDir(): string {
   return path.join(os.homedir(), ".cache", "ms-playwright");
 }
 
-async function isChromiumInstalled(): Promise<boolean> {
+const SYSTEM_CHROME_PATHS: Record<string, string[]> = {
+  darwin: [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    path.join(os.homedir(), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+  ],
+  linux: [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ],
+  win32: [
+    path.join(process.env.PROGRAMFILES ?? "C:\\Program Files", "Google/Chrome/Application/chrome.exe"),
+    path.join(process.env["PROGRAMFILES(X86)"] ?? "C:\\Program Files (x86)", "Google/Chrome/Application/chrome.exe"),
+  ],
+};
+
+interface RecordingBrowser {
+  ready: boolean;
+  /** Playwright `--channel` when using an installed Chrome/Edge instead of bundled Chromium. */
+  channel?: string;
+}
+
+async function isPlaywrightChromiumInstalled(): Promise<boolean> {
   const suffix = CHROMIUM_EXECUTABLE_SUFFIX[process.platform];
   if (!suffix) return false;
 
@@ -65,6 +89,29 @@ async function isChromiumInstalled(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function getSystemChromePath(): Promise<string | null> {
+  const candidates = SYSTEM_CHROME_PATHS[process.platform] ?? [];
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // try next install location
+    }
+  }
+  return null;
+}
+
+async function resolveRecordingBrowser(): Promise<RecordingBrowser> {
+  if (await isPlaywrightChromiumInstalled()) {
+    return { ready: true };
+  }
+  if (await getSystemChromePath()) {
+    return { ready: true, channel: "chrome" };
+  }
+  return { ready: false };
 }
 
 function findPlaywrightCli(): string | null {
@@ -151,7 +198,7 @@ export async function checkRecordingAvailability(codexBinaryPath: string | null)
   }
 
   if (playwrightAvailable) {
-    browserInstalled = await isChromiumInstalled();
+    browserInstalled = (await resolveRecordingBrowser()).ready;
   }
 
   console.log("[recording] availability check", { codexAvailable, playwrightAvailable, browserInstalled });
@@ -188,6 +235,23 @@ export async function cancelRecording(): Promise<void> {
   }
 }
 
+function broadcastRecordingError(
+  stage: "conversion" | "recording" | "start",
+  err: unknown,
+  fallbackMessage?: string,
+): ReturnType<typeof formatRecordingFailure> {
+  const failure = fallbackMessage
+    ? formatRecordingFailure(stage, fallbackMessage)
+    : formatRecordingFailure(stage, err);
+  broadcast({
+    phase: "error",
+    message: failure.message,
+    errorTitle: failure.title,
+    detail: failure.detail,
+  });
+  return failure;
+}
+
 function recordingFailureMessage(exitCode: number | null, stderr: string): string {
   const combined = stderr.trim();
   if (/executable doesn't exist/i.test(combined) || /npx playwright install/i.test(combined)) {
@@ -206,24 +270,47 @@ export async function startRecording(
   name: string,
   url: string,
   _codexBinaryPath: string | null,
-): Promise<{ ok: boolean; storyName?: string; draftId?: string; error?: string }> {
+): Promise<{
+  ok: boolean;
+  storyName?: string;
+  draftId?: string;
+  error?: string;
+  errorTitle?: string;
+  errorDetail?: string;
+}> {
   const runsDir = getRunsDir();
   const ts = Date.now();
   const recScriptPath = path.join(runsDir, `.rec-${ts}.spec.ts`);
 
   broadcast({ phase: "starting", message: "Starting Playwright codegen…" });
 
-  if (!(await isChromiumInstalled())) {
-    const msg = "Chromium is not installed. Install Chromium from the record dialog, then try again.";
-    broadcast({ phase: "error", message: msg });
-    return { ok: false, error: msg };
+  const recordingBrowser = await resolveRecordingBrowser();
+  if (!recordingBrowser.ready) {
+    const msg =
+      "No browser available for recording. Install Chromium from the record dialog, or install Google Chrome.";
+    broadcast({
+      phase: "error",
+      message: msg,
+      errorTitle: "Recording unavailable",
+    });
+    return { ok: false, error: msg, errorTitle: "Recording unavailable" };
   }
 
   // Step 1: spawn headed playwright codegen (no codex required for conversion)
   const playwright = resolvePlaywrightInvocation();
 
-  return new Promise<{ ok: boolean; storyName?: string; draftId?: string; error?: string }>((resolve) => {
+  return new Promise<{
+    ok: boolean;
+    storyName?: string;
+    draftId?: string;
+    error?: string;
+    errorTitle?: string;
+    errorDetail?: string;
+  }>((resolve) => {
     const codegenArgs = [...playwright.prefixArgs, "codegen", url, "-o", recScriptPath];
+    if (recordingBrowser.channel) {
+      codegenArgs.push("--channel", recordingBrowser.channel);
+    }
     console.log("[recording] spawning playwright codegen", {
       command: playwright.command,
       url,
@@ -260,8 +347,13 @@ export async function startRecording(
     codegenProcess.on("error", (err) => {
       _recordingProcess = null;
       console.error("[recording] codegen spawn error", err.message);
-      broadcast({ phase: "error", message: `Failed to start recording: ${err.message}` });
-      resolve({ ok: false, error: err.message });
+      const failure = broadcastRecordingError("start", err);
+      resolve({
+        ok: false,
+        error: failure.message,
+        errorTitle: failure.title,
+        errorDetail: failure.detail,
+      });
     });
 
     codegenProcess.on("close", async (code) => {
@@ -275,14 +367,24 @@ export async function startRecording(
         await fs.unlink(recScriptPath).catch(() => {});
       } catch (err) {
         const msg = recordingFailureMessage(code, codegenStderr);
-        broadcast({ phase: "error", message: msg });
-        return resolve({ ok: false, error: msg });
+        const failure = broadcastRecordingError("recording", err, msg);
+        return resolve({
+          ok: false,
+          error: failure.message,
+          errorTitle: failure.title,
+          errorDetail: failure.detail,
+        });
       }
 
       if (!script.trim()) {
         const msg = "Recorded script is empty.";
-        broadcast({ phase: "error", message: msg });
-        return resolve({ ok: false, error: msg });
+        const failure = broadcastRecordingError("recording", msg, msg);
+        return resolve({
+          ok: false,
+          error: failure.message,
+          errorTitle: failure.title,
+          errorDetail: failure.detail,
+        });
       }
 
       // Step 3: deterministic Python conversion → draft artifacts
@@ -297,9 +399,13 @@ export async function startRecording(
         await convertPlaywrightRecording(specCopyPath, draftDir, url, name);
       } catch (err) {
         await discardDraftDir(draftDir).catch(() => {});
-        const msg = `Conversion failed: ${String(err)}`;
-        broadcast({ phase: "error", message: msg });
-        return resolve({ ok: false, error: msg });
+        const failure = broadcastRecordingError("conversion", err);
+        return resolve({
+          ok: false,
+          error: failure.message,
+          errorTitle: failure.title,
+          errorDetail: failure.detail,
+        });
       }
 
       const draftId = path.basename(draftDir);

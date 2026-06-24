@@ -123,8 +123,10 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 }
 
 // ---------- read-only variables ----------
-// Variables are edited through the "Edit .story.md" toolbar action, so they
+// ---------- read-only variables ----------
+// Variables are edited through the "Edit" toolbar action (site YAML), so they
 // render read-only here: key on the LEFT, value beside it, and a copy button
+// that fades in on row hover. Secrets stay masked.
 // that fades in on row hover. Secrets stay masked.
 function ReadOnlyVariables({
   story,
@@ -273,13 +275,19 @@ export function StoryView() {
         <Toolbar titlebar surface="main" seamless>
           <ToolbarRow inset="main" className="detail-view-toolbar">
             <ToolbarContent className="detail-view-toolbar-content">
-              <ToolbarTitle>{story.title}</ToolbarTitle>
-              {(story.tags ?? []).map((tag) => (
-                <Badge key={tag} color="secondary" size="xs">{tag}</Badge>
-              ))}
-              {story.mode && (
-                <Badge color="secondary" size="xs">{story.mode}</Badge>
-              )}
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <ToolbarTitle className="shrink-0">{story.title}</ToolbarTitle>
+                {(story.tags ?? []).map((tag) => (
+                  <Badge key={tag} color="secondary" size="xs">
+                    {tag}
+                  </Badge>
+                ))}
+                {story.mode && (
+                  <Badge color="secondary" size="xs">
+                    {story.mode}
+                  </Badge>
+                )}
+              </div>
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
               {/* Primary action grouped with nearby context (Edit, Record

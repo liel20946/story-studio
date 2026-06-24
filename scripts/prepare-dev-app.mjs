@@ -34,7 +34,7 @@ if (!fs.existsSync(iconSrc)) {
 const electronVersion = JSON.parse(
   fs.readFileSync(path.join(root, "node_modules/electron/package.json"), "utf8"),
 ).version;
-const stamp = `${electronVersion}-${fs.statSync(iconSrc).mtimeMs}-v2`;
+const stamp = `${electronVersion}-${fs.statSync(iconSrc).mtimeMs}-v3`;
 
 if (fs.existsSync(stampFile) && fs.readFileSync(stampFile, "utf8") === stamp && fs.existsSync(devApp)) {
   process.exit(0);
@@ -55,6 +55,12 @@ execSync(`/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${APP_NAME}" "${p
 execSync(`/usr/libexec/PlistBuddy -c "Set :CFBundleName ${APP_NAME}" "${plist}"`);
 execSync(`/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${APP_NAME}" "${plist}"`);
 execSync(`/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.storystudio.app" "${plist}"`);
+
+const skillsSrc = path.join(root, "resources/skills");
+const skillsDest = path.join(devApp, "Contents/Resources/skills");
+if (fs.existsSync(skillsSrc)) {
+  fs.cpSync(skillsSrc, skillsDest, { recursive: true });
+}
 
 fs.writeFileSync(stampFile, stamp);
 console.log(`Prepared ${APP_NAME} dev app bundle`);

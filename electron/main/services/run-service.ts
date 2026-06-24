@@ -1,6 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { RunRecord, RunResult } from "./contract-types.js";
+import { enrichRunResult } from "./run-artifacts.js";
 import { getRunsDir } from "./paths.js";
 
 const RUNS_FILE = () => path.join(getRunsDir(), "runs.json");
@@ -36,7 +37,8 @@ export async function getRun(runId: string): Promise<RunRecord> {
   await load();
   const record = _records.find((r) => r.runId === runId);
   if (!record) throw new Error(`Run not found: ${runId}`);
-  return record;
+  const enriched = await enrichRunResult(record);
+  return { ...record, ...enriched };
 }
 
 // Serialize saves so concurrent runs (the bulk runner finishes several at once)

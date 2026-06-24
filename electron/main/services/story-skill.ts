@@ -16,6 +16,9 @@ stories:
     url: https://example.com/path
     tags: [area, intent]
     mode: recorded | generated
+    variables:
+      login_email: user@example.com
+      login_password: secret
     workflow: |
       Navigate to https://example.com/path
       Verify the page loads successfully
@@ -29,7 +32,7 @@ Rules:
 - Prefer human-facing language over DOM selectors.
 - Keep at least one Verify step per story.
 - For dynamic values (dates, counts, prices, IDs), Verify format/pattern not exact literals.
-- Optional variables block may hold credentials referenced in Fill steps.`;
+- Store typed inputs in a \`variables:\` map and reference them in Fill steps as \`{{variable_name}}\` (e.g. login_email, login_password).`;
 
 // Legacy alias for recording conversion prompts
 export const STORY_FORMAT = BOWSER_STORY_FORMAT;

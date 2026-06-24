@@ -9,6 +9,8 @@ stories:
     url: "https://example.com/path"
     tags: ["area", "intent"]
     mode: "recorded"
+    variables:
+      search_query: "Jerusalem"
     workflow: |
       Navigate to https://example.com/path
       Verify the page loads successfully
@@ -31,7 +33,7 @@ stories:
 
 - `Navigate to https://www.oref.org.il/eng`
 - `Click the "Alerts" link`
-- `Fill the "Search" field with "Jerusalem"`
+- `Fill the "Search" field with "{{search_query}}"`
 - `Verify current alerts are displayed`
 
 ## Bad Steps

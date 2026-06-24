@@ -15,6 +15,14 @@ import {
 import { draftsGet, draftsApprove, draftsDiscard } from "../lib/ipc";
 import { ContentCard } from "../components/content-card";
 
+function formatDraftPreview(md: string): string {
+  return md
+    .split("\n")
+    .filter((line) => !line.startsWith("**Source Recording:**"))
+    .join("\n")
+    .trimEnd();
+}
+
 export function DraftReviewView() {
   const { draftId } = useParams({ from: "/draft/$draftId" });
   const navigate = useNavigate();
@@ -48,55 +56,46 @@ export function DraftReviewView() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <Toolbar>
-        <ToolbarRow>
-          <ToolbarContent>
-            <ToolbarTitle>Review recorded story</ToolbarTitle>
-            <Badge color="secondary" size="xs">{data.siteSlug}</Badge>
-          </ToolbarContent>
-          <ToolbarActions>
-            <Button
-              variant="ghost"
-              size="medium"
-              onClick={() => discardMutation.mutate()}
-              disabled={discardMutation.isPending}
-            >
-              Discard
-            </Button>
-            <Button
-              variant="primary"
-              size="medium"
-              onClick={() => approveMutation.mutate()}
-              disabled={approveMutation.isPending}
-            >
-              Save to library
-            </Button>
-          </ToolbarActions>
-        </ToolbarRow>
-      </Toolbar>
-
-      <ScrollArea className="flex-1">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4">
-          <ContentCard title="Draft preview">
-            <pre className="whitespace-pre-wrap text-[12px] leading-relaxed text-secondary">
-              {data.draftMd}
-            </pre>
-          </ContentCard>
-          <ContentCard title="Workflow (YAML)">
-            <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-secondary">
-              {data.draftYaml}
-            </pre>
-          </ContentCard>
-          {data.recordingSpec && (
-            <ContentCard title="Raw recording">
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-tertiary">
-                {data.recordingSpec.slice(0, 4000)}
-              </pre>
-            </ContentCard>
-          )}
-        </div>
-      </ScrollArea>
-    </div>
+    <ScrollArea
+      toolbar={
+        <Toolbar titlebar surface="main" seamless>
+          <ToolbarRow inset="main" className="detail-view-toolbar">
+            <ToolbarContent className="detail-view-toolbar-content">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <ToolbarTitle>Review recorded story</ToolbarTitle>
+                <Badge color="secondary" size="xs">{data.siteSlug}</Badge>
+              </div>
+            </ToolbarContent>
+            <ToolbarActions className="detail-view-toolbar-actions">
+              <Button
+                variant="glass"
+                size="medium"
+                onClick={() => discardMutation.mutate()}
+                disabled={discardMutation.isPending}
+              >
+                Discard
+              </Button>
+              <Button
+                variant="accent"
+                size="medium"
+                radius="full"
+                onClick={() => approveMutation.mutate()}
+                disabled={approveMutation.isPending}
+              >
+                Save to library
+              </Button>
+            </ToolbarActions>
+          </ToolbarRow>
+        </Toolbar>
+      }
+    >
+      <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4">
+        <ContentCard title="Draft preview">
+          <pre className="whitespace-pre-wrap text-[12px] leading-relaxed text-secondary">
+            {formatDraftPreview(data.draftMd)}
+          </pre>
+        </ContentCard>
+      </div>
+    </ScrollArea>
   );
 }

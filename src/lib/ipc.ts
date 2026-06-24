@@ -58,7 +58,7 @@ export const recordingInstallBrowser = (): Promise<{
 export const recordingStart = (
   name: string,
   url: string,
-): Promise<{ ok: boolean; storyName?: string; draftId?: string; error?: string }> =>
+): Promise<{ ok: boolean; storyName?: string; draftId?: string; error?: string; errorTitle?: string; errorDetail?: string }> =>
   ipcInvoke("recording:start", { name, url });
 
 export const recordingCancel = (): Promise<{ ok: true }> =>
@@ -125,10 +125,10 @@ export function onStoriesChanged(
 }
 
 export function onRecordingProgress(
-  cb: (progress: { phase: string; message: string; draftId?: string }) => void,
+  cb: (progress: import("./contract-types").RecordingProgress) => void,
 ): () => void {
   return window.electronAPI.on("recording:progress", (payload: unknown) =>
-    cb(payload as { phase: string; message: string; draftId?: string }),
+    cb(payload as import("./contract-types").RecordingProgress),
   );
 }
 
