@@ -5,30 +5,47 @@
 // ============================================================================
 
 // ---------- Stories ----------
+export type BowserStoryMode = "recorded" | "generated";
+
 export interface StorySummary {
-  name: string; // kebab-case id = filename without ".story.md"
-  title: string; // frontmatter `title` (fallback: first # heading, fallback: name)
-  baseUrl?: string; // frontmatter `base_url`
-  createdAt: number; // frontmatter `created_at` (fallback: file birthtime / mtime)
+  name: string; // composite: site-slug--story-id
+  title: string;
+  baseUrl?: string;
+  createdAt: number;
   lastRun?: { status: RunStatus; finishedAt: number } | null;
+  siteSlug?: string;
+  storyId?: string;
+  tags?: string[];
+  mode?: BowserStoryMode;
 }
 
 export interface StoryVariable {
   key: string;
   value: string;
-  secret: boolean; // true if key matches /password|secret|token/i
+  secret: boolean;
 }
 
 export interface StoryDetail extends StorySummary {
   filePath: string;
   variables: StoryVariable[];
-  steps: string[]; // ordered step lines (markdown stripped of list numbering)
+  steps: string[];
   assertions: string[];
-  raw: string; // raw .story.md contents (for an optional "source" view)
+  workflow: string[];
+  raw: string;
 }
 
 // ---------- Runs ----------
-export type RunStatus = "passed" | "failed" | "cancelled" | "error";
+export type RunStatus = "passed" | "failed" | "cancelled" | "error" | "blocked";
+
+export interface RunStep {
+  index: number;
+  text: string;
+  status: "passed" | "failed" | "blocked" | "running";
+  startedAt?: string;
+  finishedAt?: string;
+  screenshot?: string | null;
+  error?: string | null;
+}
 
 export type RunEventKind =
   | "navigate"
@@ -70,6 +87,8 @@ export interface RunResult {
   assertions: AssertionResult[];
   screenshotUrl?: string;
   screenshotPath?: string;
+  screenshotPaths?: string[];
+  steps?: RunStep[];
   lastSuccessfulStep?: string;
   startedAt: number;
   finishedAt: number;
@@ -83,8 +102,9 @@ export interface RunRecord extends RunResult {
 
 // ---------- Recording ----------
 export interface RecordingProgress {
-  phase: "starting" | "recording" | "converting" | "done" | "error";
+  phase: "starting" | "recording" | "converting" | "done" | "error" | "review";
   message: string;
+  draftId?: string;
 }
 
 export interface RecordingAvailability {
@@ -105,5 +125,63 @@ export interface AppSettings {
   runsDir: string;
   theme: ThemePreference; // app appearance (dark is the default look)
   startingUrl: string; // pre-filled Start URL when recording a new story
-  runHook: string; // appended to the end of the run prompt sent to the agent
+  runHook: string;
+}
+
+// ---------- Draft review ----------
+export interface StoryDraft {
+  draftId: string;
+  siteSlug: string;
+  artifactDir: string;
+  draftMdPath: string;
+  draftYamlPath: string;
+  recordingSpecPath?: string;
+  createdAt: number;
+}
+
+// ---------- Generate sessions ----------
+export type GenerateMessageRole = "user" | "assistant" | "system";
+
+export interface GenerateMessage {
+  id: string;
+  role: GenerateMessageRole;
+  content: string;
+  ts: number;
+}
+
+export interface GenerateSessionSummary {
+  sessionId: string;
+  siteSlug: string;
+  url: string;
+  status: "idle" | "running" | "ready" | "saved" | "discarded";
+  updatedAt: number;
+  draftStoryId?: string;
+  draftStoryName?: string;
+}
+
+export interface GenerateSessionDetail extends GenerateSessionSummary {
+  artifactDir: string;
+  messages: GenerateMessage[];
+  draftYaml?: string;
+  draftMd?: string;
+  screenshotPaths: string[];
+}
+
+export interface GenerateEvent {
+  sessionId: string;
+  seq: number;
+  ts: number;
+  kind: RunEventKind;
+  label: string;
+  detail?: string;
+  status: "running" | "ok" | "failed";
+}
+
+// ---------- Bulk run options ----------
+export interface BulkRunOptions {
+  storyIds?: string[];
+  tags?: string[];
+  headed?: boolean;
+  baseUrlOverride?: string;
+  maxParallel?: number;
 }

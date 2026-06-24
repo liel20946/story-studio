@@ -12,6 +12,7 @@ import {
   ChevronLeftIcon,
   BookOpenIcon,
   HistoryIcon,
+  MessageSquareIcon,
 } from "lucide-react";
 import {
   Sidebar,
@@ -539,19 +540,21 @@ function SegmentControl({
   value,
   onChange,
 }: {
-  value: "stories" | "runs";
-  onChange: (value: "stories" | "runs") => void;
+  value: "stories" | "generate" | "runs";
+  onChange: (value: "stories" | "generate" | "runs") => void;
 }) {
   const options = [
     { value: "stories" as const, label: "Stories", icon: BookOpenIcon },
+    { value: "generate" as const, label: "Generate", icon: MessageSquareIcon },
     { value: "runs" as const, label: "Runs", icon: HistoryIcon },
   ];
+  const activeIndex = value === "stories" ? 0 : value === "generate" ? 1 : 2;
   return (
     <div
-      className="segment-control"
+      className="segment-control segment-control--three"
       role="tablist"
       aria-label="Sidebar view"
-      data-active-index={value === "stories" ? 0 : 1}
+      data-active-index={activeIndex}
     >
       <span className="segment-control-thumb" aria-hidden />
       {options.map((opt) => {
@@ -613,7 +616,7 @@ export function AppSidebar() {
 
   // Sidebar tab: reusable Stories vs past Runs. Initialised from the current
   // route (opening a history run lands on Runs) then switched manually.
-  const [tab, setTab] = React.useState<"stories" | "runs">(
+  const [tab, setTab] = React.useState<"stories" | "generate" | "runs">(
     activeSelection.historyRunId ? "runs" : "stories",
   );
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -823,15 +826,23 @@ export function AppSidebar() {
       // Bottom-left gear opens in-app settings (same as Cmd+,).
       footer={
         <SidebarFooter className="sidebar-footer-settings mt-auto">
-          <Button
-            variant="transparent"
-            size="small"
-            iconOnly
-            onClick={() => navigate({ to: "/settings", search: { section: "appearance" } })}
-            aria-label="Settings"
-          >
-            <SettingsIcon className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="transparent"
+                size="small"
+                iconOnly
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  navigate({ to: "/settings", search: { section: "appearance" } });
+                }}
+                aria-label="Settings"
+              >
+                <SettingsIcon className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" shortcut={["mod", ","]} />
+          </Tooltip>
         </SidebarFooter>
       }
       // Custom toolbar: traffic-light spacer, then toggle + actions on one row.
@@ -839,7 +850,13 @@ export function AppSidebar() {
         <Toolbar className="border-b-0 bg-surface-sidebar">
           <div className="drag-region sidebar-titlebar-spacer" aria-hidden />
           <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-1.5">
-            <SegmentControl value={tab} onChange={setTab} />
+            <SegmentControl
+              value={tab}
+              onChange={(next) => {
+                setTab(next);
+                if (next === "generate") navigate({ to: "/generate" });
+              }}
+            />
             <div className="ml-auto flex items-center gap-0.5">
               {hasStories && (
                 <Tooltip>
@@ -858,9 +875,7 @@ export function AppSidebar() {
                       <ListChecksIcon className="size-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent shortcut={["shift", "mod", "R"]}>
-                    Run stories
-                  </TooltipContent>
+                  <TooltipContent shortcut={["shift", "mod", "R"]} />
                 </Tooltip>
               )}
               <Tooltip>
@@ -881,9 +896,7 @@ export function AppSidebar() {
                     <FolderPlusIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent shortcut={["shift", "mod", "N"]}>
-                  New section
-                </TooltipContent>
+                <TooltipContent shortcut={["shift", "mod", "N"]} />
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -899,9 +912,7 @@ export function AppSidebar() {
                     <PlusIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent shortcut={["mod", "N"]}>
-                  Record story
-                </TooltipContent>
+                <TooltipContent shortcut={["mod", "N"]} />
               </Tooltip>
             </div>
           </ToolbarRow>
@@ -924,7 +935,13 @@ export function AppSidebar() {
         {/* Keyed by `tab` so the panel re-mounts and replays the crossfade/slide
             animation on every Stories ↔ Runs toggle. */}
         <div key={tab} className="tab-panel-in">
-          {tab === "stories" ? (
+          {tab === "generate" ? (
+            <div className="px-3 py-4">
+              <Text variant="mini" color="tertiary">
+                AI story generation — use the main pane to start or continue a session.
+              </Text>
+            </div>
+          ) : tab === "stories" ? (
             <StoriesTab
               hasStories={hasStories}
               sections={sections}

@@ -19,7 +19,6 @@ import {
   CheckCircle2Icon,
   XCircleIcon,
   XIcon,
-  ImageOffIcon,
   CopyIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -35,7 +34,7 @@ import {
   Text,
   toast,
 } from "@/components/ui";
-import { runsGet, runCancel, runsScreenshot, clipboardWriteText } from "../lib/ipc";
+import { runsGet, runCancel, clipboardWriteText } from "../lib/ipc";
 import { cn } from "@/lib/utils";
 import type {
   RunEvent,
@@ -48,6 +47,7 @@ import { InlineCode } from "../components/inline-code";
 import { useRun } from "../lib/run-store";
 import { formatRunLogs } from "../lib/format-run-logs";
 import { filterTimelineEvents } from "../lib/run-events";
+import { ScreenshotImage } from "../components/screenshot-image";
 
 // ---------- copy run logs (toolbar action) ----------
 function CopyLogsButton({
@@ -212,7 +212,7 @@ function TimelineRow({ event, count = 1 }: { event: RunEvent; count?: number }) 
   return (
     <div className="timeline-row group">
       <div className="timeline-icon-wrap">{eventIcon(event.kind)}</div>
-      <span className="truncate text-[12px] font-medium leading-4 text-primary">
+      <span className="truncate text-[11px] font-medium leading-[15px] text-primary">
         {event.label}
         {count > 1 && (
           <span className="ml-1 tabular-nums text-tertiary">×{count}</span>
@@ -220,7 +220,7 @@ function TimelineRow({ event, count = 1 }: { event: RunEvent; count?: number }) 
       </span>
       <span
         className={cn(
-          "min-w-0 truncate text-[12px] leading-4 text-tertiary",
+          "min-w-0 truncate text-[10px] leading-[13px] text-tertiary",
           !isProse && "font-mono",
         )}
       >
@@ -260,58 +260,100 @@ function ElapsedTimer({ startedAt }: { startedAt: number }) {
   );
 }
 
-// ---------- screenshot with broken/missing fallback ----------
-// The screenshot is loaded on demand over IPC as a base64 data URL (see the
-// `runs:screenshot` handler) rather than via a custom protocol scheme — the
-// scheme races the runtime's webview creation and fails to load most of the
-// time. React Query keys the fetch by path, so state resets cleanly when
-// navigating between runs (no sticky error from a previous failed load).
-function ScreenshotImage({ path }: { path?: string }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["runs:screenshot", path],
-    queryFn: () => runsScreenshot(path as string),
-    enabled: !!path,
-    staleTime: Infinity,
-  });
+// ---------- result panel: Assertions + step-linked screenshots ----------
+function ResultPanel({ result }: { result: RunResult }) {
+  const cancelled = result.status === "cancelled";
+  const stepShots =
+    result.steps?.filter((s) => s.screenshot).map((s) => s.screenshot as string) ?? [];
+  const galleryPaths =
+    stepShots.length > 0
+      ? stepShots
+      : result.screenshotPaths?.length
+        ? result.screenshotPaths
+        : result.screenshotPath
+          ? [result.screenshotPath]
+          : [];
+  const [selected, setSelected] = React.useState(0);
+  const previewPath = galleryPaths[selected] ?? result.screenshotPath;
 
-  if (path && isLoading) {
-    return (
-      <div
-        className="w-full animate-pulse rounded-card border border-separator bg-well"
-        style={{ aspectRatio: "16 / 10" }}
-      />
-    );
-  }
-
-  if (!path || !data?.dataUrl) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-1.5 rounded-card border border-separator bg-well py-8 text-center">
-        <ImageOffIcon className="size-5 text-quaternary" />
-        <span className="text-[11px] leading-[15px] text-tertiary">
-          No screenshot available
-        </span>
-      </div>
-    );
-  }
-
-  // Fill the screenshot rectangle: a fixed-aspect framed box that the image
-  // covers edge-to-edge (top-aligned so the page header / action result shows),
-  // instead of letterboxing inside a contain box.
   return (
-    <div
-      className="w-full overflow-hidden rounded-card border border-separator bg-well"
-      style={{ aspectRatio: "16 / 10" }}
-    >
-      <img
-        src={data.dataUrl}
-        alt="Final run screenshot"
-        className="size-full object-cover object-top"
-      />
-    </div>
+    <>
+      <Section title="Assertions">
+      <div className="flex flex-col">
+        {result.assertions.length > 0 ? (
+          result.assertions.map((a, i) => (
+            <div key={i} className="flex items-start gap-1.5 py-0.5 min-w-0">
+              <div className="min-w-0 flex-1 text-[11px] leading-[15px] text-secondary [&_code]:text-[10px]">
+                <InlineCode text={a.text} />
+              </div>
+              <span className="mt-px flex w-3.5 shrink-0 items-start justify-end">
+                {a.passed ? (
+                  <CheckCircle2Icon className="size-3 text-support-green" />
+                ) : (
+                  <XCircleIcon className="size-3 text-support-red" />
+                )}
+              </span>
+            </div>
+          ))
+        ) : (
+          <Text variant="mini" color="tertiary" className="py-1">
+            No assertions.
+          </Text>
+        )}
+      </div>
+      </Section>
+
+      {!cancelled && (
+        <Section title="Screenshots">
+          <div className="flex flex-col gap-2 py-1">
+            {galleryPaths.length > 1 && (
+              <div className="flex gap-1 overflow-x-auto pb-1">
+                {galleryPaths.map((p, i) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setSelected(i)}
+                    className={cn(
+                      "shrink-0 rounded-control border px-2 py-1 text-[10px]",
+                      i === selected ? "border-support-blue bg-support-blue-10 text-support-blue" : "border-separator text-tertiary",
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+            <ScreenshotImage path={previewPath} alt={`Step ${selected + 1}`} />
+            {result.steps && result.steps.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                {result.steps.map((step) => (
+                  <button
+                    key={step.index}
+                    type="button"
+                    className="flex items-center gap-2 rounded-control px-1 py-0.5 text-left hover:bg-surface-hover"
+                    onClick={() => {
+                      if (step.screenshot) {
+                        const idx = galleryPaths.indexOf(step.screenshot);
+                        if (idx >= 0) setSelected(idx);
+                      }
+                    }}
+                  >
+                    <span className="text-[10px] tabular-nums text-tertiary">{step.index + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-secondary">{step.text}</span>
+                    {step.screenshot ? <ImageIcon className="size-3 shrink-0 text-tertiary" /> : null}
+                  </button>
+                ))}
+              </div>
+            )}
+            {galleryPaths.length === 0 && (
+              <Text variant="mini" color="tertiary">No step screenshots (legacy run)</Text>
+            )}
+          </div>
+        </Section>
+      )}
+    </>
   );
 }
-
-// ---------- run status header (status + time, like the story view) ----------
 // Rendered as the FIRST thing in the run body, above the Actions section.
 // While running it shows a blue "Running" badge + elapsed timer; once finished
 // it shows the run status badge + relative time.
@@ -377,50 +419,7 @@ function Section({
   );
 }
 
-// ---------- result panel: Assertions (banner at end) + Screenshots ----------
-function ResultPanel({ result }: { result: RunResult }) {
-  const cancelled = result.status === "cancelled";
-  return (
-    <>
-      <Section title="Assertions">
-      <div className="flex flex-col">
-        {result.assertions.length > 0 ? (
-          result.assertions.map((a, i) => (
-            <div key={i} className="flex items-start gap-1.5 py-0.5 min-w-0">
-              <div className="min-w-0 flex-1 text-[11px] leading-[15px] text-secondary [&_code]:text-[10px]">
-                <InlineCode text={a.text} />
-              </div>
-              <span className="mt-px flex w-3.5 shrink-0 items-start justify-end">
-                {a.passed ? (
-                  <CheckCircle2Icon className="size-3 text-support-green" />
-                ) : (
-                  <XCircleIcon className="size-3 text-support-red" />
-                )}
-              </span>
-            </div>
-          ))
-        ) : (
-          <Text variant="mini" color="tertiary" className="py-1">
-            No assertions.
-          </Text>
-        )}
-      </div>
-      </Section>
-
-      {/* Screenshots section — skipped for cancelled runs; broken/missing
-          images fall back to an empty state instead of a broken-image icon. */}
-      {!cancelled && (
-        <Section title="Screenshots">
-          <div className="py-1">
-            <ScreenshotImage path={result.screenshotPath} />
-          </div>
-        </Section>
-      )}
-    </>
-  );
-}
-
-// ---------- live run view (reads from the global run store) ----------
+// ---------- run status header (status + time, like the story view) ----------
 function LiveRunView({ runId }: { runId: string }) {
   // Run state lives in the app-root store so it survives navigation away from
   // and back to this view — the timeline keeps accumulating in the background.

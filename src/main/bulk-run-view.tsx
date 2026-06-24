@@ -22,6 +22,7 @@ import {
   Text,
   Checkbox,
   EmptyState,
+  Input,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { storiesList, runBulkStart } from "../lib/ipc";
@@ -220,6 +221,7 @@ export function BulkRunView() {
   const { launched, setLaunched } = useBulkRun();
 
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [tagFilter, setTagFilter] = React.useState("");
   const [isStarting, setIsStarting] = React.useState(false);
 
   // The launched bulk is still in progress while any of its runs has no result.
@@ -322,7 +324,14 @@ export function BulkRunView() {
 
       let bulkLaunched: BulkLaunchedItem[] = [];
       if (toBulk.length > 0) {
-        const { items } = await runBulkStart(toBulk.map((s) => s.name));
+        const tagList = tagFilter
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+        const { items } = await runBulkStart(
+          toBulk.map((s) => s.name),
+          tagList.length ? { tags: tagList } : undefined,
+        );
         for (const item of items) {
           registerRun(item.runId, item.storyName, item.storyTitle);
         }
@@ -380,8 +389,14 @@ export function BulkRunView() {
       toolbar={
         <Toolbar titlebar surface="main" seamless>
           <ToolbarRow inset="main">
-            <ToolbarContent>
+            <ToolbarContent className="gap-3">
               <ToolbarTitle>Run stories</ToolbarTitle>
+              <Input
+                className="max-w-[180px]"
+                placeholder="Filter by tags (comma)"
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+              />
             </ToolbarContent>
             <ToolbarActions>
               {total > 0 && (

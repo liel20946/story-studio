@@ -9,9 +9,10 @@ import { app } from "../electron-api.js";
 import { broadcast as ipcBroadcast } from "../broadcast.js";
 import type { RecordingProgress, RecordingAvailability } from "./contract-types.js";
 import { resolveCodexBinary } from "./codex-runner.js";
+import { createDraftDir, discardDraftDir } from "./stories-service.js";
+import { convertPlaywrightRecording } from "./skills-python.js";
+import { siteSlugFromUrl } from "./bowser-stories-service.js";
 import { getRunsDir } from "./paths.js";
-import { writeStoryFile, renameStory } from "./stories-service.js";
-import { STORY_FORMAT } from "./story-skill.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -204,8 +205,8 @@ function recordingFailureMessage(exitCode: number | null, stderr: string): strin
 export async function startRecording(
   name: string,
   url: string,
-  codexBinaryPath: string | null,
-): Promise<{ ok: boolean; storyName?: string; error?: string }> {
+  _codexBinaryPath: string | null,
+): Promise<{ ok: boolean; storyName?: string; draftId?: string; error?: string }> {
   const runsDir = getRunsDir();
   const ts = Date.now();
   const recScriptPath = path.join(runsDir, `.rec-${ts}.spec.ts`);
@@ -218,16 +219,10 @@ export async function startRecording(
     return { ok: false, error: msg };
   }
 
-  // Step 1: spawn headed playwright codegen
-  const codePath = await resolveCodexBinary(codexBinaryPath).catch(() => null);
-  if (!codePath) {
-    broadcast({ phase: "error", message: "codex binary not found. Cannot convert recording." });
-    return { ok: false, error: "codex binary not resolved" };
-  }
-
+  // Step 1: spawn headed playwright codegen (no codex required for conversion)
   const playwright = resolvePlaywrightInvocation();
 
-  return new Promise<{ ok: boolean; storyName?: string; error?: string }>((resolve) => {
+  return new Promise<{ ok: boolean; storyName?: string; draftId?: string; error?: string }>((resolve) => {
     const codegenArgs = [...playwright.prefixArgs, "codegen", url, "-o", recScriptPath];
     console.log("[recording] spawning playwright codegen", {
       command: playwright.command,
@@ -290,96 +285,31 @@ export async function startRecording(
         return resolve({ ok: false, error: msg });
       }
 
-      // Step 3: convert using codex
-      broadcast({ phase: "converting", message: "Converting to story format with Codex…" });
+      // Step 3: deterministic Python conversion → draft artifacts
+      broadcast({ phase: "converting", message: "Converting recording to story draft…" });
 
-      const convertPrompt =
-        `Convert the following recorded Playwright codegen script into an intent-level story.\n\n` +
-        `${STORY_FORMAT}\n\n` +
-        `Capture variables (login_email, login_password if typed, account_name, other typed values). ` +
-        `Write steps as intent, not raw selectors. ` +
-        `For assertions, NEVER hardcode a value that changes between runs — dates, times, counts, totals, prices, IDs, or confirmation numbers. ` +
-        `Express those as a format/pattern or relative check (e.g. "shows today's date", "displays a price in $0.00 format", "item count is greater than 0", "a non-empty confirmation number is shown") rather than the literal value seen during recording. ` +
-        `Return ONLY the full .story.md file contents as your final message — do not write any file. Script:\n${script}`;
+      const siteSlug = siteSlugFromUrl(url);
+      const draftDir = await createDraftDir(siteSlug);
+      const specCopyPath = path.join(draftDir, "recording.spec.ts");
+      await fs.writeFile(specCopyPath, script, "utf-8");
 
-      const convertArgs = [
-        "exec",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "--json",
-        "--skip-git-repo-check",
-        "-C",
-        runsDir,
-        convertPrompt,
-      ];
+      try {
+        await convertPlaywrightRecording(specCopyPath, draftDir, url, name);
+      } catch (err) {
+        await discardDraftDir(draftDir).catch(() => {});
+        const msg = `Conversion failed: ${String(err)}`;
+        broadcast({ phase: "error", message: msg });
+        return resolve({ ok: false, error: msg });
+      }
 
-      console.log("[recording] spawning codex for conversion", { name, codexBinary: codePath });
-
-      const convertProcess = spawn(codePath, convertArgs, {
-        cwd: runsDir,
-        env: buildEnv(),
-        stdio: ["ignore", "pipe", "pipe"],
+      const draftId = path.basename(draftDir);
+      broadcast({
+        phase: "review",
+        message: "Draft ready for review.",
+        draftId,
       });
-
-      let lastAgentMessage = "";
-      let convertBuffer = "";
-
-      convertProcess.stdout?.on("data", (chunk: Buffer) => {
-        convertBuffer += chunk.toString("utf-8");
-        const lines = convertBuffer.split("\n");
-        convertBuffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const parsed = JSON.parse(line) as Record<string, unknown>;
-            const type = parsed["type"] as string | undefined;
-            if (type === "item.completed") {
-              const item = parsed["item"] as Record<string, unknown> | undefined;
-              if (item?.["type"] === "agent_message") {
-                const text = (item["text"] as string | undefined) ?? "";
-                if (text) lastAgentMessage = text;
-              }
-            }
-          } catch {
-            // ignore
-          }
-        }
-      });
-
-      convertProcess.stderr?.on("data", (chunk: Buffer) => {
-        const text = chunk.toString("utf-8").trim();
-        if (text) console.error("[recording] convert stderr:", text);
-      });
-
-      convertProcess.on("error", async (err) => {
-        console.error("[recording] convert spawn error", err.message);
-        broadcast({ phase: "error", message: `Conversion failed: ${err.message}` });
-        resolve({ ok: false, error: err.message });
-      });
-
-      convertProcess.on("close", async (_code) => {
-        if (!lastAgentMessage.trim()) {
-          const msg = "Codex did not produce story content.";
-          broadcast({ phase: "error", message: msg });
-          return resolve({ ok: false, error: msg });
-        }
-
-        // Step 4: write story file
-        try {
-          await writeStoryFile(name, lastAgentMessage);
-          // Codex generates its own `title:` frontmatter (e.g. "Visit Homepage")
-          // from the recorded actions, which would override the name the user
-          // typed. Force the display title back to the user-provided name so the
-          // saved story matches what they named it.
-          await renameStory(name, name).catch(() => {});
-          broadcast({ phase: "done", message: `Story "${name}" saved.` });
-          console.log("[recording] story written", name);
-          resolve({ ok: true, storyName: name });
-        } catch (err) {
-          const msg = `Failed to write story: ${String(err)}`;
-          broadcast({ phase: "error", message: msg });
-          resolve({ ok: false, error: msg });
-        }
-      });
+      console.log("[recording] draft created", draftId);
+      resolve({ ok: true, draftId });
     });
   });
 }

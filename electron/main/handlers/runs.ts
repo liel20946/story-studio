@@ -8,6 +8,7 @@ import { startBulkRun } from "../services/codex-bulk-runner.js";
 import { startAgentRun, cancelAgentRun } from "../services/agent-runner.js";
 import { resolveAgentBinary } from "../services/agent-provider.js";
 import { buildLastRunMap } from "../services/run-service.js";
+import { formatStoryForRun } from "../services/bowser-stories-service.js";
 import { getRunsDir } from "../services/paths.js";
 import { getSettingsValue } from "./settings.js";
 
@@ -42,7 +43,7 @@ export function registerRunsHandlers(): void {
       runId,
       storyName,
       story.title,
-      story.filePath,
+      formatStoryForRun(story),
       agentBinary,
       settings.runHook,
     ).catch((err) => {
@@ -60,7 +61,10 @@ export function registerRunsHandlers(): void {
     ) {
       throw new Error("run:bulkStart requires { storyNames: string[] }");
     }
-    const { storyNames } = params as { storyNames: string[] };
+    const { storyNames, options } = params as {
+      storyNames: string[];
+      options?: import("../services/contract-types.js").BulkRunOptions;
+    };
     if (storyNames.length === 0) {
       throw new Error("run:bulkStart requires at least one story");
     }
@@ -90,17 +94,28 @@ export function registerRunsHandlers(): void {
 
     for (const storyName of storyNames) {
       const story = await getStory(storyName, lastRunMap);
+      if (options?.storyIds?.length && story.storyId && !options.storyIds.includes(story.storyId)) {
+        continue;
+      }
+      if (options?.tags?.length) {
+        const storyTags = story.tags ?? [];
+        if (!options.tags.some((t) => storyTags.includes(t))) continue;
+      }
       const runId = randomUUID();
       items.push({ storyName, storyTitle: story.title, runId });
       bulkStories.push({
         runId,
         storyName,
         storyTitle: story.title,
-        storyContents: story.raw,
+        storyContents: formatStoryForRun(story),
       });
     }
 
-    startBulkRun(bulkId, bulkStories, agentBinary, settings.runHook).catch((err) => {
+    if (bulkStories.length === 0) {
+      throw new Error("No stories matched the selected filters");
+    }
+
+    startBulkRun(bulkId, bulkStories, agentBinary, settings.runHook, options).catch((err) => {
       console.error("[codex:bulk] unhandled bulk run error", { bulkId, err: String(err) });
     });
 

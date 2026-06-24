@@ -135,6 +135,14 @@
   transform: translateX(var(--segment-size));
 }
 
+.segment-control.segment-control--three {
+  grid-template-columns: var(--segment-size) var(--segment-size) var(--segment-size);
+}
+
+.segment-control.segment-control--three[data-active-index="2"] .segment-control-thumb {
+  transform: translateX(calc(var(--segment-size) * 2));
+}
+
 .dark .segment-control-thumb {
   box-shadow:
     0 1px 2px rgb(0 0 0 / 45%),
@@ -537,8 +545,8 @@
   align-items: center;
   column-gap: 0.5rem;
   padding: 0.35rem 0;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 11px;
+  line-height: 15px;
 }
 
 .timeline-icon-wrap {

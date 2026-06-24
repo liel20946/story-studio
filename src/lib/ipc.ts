@@ -4,10 +4,15 @@
 import type {
   StorySummary,
   StoryDetail,
+  StoryDraft,
   RunResult,
   RunRecord,
   AppSettings,
   RecordingAvailability,
+  DraftDetail,
+  GenerateSessionDetail,
+  GenerateSessionSummary,
+  BulkRunOptions,
 } from "./contract-types";
 
 export function ipcInvoke<Res>(channel: string, req?: unknown): Promise<Res> {
@@ -53,7 +58,7 @@ export const recordingInstallBrowser = (): Promise<{
 export const recordingStart = (
   name: string,
   url: string,
-): Promise<{ ok: boolean; storyName?: string; error?: string }> =>
+): Promise<{ ok: boolean; storyName?: string; draftId?: string; error?: string }> =>
   ipcInvoke("recording:start", { name, url });
 
 export const recordingCancel = (): Promise<{ ok: true }> =>
@@ -64,10 +69,11 @@ export const runStart = (storyName: string): Promise<{ runId: string }> =>
 
 export const runBulkStart = (
   storyNames: string[],
+  options?: BulkRunOptions,
 ): Promise<{
   bulkId: string;
   items: { storyName: string; storyTitle: string; runId: string }[];
-}> => ipcInvoke("run:bulkStart", { storyNames });
+}> => ipcInvoke("run:bulkStart", { storyNames, options });
 
 export const runCancel = (runId: string): Promise<{ ok: true }> =>
   ipcInvoke("run:cancel", { runId });
@@ -119,10 +125,10 @@ export function onStoriesChanged(
 }
 
 export function onRecordingProgress(
-  cb: (progress: { phase: string; message: string }) => void,
+  cb: (progress: { phase: string; message: string; draftId?: string }) => void,
 ): () => void {
   return window.electronAPI.on("recording:progress", (payload: unknown) =>
-    cb(payload as { phase: string; message: string }),
+    cb(payload as { phase: string; message: string; draftId?: string }),
   );
 }
 
@@ -137,5 +143,55 @@ export function onRunEvent(
 export function onRunResult(cb: (result: RunResult) => void): () => void {
   return window.electronAPI.on("run:result", (payload: unknown) =>
     cb(payload as RunResult),
+  );
+}
+
+export const draftsList = () => ipcInvoke<StoryDraft[]>("drafts:list");
+export const draftsGet = (draftId: string) =>
+  ipcInvoke<DraftDetail>("drafts:get", { draftId });
+export const draftsApprove = (draftId: string) =>
+  ipcInvoke<{ ok: true; storyName: string }>("drafts:approve", { draftId });
+export const draftsDiscard = (draftId: string) =>
+  ipcInvoke<{ ok: true }>("drafts:discard", { draftId });
+
+export const storiesMigrateLegacy = () =>
+  ipcInvoke<{ migrated: number; errors: string[] }>("stories:migrateLegacy");
+
+export const generateCreate = (url: string, message?: string) =>
+  ipcInvoke<GenerateSessionDetail>("generate:create", { url, message });
+export const generateList = () =>
+  ipcInvoke<GenerateSessionSummary[]>("generate:list");
+export const generateGet = (sessionId: string) =>
+  ipcInvoke<GenerateSessionDetail>("generate:get", { sessionId });
+export const generateSend = (sessionId: string, message: string) =>
+  ipcInvoke<{ ok: true }>("generate:send", { sessionId, message });
+export const generateCancel = (sessionId: string) =>
+  ipcInvoke<{ ok: true }>("generate:cancel", { sessionId });
+export const generateSave = (sessionId: string) =>
+  ipcInvoke<{ storyName: string }>("generate:save", { sessionId });
+export const generateDiscard = (sessionId: string) =>
+  ipcInvoke<{ ok: true }>("generate:discard", { sessionId });
+
+export function onGenerateEvent(
+  cb: (event: import("./contract-types").GenerateEvent) => void,
+): () => void {
+  return window.electronAPI.on("generate:event", (payload: unknown) =>
+    cb(payload as import("./contract-types").GenerateEvent),
+  );
+}
+
+export function onGenerateDraftUpdated(
+  cb: (payload: { sessionId: string }) => void,
+): () => void {
+  return window.electronAPI.on("generate:draftUpdated", (payload: unknown) =>
+    cb(payload as { sessionId: string }),
+  );
+}
+
+export function onGenerateSessionChanged(
+  cb: (session: GenerateSessionSummary) => void,
+): () => void {
+  return window.electronAPI.on("generate:sessionChanged", (payload: unknown) =>
+    cb(payload as GenerateSessionSummary),
   );
 }

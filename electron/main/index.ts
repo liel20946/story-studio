@@ -9,7 +9,7 @@ import { disableReloadShortcut } from "./windows/disable-reload-shortcut.js";
 import { setMainWindow, navigateMainWindow } from "./windows/main-window.js";
 import { initPaths } from "./services/paths.js";
 import { initSettings } from "./handlers/settings.js";
-import { watchStories, stopWatchingStories } from "./services/stories-service.js";
+import { watchStories, stopWatchingStories, migrateLegacyStories } from "./services/stories-service.js";
 import { listRuns, buildLastRunMap } from "./services/run-service.js";
 import { logger } from "./logger.js";
 import { applyAppBranding, getAppIcon } from "./app-icon.js";
@@ -172,6 +172,10 @@ app.whenReady().then(async () => {
 
   await initPaths();
   await initSettings();
+  const migration = await migrateLegacyStories();
+  if (migration.migrated > 0) {
+    logger.info("main", `Migrated ${migration.migrated} legacy .story.md files to Bowser YAML`);
+  }
   registerHandlers();
   setupApplicationMenu();
   initAutoUpdates();

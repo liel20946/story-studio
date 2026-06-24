@@ -274,6 +274,12 @@ export function StoryView() {
           <ToolbarRow inset="main" className="detail-view-toolbar">
             <ToolbarContent className="detail-view-toolbar-content">
               <ToolbarTitle>{story.title}</ToolbarTitle>
+              {(story.tags ?? []).map((tag) => (
+                <Badge key={tag} color="secondary" size="xs">{tag}</Badge>
+              ))}
+              {story.mode && (
+                <Badge color="secondary" size="xs">{story.mode}</Badge>
+              )}
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
               {/* Primary action grouped with nearby context (Edit, Record
@@ -290,7 +296,7 @@ export function StoryView() {
                     <PencilIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Edit .story.md</TooltipContent>
+                <TooltipContent>Edit site YAML</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>

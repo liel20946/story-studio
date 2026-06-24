@@ -149,6 +149,11 @@ export function RecordView() {
 
   // Navigate to the new story once the recording is saved.
   React.useEffect(() => {
+    if (rec.active && rec.phase === "review" && rec.draftId) {
+      rec.reset();
+      navigate({ to: "/draft/$draftId", params: { draftId: rec.draftId } });
+      return;
+    }
     if (rec.active && rec.phase === "done" && rec.storyName) {
       const name = rec.storyName;
       const t = setTimeout(() => {

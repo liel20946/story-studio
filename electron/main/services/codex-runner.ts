@@ -17,6 +17,13 @@ import { saveRun, buildScreenshotUrl } from "./run-service.js";
 import { getRunsDir } from "./paths.js";
 import { RUN_STORY_PLAYBOOK } from "./story-skill.js";
 import {
+  ensureRunOutputDir,
+  getHeroScreenshotPath,
+  getRunStepsPath,
+  getRunScreenshotsDir,
+  enrichRunResult,
+} from "./run-artifacts.js";
+import {
   acquirePlaywrightSlot,
   releasePlaywrightSlot,
   MAX_CONCURRENT_PLAYWRIGHT,
@@ -256,31 +263,33 @@ export async function startRun(
   };
   _runs.set(runId, state);
   const runsDir = getRunsDir();
+  const runOutputDir = await ensureRunOutputDir(runId);
   const schemaPath = path.join(runsDir, `${runId}.schema.json`);
   const resultPath = path.join(runsDir, `${runId}.result.json`);
-  const screenshotPath = path.join(runsDir, `${runId}.png`);
+  const screenshotPath = getHeroScreenshotPath(runId);
+  const stepsPath = getRunStepsPath(runId);
+  const screenshotsDir = getRunScreenshotsDir(runId);
 
   // codex --output-schema reads this file; it must exist before spawn.
   await fs.writeFile(schemaPath, JSON.stringify(RUN_OUTPUT_SCHEMA), "utf-8");
 
-  // Inline the full story contents into the prompt. The run restricts tool use
-  // to the Playwright MCP, which CANNOT read local files — so passing only a
-  // filesystem path made codex abort ("blocked before execution"). Embedding the
-  // story text means codex never needs filesystem access.
-  const storyContents = await fs.readFile(storyFilePath, "utf-8").catch(() => "");
+  const storyContents = storyFilePath.includes("\n")
+    ? storyFilePath
+    : await fs.readFile(storyFilePath, "utf-8").catch(() => "");
 
-  // Instructions are owned by the app (story-skill.ts), not ~/.codex skills.
   const prompt =
     RUN_STORY_PLAYBOOK +
     `\n\n## This run\n` +
-    `The full story to run is included below. You already have its complete contents, ` +
-    `so do NOT attempt to open or read any local file (the Playwright MCP cannot read local files).\n\n` +
+    `Run output directory: ${runOutputDir}\n` +
+    `Screenshots directory: ${screenshotsDir}\n` +
+    `Steps JSON path: ${stepsPath}\n` +
+    `Hero screenshot path: ${screenshotPath}\n\n` +
+    `The full story to run is included below.\n\n` +
     "```markdown\n" +
     storyContents +
     "\n```\n\n" +
-    `Save the final screenshot to the absolute path ${screenshotPath} (it MUST be inside ${runsDir}). ` +
-    `Populate the required output schema with the verdict, per-assertion evidence, the last successful step, and the screenshot path.` +
-    // Optional user-configured hook, appended verbatim at the very end of the prompt.
+    `Write steps.json to ${stepsPath} and save step screenshots under ${screenshotsDir}. ` +
+    `Set screenshotPath in the output schema to ${screenshotPath} (hero/final image).` +
     (runHook && runHook.trim()
       ? `\n\n## Additional instructions\n${runHook.trim()}`
       : "");
@@ -667,13 +676,10 @@ function buildErrorResult(
 }
 
 async function finalizeRun(result: RunResult, events: RunEvent[]): Promise<RunResult> {
-  // Drop benign codex stderr noise that older builds may have surfaced as rows.
   const timelineEvents = events.filter((e) => !isBenignCodexStderrEvent(e));
   events.length = 0;
   events.push(...timelineEvents);
 
-  // Settle any row still "running" (the Starting row, or a tool call interrupted
-  // by cancellation) so nothing spins forever in the saved/live timeline.
   const settled: RunEvent["status"] =
     result.status === "failed" || result.status === "error" ? "failed" : "ok";
   for (const e of events) {
@@ -682,11 +688,12 @@ async function finalizeRun(result: RunResult, events: RunEvent[]): Promise<RunRe
       broadcast("run:event", { ...e });
     }
   }
-  const record: RunRecord = { ...result, events };
+  const enriched = await enrichRunResult(result);
+  const record: RunRecord = { ...enriched, events };
   await saveRun(record);
-  broadcast("run:result", result);
+  broadcast("run:result", enriched);
   console.log("[codex:run] run finalized", { runId: result.runId, status: result.status });
-  return result;
+  return enriched;
 }
 
 // Optional hook registered by codex-bulk-runner to cancel shared bulk threads.

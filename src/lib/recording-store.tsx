@@ -1,12 +1,5 @@
 // ============================================================================
 // Story Studio — recording store
-// Holds the in-flight recording session (phase + message + result) and owns the
-// single `recording:progress` subscription. RecordView is a route-mounted view
-// that can REMOUNT mid-recording (a remount reset its local phase back to
-// "ready", so the user never saw the recording / Stop & Save state and the
-// session looked stuck). Keeping the session here — outside the ephemeral view,
-// mounted once near the app root — makes recording state survive remounts, the
-// same fix the run-store applies to runs.
 // ============================================================================
 
 import * as React from "react";
@@ -17,24 +10,22 @@ export type RecordingPhase =
   | "starting"
   | "recording"
   | "converting"
+  | "review"
   | "done"
   | "error";
 
 interface RecordingState {
-  /** True from start() until the session is finalized (done/error consumed). */
   active: boolean;
   phase: RecordingPhase;
   message: string;
-  /** Resulting story name once a recording is saved. */
   storyName: string | null;
+  draftId: string | null;
   error: string | null;
 }
 
 interface RecordingValue extends RecordingState {
-  start: (name: string, url: string) => Promise<void>;
-  /** Stop codegen and convert the recording into a story. */
+  start: (name: string, url: string) => Promise<{ draftId?: string } | void>;
   stop: () => Promise<void>;
-  /** Clear the session back to idle (call when the dialog closes). */
   reset: () => void;
 }
 
@@ -43,6 +34,7 @@ const initialState: RecordingState = {
   phase: "idle",
   message: "",
   storyName: null,
+  draftId: null,
   error: null,
 };
 
@@ -51,14 +43,16 @@ const RecordingContext = React.createContext<RecordingValue | null>(null);
 export function RecordingProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = React.useState<RecordingState>(initialState);
 
-  // Subscribe ONCE. Backend broadcasts starting → recording → converting →
-  // done/error; we only apply them while a session is active so stray late
-  // notifications can't resurrect a finished session.
   React.useEffect(() => {
     const unsub = onRecordingProgress((p) => {
       setState((s) => {
         if (!s.active) return s;
-        return { ...s, phase: p.phase as RecordingPhase, message: p.message };
+        return {
+          ...s,
+          phase: p.phase as RecordingPhase,
+          message: p.message,
+          draftId: p.draftId ?? s.draftId,
+        };
       });
     });
     return unsub;
@@ -71,10 +65,20 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
       phase: "starting",
       message: "Starting recording…",
       storyName: null,
+      draftId: null,
       error: null,
     });
     try {
       const res = await recordingStart(name.trim(), url.trim());
+      if (res.ok && res.draftId) {
+        setState((s) => ({
+          ...s,
+          phase: "review",
+          message: "Draft ready for review.",
+          draftId: res.draftId!,
+        }));
+        return { draftId: res.draftId };
+      }
       if (res.ok && res.storyName) {
         setState((s) => ({
           ...s,
@@ -98,8 +102,6 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const stop = React.useCallback(async () => {
-    // The backend SIGTERMs codegen; its close handler reads the recorded script
-    // and proceeds to conversion. Optimistically reflect that here.
     setState((s) => ({
       ...s,
       phase: "converting",

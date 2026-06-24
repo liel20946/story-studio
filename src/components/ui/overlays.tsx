@@ -239,21 +239,24 @@ export const TooltipTrigger = TooltipPrimitive.Trigger;
 export function TooltipContent({
   children,
   shortcut,
+  side = "bottom",
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   shortcut?: ShortcutKey[];
+  side?: React.ComponentProps<typeof TooltipPrimitive.Content>["side"];
 }) {
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
         className="z-[200] rounded-control border border-separator bg-popover px-2 py-1 text-small text-primary shadow-lg"
         sideOffset={6}
-        side="bottom"
+        side={side}
       >
-        <span className="flex items-center gap-2">
-          {children}
-          {shortcut?.length ? <KeyboardShortcut keys={shortcut} /> : null}
-        </span>
+        {shortcut?.length ? (
+          <KeyboardShortcut keys={shortcut} />
+        ) : (
+          children
+        )}
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   );

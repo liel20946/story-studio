@@ -13,6 +13,8 @@ import { RecordView } from "./record-view";
 import { BulkRunView } from "./bulk-run-view";
 import { HomeView } from "./home-view";
 import { SettingsView } from "./settings-view";
+import { DraftReviewView } from "./draft-review-view";
+import { GenerateView } from "./generate-view";
 import { parseSettingsSection } from "../components/settings-sections";
 
 const rootRoute = createRootRouteWithContext<{
@@ -83,6 +85,20 @@ const bulkRunRoute = createRoute({
   staticData: { title: "Run stories" },
 });
 
+const draftReviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/draft/$draftId",
+  component: DraftReviewView,
+  staticData: { title: "Review draft" },
+});
+
+const generateRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/generate",
+  component: GenerateView,
+  staticData: { title: "Generate" },
+});
+
 // "/settings" — in-app settings (Codex-style sidebar + main pane)
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -101,6 +117,8 @@ const routeTree = rootRoute.addChildren([
   historyRunRoute,
   recordRoute,
   bulkRunRoute,
+  draftReviewRoute,
+  generateRoute,
   settingsRoute,
 ]);
 

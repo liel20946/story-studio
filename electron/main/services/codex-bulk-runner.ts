@@ -28,6 +28,8 @@ import {
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
 import { getRunsDir } from "./paths.js";
 import { BULK_RUN_ORCHESTRATOR_PLAYBOOK, RUN_STORY_PLAYBOOK } from "./story-skill.js";
+import type { BulkRunOptions } from "./contract-types.js";
+import { getHeroScreenshotPath, ensureRunOutputDir } from "./run-artifacts.js";
 
 const RUN_MODEL = "gpt-5.5";
 const RUN_REASONING_EFFORT = "medium";
@@ -235,7 +237,10 @@ async function writeChildSchemas(stories: BulkStoryInput[], runsDir: string): Pr
 async function findSubagentSession(agentId: string): Promise<string | null> {
   const root = path.join(os.homedir(), ".codex", "sessions");
   try {
-    const matches = await glob(`**/rollout-*${agentId}.jsonl`, { cwd: root });
+    const matches: string[] = [];
+    for await (const entry of glob(`**/rollout-*${agentId}.jsonl`, { cwd: root })) {
+      matches.push(entry);
+    }
     if (matches.length === 0) return null;
     return path.join(root, matches[matches.length - 1]!);
   } catch {
@@ -374,7 +379,10 @@ async function writeCancelMarker(
 async function findNewestParentSession(sinceMs: number): Promise<string | null> {
   const root = path.join(os.homedir(), ".codex", "sessions");
   try {
-    const matches = await glob("**/rollout-*.jsonl", { cwd: root });
+    const matches: string[] = [];
+    for await (const rel of glob("**/rollout-*.jsonl", { cwd: root })) {
+      matches.push(rel);
+    }
     let best: { path: string; mtime: number } | null = null;
     for (const rel of matches) {
       const full = path.join(root, rel);
@@ -659,15 +667,35 @@ export async function startBulkRun(
   stories: BulkStoryInput[],
   codexBinary: string,
   runHook?: string,
+  options?: BulkRunOptions,
 ): Promise<void> {
   const runsDir = getRunsDir();
   await writeChildSchemas(stories, runsDir);
 
+  const bulkRoot = path.join(runsDir, `bulk-${bulkId}`);
+  await fs.mkdir(bulkRoot, { recursive: true });
+  await fs.writeFile(
+    path.join(bulkRoot, "run-plan.json"),
+    JSON.stringify(
+      {
+        bulkId,
+        startedAt: Date.now(),
+        storyCount: stories.length,
+        options: options ?? {},
+        stories: stories.map((s) => ({ runId: s.runId, storyName: s.storyName, storyTitle: s.storyTitle })),
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
+
   const children = new Map<string, ChildRunState>();
   const startedAt = Date.now();
   for (const s of stories) {
+    await ensureRunOutputDir(s.runId);
     const resultPath = path.join(runsDir, `${s.runId}.result.json`);
-    const screenshotPath = path.join(runsDir, `${s.runId}.png`);
+    const screenshotPath = getHeroScreenshotPath(s.runId);
     children.set(s.runId, {
       runId: s.runId,
       storyName: s.storyName,
