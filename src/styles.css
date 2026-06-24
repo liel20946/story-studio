@@ -806,17 +806,25 @@
   border: none !important;
   border-radius: 0 !important;
   background: transparent !important;
-  color: var(--color-text-secondary);
-  transition: color 120ms ease;
+  color: var(--color-text-primary) !important;
+  opacity: 1 !important;
+  transition: opacity 120ms ease;
+}
+
+.story-studio-toaster [data-sonner-toast] > [data-close-button] {
+  opacity: 1 !important;
 }
 
 .story-studio-toaster [data-sonner-toast] [data-close-button] svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  opacity: 1 !important;
 }
 
 .story-studio-toaster [data-sonner-toast] [data-close-button]:hover {
   background: transparent !important;
-  color: var(--color-text-primary);
+  color: var(--color-text-primary) !important;
+  opacity: 1 !important;
   border-color: transparent !important;
 }

@@ -441,9 +441,9 @@ function HistoryRunRow({
         <SidebarListItemContent>
           <SidebarListItemTitle>{run.storyTitle}</SidebarListItemTitle>
         </SidebarListItemContent>
-        {/* Fixed slot width: per-row `auto` column 2 shrinks with shorter labels
-            (e.g. Passed vs Failed), so left edges drift without a shared width. */}
-        <span className="col-start-2 flex w-[4.5rem] shrink-0 items-center justify-start self-center">
+        {/* Fixed slot width keeps timestamps aligned; badges sit at the trailing
+            edge of the slot so they sit closer to the relative-time column. */}
+        <span className="col-start-2 flex w-[4.5rem] shrink-0 items-center justify-end self-center">
           <StatusPill status={run.status} />
         </span>
         <RowAccessory

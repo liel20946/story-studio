@@ -1,3 +1,4 @@
+import { XIcon } from "lucide-react";
 import { Toaster as Sonner, toast as sonnerToast } from "sonner";
 
 export function Toaster() {
@@ -5,12 +6,23 @@ export function Toaster() {
     <Sonner
       position="bottom-center"
       className="story-studio-toaster"
+      closeButton
       richColors={false}
+      duration={2500}
       gap={10}
       visibleToasts={3}
+      icons={{
+        close: (
+          <XIcon
+            className="size-3.5 shrink-0 text-primary"
+            strokeWidth={2}
+          />
+        ),
+      }}
       toastOptions={{
         classNames: {
           toast: "story-studio-toast",
+          closeButton: "story-studio-toast-close",
         },
       }}
     />

@@ -6,6 +6,8 @@ const SIDEBAR_WIDTH_KEY = "story-studio-sidebar-width-v1";
 const DEFAULT_SIDEBAR_WIDTH = 248;
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 420;
+/** Matches SplitView `gap-x-1.5` — handle sits on the main-pane seam. */
+const SPLIT_GAP_PX = 6;
 
 function readSidebarWidth(): number {
   try {
@@ -88,23 +90,24 @@ export function SplitView({
   const maxWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.round(window.innerWidth * 0.5));
 
   return (
-    <div className={cn("flex h-full min-h-0 gap-x-1.5 bg-surface-sidebar", className)}>
+    <div className={cn("relative flex h-full min-h-0 gap-x-1.5 bg-surface-sidebar", className)}>
       <div
         className="relative shrink-0 min-h-0 flex flex-col bg-surface-sidebar"
         style={{ width }}
       >
         <aside className="min-h-0 flex flex-1 flex-col overflow-hidden">{sidebar}</aside>
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-valuenow={width}
-          aria-valuemin={MIN_SIDEBAR_WIDTH}
-          aria-valuemax={maxWidth}
-          aria-label="Resize sidebar"
-          className="sidebar-resize-handle"
-          onPointerDown={startResize}
-        />
       </div>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-valuenow={width}
+        aria-valuemin={MIN_SIDEBAR_WIDTH}
+        aria-valuemax={maxWidth}
+        aria-label="Resize sidebar"
+        className="sidebar-resize-handle"
+        style={{ left: width + SPLIT_GAP_PX }}
+        onPointerDown={startResize}
+      />
       <main className="main-pane flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
     </div>
   );
