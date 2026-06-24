@@ -1,0 +1,297 @@
+@import "tailwindcss";
+
+@source "../**/*.{ts,tsx}";
+
+@theme inline {
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-control: var(--color-surface-control);
+  --color-control-subtle: var(--color-surface-control-subtle);
+  --color-field: var(--color-border-field);
+  --color-glass: var(--color-surface-control);
+  --color-popover: var(--color-surface-popover);
+  --color-primary: var(--color-text-primary);
+  --color-quaternary: var(--color-text-quaternary);
+  --color-secondary: var(--color-text-secondary);
+  --color-separator: var(--color-border-separator);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-support-blue: var(--blue);
+  --color-support-blue-10: var(--support-blue-10);
+  --color-support-green: var(--green);
+  --color-support-green-10: var(--support-green-10);
+  --color-support-orange: var(--orange);
+  --color-support-orange-10: var(--support-orange-10);
+  --color-support-purple: var(--purple);
+  --color-support-purple-10: var(--support-purple-10);
+  --color-support-red: var(--red);
+  --color-support-red-10: var(--support-red-10);
+  --color-support-yellow: var(--yellow);
+  --color-support-yellow-10: var(--support-yellow-10);
+  --color-tertiary: var(--color-text-tertiary);
+  --color-well: var(--color-surface-well);
+  --font-display: var(--font-family-display);
+  --font-body: var(--font-family-body);
+  --font-mono: var(--font-family-mono);
+}
+
+/* Codex-inspired — true dark, flat surfaces, coral accent */
+:root {
+  --font-family-display: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --font-family-body: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-family-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  --bg: #f5f5f5;
+  --bg-secondary: #ffffff;
+  --bg-elevated: #ffffff;
+  --fg: #0a0a0a;
+  --theme-accent: #ef4444;
+  --accent: var(--theme-accent);
+  --selection: #0a0a0a;
+  --red: #dc3b3b;
+  --orange: #d97706;
+  --yellow: #ca8a04;
+  --green: #16a34a;
+  --blue: #2563eb;
+  --purple: #7c3aed;
+  --magenta: #db2777;
+  --fg-5: rgb(from var(--fg) r g b / 5%);
+  --fg-8: rgb(from var(--fg) r g b / 8%);
+  --fg-12: rgb(from var(--fg) r g b / 12%);
+  --fg-20: rgb(from var(--fg) r g b / 20%);
+  --fg-40: rgb(from var(--fg) r g b / 40%);
+  --fg-55: rgb(from var(--fg) r g b / 55%);
+  --support-blue-10: rgb(from var(--blue) r g b / 10%);
+  --support-green-10: rgb(from var(--green) r g b / 10%);
+  --support-orange-10: rgb(from var(--orange) r g b / 10%);
+  --support-purple-10: rgb(from var(--purple) r g b / 10%);
+  --support-red-10: rgb(239 68 68 / 12%);
+  --support-yellow-10: rgb(from var(--yellow) r g b / 12%);
+  --color-text-primary: var(--fg);
+  --color-text-secondary: var(--fg-55);
+  --color-text-tertiary: var(--fg-40);
+  --color-text-quaternary: var(--fg-20);
+  --color-text-link: var(--accent);
+  --color-surface-control: var(--fg-8);
+  --color-surface-control-subtle: var(--fg-5);
+  --color-surface-hover: var(--fg-8);
+  --color-surface-well: var(--fg-5);
+  --color-surface-sidebar: var(--bg-secondary);
+  --color-surface-popover: var(--bg-elevated);
+  --color-border-separator: var(--fg-12);
+  --color-border-field: var(--fg-20);
+  --color-window-bg: var(--bg);
+  --glass-bg: var(--bg-secondary);
+  --glass-bg-elevated: var(--bg-elevated);
+  --glass-highlight: transparent;
+  --glass-shadow: transparent;
+  --accent-contrast: #ffffff;
+  --accent-glow: rgb(from var(--accent) r g b / 18%);
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --radius-pill: 9999px;
+  --spacing: 0.25rem;
+  --titlebar-inset-left: 78px;
+}
+
+.dark {
+  --bg: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-elevated: #171717;
+  --fg: #ededed;
+  --theme-accent: #ef4444;
+  --selection: #ededed;
+  --red: #ef4444;
+  --orange: #fb923c;
+  --yellow: #facc15;
+  --green: #4ade80;
+  --blue: #60a5fa;
+  --purple: #a78bfa;
+  --magenta: #f472b6;
+  --color-text-secondary: #a1a1a1;
+  --color-text-tertiary: #737373;
+  --color-text-quaternary: #525252;
+  --color-surface-control: #1a1a1a;
+  --color-surface-control-subtle: #141414;
+  --color-surface-hover: #1a1a1a;
+  --color-surface-well: #141414;
+  --color-surface-sidebar: #111111;
+  --color-surface-popover: #171717;
+  --color-border-separator: #262626;
+  --color-border-field: #333333;
+  --color-window-bg: #0a0a0a;
+  --glass-bg: #111111;
+  --glass-bg-elevated: #171717;
+  --accent-contrast: #ffffff;
+  --accent-glow: rgb(from var(--accent) r g b / 22%);
+  --support-red-10: rgb(239 68 68 / 14%);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+#root {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+body {
+  background: var(--color-window-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+  font-size: 12px;
+  line-height: 16px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.titlebar-toolbar {
+  padding-top: calc(var(--spacing) * 1.5);
+}
+
+.titlebar-toolbar-content {
+  padding-left: var(--titlebar-inset-left) !important;
+}
+
+.sidebar-toolbar-actions {
+  box-sizing: border-box;
+  height: calc(var(--spacing) * 11);
+  align-items: center;
+  justify-content: flex-start;
+  gap: calc(var(--spacing) * 1);
+  padding-right: calc(var(--spacing) * 2) !important;
+  padding-left: var(--titlebar-inset-left) !important;
+}
+
+/* Sidebar — clearance for traffic lights, then action icons sit lower */
+.sidebar-titlebar-spacer {
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.sidebar-actions-row {
+  box-sizing: border-box;
+  min-height: 0;
+  align-items: center;
+  gap: calc(var(--spacing) * 0.5);
+  padding-left: calc(var(--spacing) * 2) !important;
+  padding-right: calc(var(--spacing) * 2) !important;
+}
+
+.sidebar-footer-settings {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.25rem 0.5rem 0.75rem 0.5rem;
+}
+
+/* Flat surfaces — no backdrop-filter (Codex-style, avoids GPU compositor bugs) */
+.liquid-glass,
+.liquid-glass-elevated,
+.bg-glass,
+.bg-surface-sidebar,
+.bg-popover {
+  background: var(--glass-bg);
+}
+
+.liquid-glass-edge {
+  box-shadow: none;
+}
+
+.border-field {
+  border-color: var(--color-border-field);
+}
+
+.bg-surface-hover {
+  background-color: var(--color-surface-hover);
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.drag-region button,
+.drag-region a,
+.drag-region input {
+  -webkit-app-region: no-drag;
+}
+
+button:focus {
+  outline: none;
+}
+
+button:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="radio"]:focus-visible {
+  outline: 2px solid rgb(from var(--accent) r g b / 45%);
+  outline-offset: 1px;
+}
+
+.bg-well {
+  background-color: var(--color-surface-well);
+}
+
+.bg-control-subtle {
+  background-color: var(--color-surface-control-subtle);
+}
+
+.bg-control {
+  background-color: var(--color-surface-control);
+}
+
+.border-separator {
+  border-color: var(--color-border-separator);
+}
+
+.text-primary { color: var(--color-text-primary); }
+.text-secondary { color: var(--color-text-secondary); }
+.text-tertiary { color: var(--color-text-tertiary); }
+.text-quaternary { color: var(--color-text-quaternary); }
+.text-accent-contrast { color: var(--accent-contrast); }
+
+/* Accent buttons — contrast text; unlayered so it wins over Tailwind preflight inherit */
+button.bg-accent:not(:disabled) {
+  color: var(--accent-contrast);
+}
+
+button.bg-accent:disabled {
+  color: var(--color-text-tertiary);
+  background-color: var(--color-surface-control);
+}
+.text-support-blue { color: var(--blue); }
+.text-support-green { color: var(--green); }
+.text-support-red { color: var(--red); }
+.text-support-orange { color: var(--orange); }
+.text-support-purple { color: var(--purple); }
+.text-support-yellow { color: var(--yellow); }
+
+.bg-support-blue-10 { background-color: var(--support-blue-10); }
+.bg-support-green-10 { background-color: var(--support-green-10); }
+.bg-support-red-10 { background-color: var(--support-red-10); }
+.bg-support-orange-10 { background-color: var(--support-orange-10); }
+.bg-support-purple-10 { background-color: var(--support-purple-10); }
+.bg-support-yellow-10 { background-color: var(--support-yellow-10); }
+
+.rounded-card { border-radius: var(--radius-card); }
+.rounded-control { border-radius: var(--radius-control); }
+.rounded-pill { border-radius: var(--radius-pill); }
+
+.h-13 { height: calc(var(--spacing) * 11); }
+
+.size-4\.5 {
+  width: calc(var(--spacing) * 4.5);
+  height: calc(var(--spacing) * 4.5);
+}
+
+.font-display {
+  font-family: var(--font-family-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.font-body { font-family: var(--font-family-body); }
+.font-mono { font-family: var(--font-family-mono); }
