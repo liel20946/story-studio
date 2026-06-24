@@ -32,9 +32,26 @@ npm run dist
 
 Output appears in `release/` (`.dmg` and `.zip` for macOS).
 
+## Publish updates (GitHub Releases)
+
+The app checks GitHub Releases for updates on launch and via **Story Studio → Check for Updates…**.
+
+1. Bump `version` in `package.json` (e.g. `1.0.0` → `1.0.1`)
+2. Create a [GitHub personal access token](https://github.com/settings/tokens) with `repo` scope (or run `gh auth login`)
+3. Publish:
+
+```bash
+export GH_TOKEN=ghp_xxxx   # skip if using gh auth login
+npm run dist:publish
+```
+
+This uploads the `.dmg`, `.zip`, and `latest-mac.yml` to a new GitHub Release. Installed copies download updates in the background and prompt to restart.
+
+**First install:** friends still need the `.dmg` once (from the release page, AirDrop, etc.). After that, updates are automatic.
+
 ## Share with friends
 
-- Send the `.dmg` via AirDrop, Google Drive, or GitHub Releases
+- Send the first `.dmg` from [GitHub Releases](https://github.com/liel20946/story-studio/releases) or AirDrop
 - No App Store required
 - Friends need their own Codex CLI setup (the app uses their quota and auth)
 

@@ -16,14 +16,15 @@
  * ```
  */
 
+import { app } from "../electron-api.js";
 import { logger } from "../logger.js";
 
 export const appHandlers = {
   getInfo: async () => {
     logger.info("app", "App info requested");
     return {
-      name: "Story Studio",
-      version: "1.0.0",
+      name: app.getName(),
+      version: app.getVersion(),
       environment: process.env.NODE_ENV || "production",
     };
   },

@@ -14,6 +14,7 @@ import { listRuns, buildLastRunMap } from "./services/run-service.js";
 import { migrateFromGlazeIfNeeded } from "./migrate-data.js";
 import { logger } from "./logger.js";
 import { applyAppBranding, getAppIcon } from "./app-icon.js";
+import { checkForUpdatesManually, initAutoUpdates } from "./services/auto-update-service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -108,6 +109,12 @@ function setupApplicationMenu(): void {
             navigateMainWindow("/settings");
           },
         },
+        {
+          label: "Check for Updates…",
+          click: () => {
+            void checkForUpdatesManually();
+          },
+        },
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -169,6 +176,7 @@ app.whenReady().then(async () => {
   await initSettings();
   registerHandlers();
   setupApplicationMenu();
+  initAutoUpdates();
 
   const runs = await listRuns();
   watchStories(buildLastRunMap(runs));
