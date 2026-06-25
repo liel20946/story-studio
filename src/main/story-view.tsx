@@ -26,6 +26,7 @@ import {
 } from "@/components/ui";
 import {
   storiesGet,
+  storiesList,
   storiesOpenFile,
   clipboardWriteText,
   runStart,
@@ -188,7 +189,22 @@ export function StoryView() {
     placeholderData: keepPreviousData,
   });
 
-  const story = storyQuery.data;
+  const storiesListQuery = useQuery({
+    queryKey: ["stories:list"],
+    queryFn: storiesList,
+  });
+
+  // Deleted stories stay in the stories:get cache (staleTime + keepPreviousData).
+  // Redirect home once the list no longer contains this story.
+  React.useEffect(() => {
+    const stories = storiesListQuery.data;
+    if (!stories) return;
+    if (!stories.some((s) => s.name === name)) {
+      navigate({ to: "/" });
+    }
+  }, [storiesListQuery.data, name, navigate]);
+
+  const story = storyQuery.isError ? undefined : storyQuery.data;
 
   // Stable color per variable name, reused across the Variables list and the
   // inline chips in Steps/Assertions.

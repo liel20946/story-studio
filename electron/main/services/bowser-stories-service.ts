@@ -24,6 +24,21 @@ export interface BowserSiteFile {
   stories: BowserStoryEntry[];
 }
 
+/** Normalize YAML `created_at` (number or numeric string) with a stable fallback. */
+export function resolveCreatedAt(raw: unknown, fallbackMs: number): number {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === "string") {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return fallbackMs;
+}
+
+async function fileTimestampMs(filePath: string): Promise<number> {
+  const stat = await fs.stat(filePath);
+  return stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.mtimeMs;
+}
+
 // Composite name: site-slug--story-id (used in routes and run history)
 export function compositeStoryName(siteSlug: string, storyId: string): string {
   return `${siteSlug}--${storyId}`;
@@ -241,6 +256,7 @@ function entryToDetail(
   filePath: string,
   rawYaml: string,
   lastRun?: StorySummary["lastRun"],
+  fileCreatedAt?: number,
 ): StoryDetail {
   const name = compositeStoryName(siteSlug, entry.id);
   const workflowLines = cleanRecordedSteps(parseWorkflowLines(entry.workflow));
@@ -249,7 +265,7 @@ function entryToDetail(
     name,
     title: entry.name,
     baseUrl: entry.url,
-    createdAt: entry.created_at ?? Date.now(),
+    createdAt: resolveCreatedAt(entry.created_at, fileCreatedAt ?? Date.now()),
     lastRun: lastRun ?? null,
     filePath,
     siteSlug,
@@ -312,7 +328,11 @@ export async function appendStoryToSite(
   if (file.stories.some((s) => s.id === entry.id)) {
     throw new Error(`Story id "${entry.id}" already exists in ${siteSlug}.yaml`);
   }
-  file.stories.push(entry);
+  const toAppend: BowserStoryEntry = {
+    ...entry,
+    created_at: resolveCreatedAt(entry.created_at, Date.now()),
+  };
+  file.stories.push(toAppend);
   await saveSiteFile(siteSlug, file);
 }
 
@@ -369,6 +389,7 @@ export async function listBowserSummaries(
     let raw = "";
     try {
       raw = await fs.readFile(filePath, "utf-8");
+      const fileCreatedAt = await fileTimestampMs(filePath);
       const file = parseYaml(raw) as BowserSiteFile;
       if (!file?.stories) continue;
       for (const story of file.stories) {
@@ -377,7 +398,7 @@ export async function listBowserSummaries(
           name,
           title: story.name,
           baseUrl: story.url,
-          createdAt: story.created_at ?? Date.now(),
+          createdAt: resolveCreatedAt(story.created_at, fileCreatedAt),
           lastRun: lastRunMap.get(name) ?? null,
           siteSlug,
           storyId: story.id,
@@ -402,13 +423,21 @@ export async function getBowserStory(
   }
   const { siteSlug, storyId } = parsed;
   const filePath = siteFilePath(siteSlug);
+  const fileCreatedAt = await fileTimestampMs(filePath);
   const raw = await fs.readFile(filePath, "utf-8");
   const file = parseYaml(raw) as BowserSiteFile;
   const entry = file.stories.find((s) => s.id === storyId);
   if (!entry) {
     throw new Error(`Story not found: ${name}`);
   }
-  return entryToDetail(entry, siteSlug, filePath, raw, lastRunMap.get(name) ?? null);
+  return entryToDetail(
+    entry,
+    siteSlug,
+    filePath,
+    raw,
+    lastRunMap.get(name) ?? null,
+    fileCreatedAt,
+  );
 }
 
 export function storyEntryToMarkdown(entry: BowserStoryEntry): string {
@@ -453,7 +482,9 @@ export function legacyMdToBowserEntry(
     tags: ["migrated"],
     mode: "recorded",
     workflow: workflowLines.join("\n"),
-    created_at: meta["created_at"] ? Number(meta["created_at"]) : Date.now(),
+    created_at: meta["created_at"]
+      ? resolveCreatedAt(meta["created_at"], Date.now())
+      : Date.now(),
   };
   if (variables.length > 0) {
     entry.variables = Object.fromEntries(variables.map((v) => [v.key, v.value]));

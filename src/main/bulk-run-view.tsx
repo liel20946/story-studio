@@ -22,7 +22,7 @@ import {
   Text,
   Checkbox,
   EmptyState,
-  Input,
+  toast,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { storiesList, runBulkStart } from "../lib/ipc";
@@ -221,13 +221,13 @@ export function BulkRunView() {
   const { launched, setLaunched } = useBulkRun();
 
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [tagFilter, setTagFilter] = React.useState("");
   const [isStarting, setIsStarting] = React.useState(false);
 
   // The launched bulk is still in progress while any of its runs has no result.
   // While active we keep showing the dashboard and block starting another bulk.
   const bulkRunning =
     launched != null &&
+    launched.length > 0 &&
     launched.some((item) => !allRuns[item.runId]?.result);
 
   const storiesQuery = useQuery({
@@ -324,30 +324,30 @@ export function BulkRunView() {
 
       let bulkLaunched: BulkLaunchedItem[] = [];
       if (toBulk.length > 0) {
-        const tagList = tagFilter
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean);
-        const { items } = await runBulkStart(
-          toBulk.map((s) => s.name),
-          tagList.length ? { tags: tagList } : undefined,
-        );
+        const { items } = await runBulkStart(toBulk.map((s) => s.name));
         for (const item of items) {
           registerRun(item.runId, item.storyName, item.storyTitle);
         }
         bulkLaunched = items;
       }
 
-      setLaunched([...alreadyRunning, ...bulkLaunched]);
+      const launchedItems = [...alreadyRunning, ...bulkLaunched];
+      if (launchedItems.length === 0) {
+        toast.error("No stories were started");
+        return;
+      }
+      setLaunched(launchedItems);
     } catch (err) {
       console.error("[BulkRunView] bulk run start failed", err);
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message || "Bulk run failed to start");
     } finally {
       setIsStarting(false);
     }
   }
 
   // ----- running dashboard -----
-  if (launched) {
+  if (launched != null && launched.length > 0) {
     return (
       <ScrollArea
         toolbar={
@@ -389,14 +389,8 @@ export function BulkRunView() {
       toolbar={
         <Toolbar titlebar surface="main" seamless>
           <ToolbarRow inset="main">
-            <ToolbarContent className="gap-3">
+            <ToolbarContent>
               <ToolbarTitle>Run stories</ToolbarTitle>
-              <Input
-                className="max-w-[180px]"
-                placeholder="Filter by tags (comma)"
-                value={tagFilter}
-                onChange={(e) => setTagFilter(e.target.value)}
-              />
             </ToolbarContent>
             <ToolbarActions>
               {total > 0 && (

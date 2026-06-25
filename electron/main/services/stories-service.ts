@@ -14,6 +14,7 @@ import {
   compositeStoryName,
   parseCompositeName,
   watchBowserFiles,
+  resolveCreatedAt,
   type BowserStoryEntry,
 } from "./bowser-stories-service.js";
 import { parse as parseYaml } from "yaml";
@@ -148,7 +149,7 @@ export async function importStories(
           name,
           title: story.name,
           baseUrl: story.url,
-          createdAt: story.created_at ?? Date.now(),
+          createdAt: resolveCreatedAt(story.created_at, Date.now()),
           lastRun: lastRunMap.get(name) ?? null,
           siteSlug,
           storyId: story.id,
@@ -174,7 +175,7 @@ export async function importStories(
         name: composite,
         title: entry.name,
         baseUrl: entry.url,
-        createdAt: entry.created_at ?? Date.now(),
+        createdAt: resolveCreatedAt(entry.created_at, Date.now()),
         lastRun: lastRunMap.get(composite) ?? null,
         siteSlug,
         storyId: entry.id,

@@ -8,7 +8,12 @@ import {
   updateStoryVariables,
   renameStory,
 } from "../services/stories-service.js";
-import { listRuns, buildLastRunMap, renameRunsForStory } from "../services/run-service.js";
+import {
+  listRuns,
+  buildLastRunMap,
+  renameRunsForStory,
+  clearRuns,
+} from "../services/run-service.js";
 
 async function getLastRunMap() {
   const runs = await listRuns();
@@ -36,6 +41,11 @@ export function registerStoriesHandlers(): void {
     }
     const { name } = params as { name: string };
     await deleteStory(name);
+    const lastRunMap = await getLastRunMap();
+    const remaining = await listStories(lastRunMap);
+    if (remaining.length === 0) {
+      await clearRuns();
+    }
     return { ok: true as const };
   });
 

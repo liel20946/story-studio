@@ -195,6 +195,15 @@ function formatRelative(epochMs: number): string | undefined {
   return `${days}d`;
 }
 
+// Re-render relative timestamps periodically so "now" advances to "1m", etc.
+function useRelativeTimeTick(intervalMs = 30_000): void {
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), intervalMs);
+    return () => window.clearInterval(id);
+  }, [intervalMs]);
+}
+
 // Shared trailing accessory: fixed-width slot; time and archive occupy the same
 // space (opacity swap) so rows never shift on hover.
 function RowAccessory({
@@ -582,6 +591,7 @@ function SegmentControl({
 export function AppSidebar() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  useRelativeTimeTick();
 
   // Derive the selected row from the router's matched leaf route. Selecting
   // highlight reactive to navigation — previously a `matchRoute` call did not
@@ -757,8 +767,23 @@ export function AppSidebar() {
       console.error("[Sidebar] stories:delete failed", err);
       return;
     }
-    queryClient.invalidateQueries({ queryKey: ["stories:list"] });
-    if (activeSelection.storyName === name) navigate({ to: "/" });
+    queryClient.removeQueries({ queryKey: ["stories:get", name] });
+    const remaining = await queryClient.fetchQuery({
+      queryKey: ["stories:list"],
+      queryFn: storiesList,
+    });
+    if (remaining.length === 0) {
+      queryClient.invalidateQueries({ queryKey: ["runs:list"] });
+    }
+    const viewingDeletedStory = activeSelection.storyName === name;
+    const onStoryDetailRoute = Boolean(
+      activeSelection.storyName ??
+        activeSelection.historyRunId ??
+        activeSelection.liveRunId,
+    );
+    if (viewingDeletedStory || (remaining.length === 0 && onStoryDetailRoute)) {
+      navigate({ to: "/" });
+    }
   }
 
   function renderStoryRow(story: StorySummary) {
