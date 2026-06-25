@@ -277,15 +277,21 @@ function ResultPanel({ result }: { result: RunResult }) {
           : [];
   const [selected, setSelected] = React.useState(0);
   const [lightboxOpen, setLightboxOpen] = React.useState(false);
-  const previewPath = galleryPaths[selected] ?? result.screenshotPath;
-  const hasMultiple = galleryPaths.length > 1;
+  const displayPaths =
+    galleryPaths.length > 0
+      ? galleryPaths
+      : result.screenshotPath
+        ? [result.screenshotPath]
+        : [];
+  const previewPath = displayPaths[selected] ?? result.screenshotPath;
+  const hasMultiple = displayPaths.length > 1;
 
   function goPrev() {
     setSelected((i) => Math.max(0, i - 1));
   }
 
   function goNext() {
-    setSelected((i) => Math.min(galleryPaths.length - 1, i + 1));
+    setSelected((i) => Math.min(displayPaths.length - 1, i + 1));
   }
 
   return (
@@ -338,16 +344,16 @@ function ResultPanel({ result }: { result: RunResult }) {
                   <ChevronLeftIcon className="size-3.5" />
                 </button>
                 <span className="min-w-[3rem] text-center text-[10px] tabular-nums text-tertiary">
-                  {selected + 1} / {galleryPaths.length}
+                  {selected + 1} / {displayPaths.length}
                 </span>
                 <button
                   type="button"
-                  disabled={selected === galleryPaths.length - 1}
+                  disabled={selected === displayPaths.length - 1}
                   onClick={goNext}
                   aria-label="Next screenshot"
                   className={cn(
                     "flex size-6 items-center justify-center rounded-control border border-separator",
-                    selected === galleryPaths.length - 1
+                    selected === displayPaths.length - 1
                       ? "cursor-not-allowed opacity-30"
                       : "hover:bg-surface-hover",
                   )}
@@ -357,13 +363,13 @@ function ResultPanel({ result }: { result: RunResult }) {
               </div>
             )}
             <ScreenshotLightbox
-              paths={galleryPaths}
+              paths={displayPaths}
               index={selected}
               open={lightboxOpen}
               onOpenChange={setLightboxOpen}
               onIndexChange={setSelected}
             />
-            {galleryPaths.length === 0 && (
+            {displayPaths.length === 0 && (
               <Text variant="mini" color="tertiary">No step screenshots (legacy run)</Text>
             )}
           </div>

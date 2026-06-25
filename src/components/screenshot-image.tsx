@@ -1,15 +1,26 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeftIcon, ChevronRightIcon, ImageOffIcon, XIcon } from "lucide-react";
 import { runsScreenshot } from "../lib/ipc";
 import { cn } from "@/lib/utils";
 
+type ScreenshotQueryData = { dataUrl: string | null };
+
+function screenshotQueryKey(path: string) {
+  return ["runs:screenshot", path] as const;
+}
+
 function useScreenshotDataUrl(path?: string) {
+  const queryClient = useQueryClient();
+
   return useQuery({
-    queryKey: ["runs:screenshot", path],
+    queryKey: path ? screenshotQueryKey(path) : ["runs:screenshot", "none"],
     queryFn: () => runsScreenshot(path as string),
     enabled: !!path,
     staleTime: Infinity,
+    gcTime: Infinity,
+    initialData: () =>
+      path ? queryClient.getQueryData<ScreenshotQueryData>(screenshotQueryKey(path)) : undefined,
   });
 }
 
@@ -26,9 +37,11 @@ export function ScreenshotImage({
   className?: string;
   fit?: "cover" | "contain";
 }) {
-  const { data, isLoading } = useScreenshotDataUrl(path);
+  const { data, isPending } = useScreenshotDataUrl(path);
+  const dataUrl = data?.dataUrl ?? null;
+  const canOpen = !!onClick && !!dataUrl;
 
-  if (path && isLoading) {
+  if (path && isPending && !dataUrl) {
     return (
       <div
         className={cn(
@@ -40,7 +53,7 @@ export function ScreenshotImage({
     );
   }
 
-  if (!path || !data?.dataUrl) {
+  if (!path || !dataUrl) {
     return (
       <div className="flex flex-col items-center justify-center gap-1.5 rounded-card border border-separator bg-well py-6 text-center">
         <ImageOffIcon className="size-5 text-quaternary" />
@@ -51,7 +64,7 @@ export function ScreenshotImage({
 
   const image = (
     <img
-      src={data.dataUrl}
+      src={dataUrl}
       alt={alt}
       className={cn(
         "size-full",
@@ -62,11 +75,11 @@ export function ScreenshotImage({
 
   const frameClass = cn(
     "w-full overflow-hidden rounded-card border border-separator bg-well",
-    onClick && "cursor-pointer transition-opacity hover:opacity-90",
+    canOpen && "cursor-pointer transition-opacity hover:opacity-90",
     className,
   );
 
-  if (onClick) {
+  if (canOpen) {
     return (
       <button
         type="button"
@@ -130,8 +143,14 @@ export function ScreenshotLightbox({
   onIndexChange: (index: number) => void;
 }) {
   const path = paths[index];
-  const { data, isLoading } = useScreenshotDataUrl(open ? path : undefined);
+  const { data, isPending } = useScreenshotDataUrl(path);
+  const dataUrl = data?.dataUrl ?? null;
   const hasMultiple = paths.length > 1;
+  const openedAtRef = React.useRef(0);
+
+  React.useEffect(() => {
+    if (open) openedAtRef.current = Date.now();
+  }, [open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -144,6 +163,12 @@ export function ScreenshotLightbox({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, index, paths.length, onOpenChange, onIndexChange]);
 
+  function handleBackdropClose() {
+    // Ignore the same click that opened the lightbox (mouseup lands on the backdrop).
+    if (Date.now() - openedAtRef.current < 400) return;
+    onOpenChange(false);
+  }
+
   if (!open) return null;
 
   return (
@@ -151,7 +176,7 @@ export function ScreenshotLightbox({
       <button
         type="button"
         className="absolute inset-0 bg-black/80"
-        onClick={() => onOpenChange(false)}
+        onClick={handleBackdropClose}
         aria-label="Close screenshot view"
       />
       <button
@@ -173,12 +198,23 @@ export function ScreenshotLightbox({
         </div>
       )}
 
-      <div className="relative z-[1] flex max-h-[90vh] max-w-[90vw] items-center justify-center">
-        {isLoading || !data?.dataUrl ? (
-          <div className="size-[min(90vw,960px)] animate-pulse rounded-card bg-well" style={{ aspectRatio: "16 / 10" }} />
+      <div
+        className="relative z-[1] flex max-h-[90vh] max-w-[90vw] items-center justify-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {isPending && !dataUrl ? (
+          <div
+            className="size-[min(90vw,960px)] animate-pulse rounded-card bg-well"
+            style={{ aspectRatio: "16 / 10" }}
+          />
+        ) : !dataUrl ? (
+          <div className="flex flex-col items-center justify-center gap-2 rounded-card border border-separator bg-well px-8 py-12">
+            <ImageOffIcon className="size-8 text-quaternary" />
+            <span className="text-[12px] text-tertiary">No screenshot</span>
+          </div>
         ) : (
           <img
-            src={data.dataUrl}
+            src={dataUrl}
             alt={`Screenshot ${index + 1}`}
             className="max-h-[90vh] max-w-[90vw] rounded-card object-contain shadow-2xl"
           />
