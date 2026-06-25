@@ -30,6 +30,7 @@ import { getRunsDir } from "./paths.js";
 import { BULK_RUN_ORCHESTRATOR_PLAYBOOK, RUN_STORY_PLAYBOOK } from "./story-skill.js";
 import type { BulkRunOptions } from "./contract-types.js";
 import { getHeroScreenshotPath, ensureRunOutputDir } from "./run-artifacts.js";
+import { buildCodexMcpConfigArgs, ensureCodexProjectConfig } from "./codex-mcp-config.js";
 
 const RUN_MODEL = "gpt-5.5";
 const RUN_REASONING_EFFORT = "medium";
@@ -79,11 +80,18 @@ const _bulkRuns = new Map<string, BulkRunState>();
 const _runToBulk = new Map<string, string>();
 
 function buildEnv(): NodeJS.ProcessEnv {
-  const extraPath = `/opt/homebrew/bin:${path.dirname(process.execPath)}`;
+  const home = os.homedir();
+  const extraPath = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    path.join(home, ".local/bin"),
+    path.join(home, ".npm-global/bin"),
+    path.dirname(process.execPath),
+  ].join(":");
   const existingPath = process.env.PATH ?? "";
   return {
     ...process.env,
-    HOME: os.homedir(),
+    HOME: home,
     PATH: `${extraPath}:${existingPath}`,
   };
 }
@@ -674,6 +682,7 @@ export async function startBulkRun(
 
   const bulkRoot = path.join(runsDir, `bulk-${bulkId}`);
   await fs.mkdir(bulkRoot, { recursive: true });
+  await ensureCodexProjectConfig(runsDir);
   await fs.writeFile(
     path.join(bulkRoot, "run-plan.json"),
     JSON.stringify(
@@ -752,10 +761,7 @@ export async function startBulkRun(
     `model_reasoning_effort="${RUN_REASONING_EFFORT}"`,
     "-c",
     "features.multi_agent=true",
-    "-c",
-    "mcp_servers.node_repl.enabled=false",
-    "-c",
-    'mcp_servers.playwright.args=["@playwright/mcp@latest","--headless","--isolated"]',
+    ...buildCodexMcpConfigArgs(),
     prompt,
   ];
 

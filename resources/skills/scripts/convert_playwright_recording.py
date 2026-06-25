@@ -328,6 +328,36 @@ def clean_recorded_steps(steps: list[str]) -> list[str]:
     return result
 
 
+def ensure_verify_steps(steps: list[str], url: str) -> list[str]:
+    """Add fallback Verify steps when Playwright codegen produced none."""
+    if any(step.startswith("Verify ") for step in steps):
+        return steps
+
+    result = list(steps)
+    first_nav = next((i for i, step in enumerate(result) if step.startswith("Navigate to ")), None)
+    if first_nav is not None:
+        result.insert(first_nav + 1, "Verify the page loads successfully")
+    else:
+        result.insert(0, f"Navigate to {url}")
+        result.insert(1, "Verify the page loads successfully")
+
+    last_url: str | None = None
+    for step in result:
+        if step.startswith("Navigate to "):
+            last_url = step.removeprefix("Navigate to ").strip()
+
+    if last_url:
+        parsed = urlparse(last_url)
+        if parsed.path and parsed.path not in ("/", ""):
+            result.append(f'Verify the current URL contains "{parsed.path}"')
+        else:
+            result.append("Verify the expected page state is visible")
+    else:
+        result.append("Verify the expected page state is visible")
+
+    return result
+
+
 def infer_variable_key(target: str, value: str) -> str:
     lowered = target.lower()
     if "password" in lowered:
@@ -486,6 +516,7 @@ def convert_recording_file(
     story_id = derive_story_id(detected_url, final_name)
     tags = derive_tags(detected_url, final_name)
     steps = clean_recorded_steps(steps)
+    steps = ensure_verify_steps(steps, detected_url)
     steps, variables = apply_variables_to_steps(steps)
 
     return {

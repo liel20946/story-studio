@@ -141,28 +141,39 @@ export function cleanRecordedSteps(steps: string[]): string[] {
   return result;
 }
 
-function collapseNumberedVariables(variables: Record<string, string>): Record<string, string> {
-  const groups = new Map<string, Array<[string, string]>>();
-  for (const [key, value] of Object.entries(variables)) {
-    const base = key.replace(/_\d+$/, "");
-    const list = groups.get(base) ?? [];
-    list.push([key, value]);
-    groups.set(base, list);
+/** Add fallback Verify steps when a recorded workflow has actions but no assertions. */
+export function ensureVerifyStepsInWorkflow(lines: string[], baseUrl: string): string[] {
+  if (lines.some((l) => /^verify\b/i.test(l))) return lines;
+
+  const result = [...lines];
+  const firstNav = result.findIndex((l) => l.startsWith("Navigate to "));
+  if (firstNav >= 0) {
+    result.splice(firstNav + 1, 0, "Verify the page loads successfully");
+  } else if (baseUrl) {
+    result.unshift(`Navigate to ${baseUrl}`, "Verify the page loads successfully");
+  } else {
+    result.unshift("Verify the page loads successfully");
   }
 
-  const merged: Record<string, string> = {};
-  for (const [base, entries] of groups) {
-    if (entries.length === 1) {
-      merged[entries[0][0]] = entries[0][1];
-      continue;
+  let lastUrl = baseUrl;
+  for (const line of result) {
+    if (line.startsWith("Navigate to ")) {
+      lastUrl = line.slice("Navigate to ".length).trim();
     }
-    const sorted = [...entries].sort((a, b) => {
-      const suffix = (key: string) => (key === base ? 1 : Number.parseInt(key.slice(base.length + 1), 10));
-      return suffix(a[0]) - suffix(b[0]);
-    });
-    merged[base] = sorted[sorted.length - 1][1];
   }
-  return merged;
+
+  try {
+    const pathname = new URL(lastUrl).pathname;
+    if (pathname && pathname !== "/") {
+      result.push(`Verify the current URL contains "${pathname}"`);
+    } else {
+      result.push("Verify the expected page state is visible");
+    }
+  } catch {
+    result.push("Verify the expected page state is visible");
+  }
+
+  return result;
 }
 
 export function splitWorkflowSteps(workflowLines: string[]): {
@@ -234,15 +245,31 @@ export function inferVariablesFromWorkflow(workflow: string): Record<string, str
   return variables;
 }
 
+/** Collect {{variable}} names referenced in workflow lines. */
+function collectPlaceholderVariables(workflowLines: string[]): Record<string, string> {
+  const variables: Record<string, string> = {};
+  const placeholderRe = /\{\{(\w+)\}\}/g;
+  for (const line of workflowLines) {
+    for (const match of line.matchAll(placeholderRe)) {
+      const key = match[1];
+      if (key && variables[key] === undefined) {
+        variables[key] = "";
+      }
+    }
+  }
+  return variables;
+}
+
 function parseVariablesFromEntry(
   entry: BowserStoryEntry,
   workflowLines: string[],
 ): StoryVariable[] {
   const explicit = entry.variables ?? {};
-  const merged =
+  const inferred =
     Object.keys(explicit).length > 0
-      ? collapseNumberedVariables(explicit)
+      ? explicit
       : inferVariablesFromWorkflow(workflowLines.join("\n"));
+  const merged = { ...inferred, ...collectPlaceholderVariables(workflowLines) };
   return Object.entries(merged).map(([key, value]) => ({
     key,
     value,
@@ -259,7 +286,10 @@ function entryToDetail(
   fileCreatedAt?: number,
 ): StoryDetail {
   const name = compositeStoryName(siteSlug, entry.id);
-  const workflowLines = cleanRecordedSteps(parseWorkflowLines(entry.workflow));
+  const workflowLines = ensureVerifyStepsInWorkflow(
+    cleanRecordedSteps(parseWorkflowLines(entry.workflow)),
+    entry.url,
+  );
   const { steps, assertions } = splitWorkflowSteps(workflowLines);
   return {
     name,
@@ -494,7 +524,9 @@ export function legacyMdToBowserEntry(
 
 /** Format a story for agent run prompts (inline markdown). */
 export function formatStoryForRun(story: StoryDetail): string {
-  const lines = story.workflow.length > 0 ? story.workflow : [...story.steps, ...story.assertions];
+  const rawLines =
+    story.workflow.length > 0 ? story.workflow : [...story.steps, ...story.assertions];
+  const lines = ensureVerifyStepsInWorkflow(rawLines, story.baseUrl ?? "");
   const vars =
     story.variables.length > 0
       ? `\n## Variables\n${story.variables.map((v) => `- ${v.key}: ${v.value}`).join("\n")}\n`

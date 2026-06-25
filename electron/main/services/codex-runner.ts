@@ -28,6 +28,7 @@ import {
   releasePlaywrightSlot,
   MAX_CONCURRENT_PLAYWRIGHT,
 } from "./playwright-slots.js";
+import { buildCodexMcpConfigArgs, ensureCodexProjectConfig } from "./codex-mcp-config.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -146,11 +147,18 @@ export async function resolveCodexBinary(customPath: string | null): Promise<str
 
 // ---------- Spawn env ----------
 function buildEnv(): NodeJS.ProcessEnv {
-  const extraPath = `/opt/homebrew/bin:${path.dirname(process.execPath)}`;
+  const home = os.homedir();
+  const extraPath = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    path.join(home, ".local/bin"),
+    path.join(home, ".npm-global/bin"),
+    path.dirname(process.execPath),
+  ].join(":");
   const existingPath = process.env.PATH ?? "";
   return {
     ...process.env,
-    HOME: os.homedir(),
+    HOME: home,
     PATH: `${extraPath}:${existingPath}`,
   };
 }
@@ -272,6 +280,7 @@ export async function startRun(
 
   // codex --output-schema reads this file; it must exist before spawn.
   await fs.writeFile(schemaPath, JSON.stringify(RUN_OUTPUT_SCHEMA), "utf-8");
+  await ensureCodexProjectConfig(runsDir);
 
   const storyContents = storyFilePath.includes("\n")
     ? storyFilePath
@@ -307,22 +316,7 @@ export async function startRun(
     `model="${RUN_MODEL}"`,
     "-c",
     `model_reasoning_effort="${RUN_REASONING_EFFORT}"`,
-    // Disable Codex's local browser backend for the run. The "node_repl" Browser
-    // plugin (advertises chrome/iab backends) can pop a visible browser; the run
-    // only needs the playwright MCP, so turning it off keeps it out of sight.
-    "-c",
-    "mcp_servers.node_repl.enabled=false",
-    // Force the "playwright" MCP server (@playwright/mcp) to run HEADLESS and
-    // ISOLATED. By default @playwright/mcp launches a VISIBLE Chromium window
-    // (the "--no-sandbox" tab the user sees) using a SHARED on-disk profile;
-    // that shared profile is locked by the first browser, so a second concurrent
-    // run could not launch its browser — which is why bulk runs only made one
-    // story progress at a time. `--isolated` gives each run an in-memory profile
-    // (no shared lock, auto-cleaned), so runs are genuinely parallel; `--headless`
-    // keeps the browser off-screen. Codex merges this -c override into the server's
-    // config.toml entry, replacing only its args.
-    "-c",
-    'mcp_servers.playwright.args=["@playwright/mcp@latest","--headless","--isolated"]',
+    ...buildCodexMcpConfigArgs(),
     "--output-schema",
     schemaPath,
     "-o",
