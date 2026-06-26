@@ -1,6 +1,5 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import * as fs from "fs/promises";
 import * as path from "path";
 import { getSkillsScriptsDir } from "./skills-paths.js";
 
@@ -17,31 +16,6 @@ export async function runPythonScript(
     timeout: options?.timeout ?? 120_000,
     maxBuffer: 10 * 1024 * 1024,
   });
-}
-
-export async function convertPlaywrightRecording(
-  specPath: string,
-  outputDir: string,
-  url: string,
-  name?: string,
-): Promise<{ draftMd: string; draftYaml: string }> {
-  await fs.mkdir(outputDir, { recursive: true });
-  const mdOut = path.join(outputDir, "draft.story.md");
-  const yamlOut = path.join(outputDir, "draft.story.yaml");
-  const args = [
-    specPath,
-    "--url",
-    url,
-    "--markdown-output",
-    mdOut,
-    "--yaml-output",
-    yamlOut,
-  ];
-  if (name) args.push("--name", name);
-  await runPythonScript("convert_playwright_recording.py", args);
-  const draftMd = await fs.readFile(mdOut, "utf-8");
-  const draftYaml = await fs.readFile(yamlOut, "utf-8");
-  return { draftMd, draftYaml };
 }
 
 export async function promoteReviewedStory(draftDir: string): Promise<void> {

@@ -4,6 +4,7 @@ import {
   installBrowser,
   startRecording,
   cancelRecording,
+  abortRecording,
 } from "../services/recording-service.js";
 import { getSettingsValue } from "./settings.js";
 
@@ -24,15 +25,26 @@ export function registerRecordingHandlers(): void {
       typeof (params as Record<string, unknown>)["name"] !== "string" ||
       typeof (params as Record<string, unknown>)["url"] !== "string"
     ) {
-      throw new Error("recording:start requires { name: string; url: string }");
+      throw new Error(
+        "recording:start requires { name: string; url: string; overwriteStoryKey?: string }",
+      );
     }
-    const { name, url } = params as { name: string; url: string };
+    const { name, url, overwriteStoryKey } = params as {
+      name: string;
+      url: string;
+      overwriteStoryKey?: string;
+    };
     const settings = getSettingsValue();
-    return startRecording(name, url, settings.codexBinaryPath);
+    return startRecording(name, url, settings.codexBinaryPath, overwriteStoryKey);
   });
 
   ipcMain.handle("recording:cancel", async () => {
     await cancelRecording();
+    return { ok: true as const };
+  });
+
+  ipcMain.handle("recording:abort", async () => {
+    await abortRecording();
     return { ok: true as const };
   });
 }

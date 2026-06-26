@@ -17,9 +17,17 @@ import {
   toast,
 } from "@/components/ui";
 import { applyTheme } from "../lib/theme";
-import { settingsGet, settingsSet, storiesImport, closeSettings } from "../lib/ipc";
+import {
+  settingsGet,
+  settingsSet,
+  storiesImport,
+  storiesExport,
+  closeSettings,
+} from "../lib/ipc";
 import type { AppSettings, ThemePreference } from "../lib/contract-types";
-import { FolderOpenIcon, Loader2Icon } from "lucide-react";
+import { shouldIgnoreEscapeKey } from "../lib/escape-key";
+import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
+import { FolderDownIcon, FolderOpenIcon, Loader2Icon } from "lucide-react";
 
 /** Standalone settings window (legacy). Main app uses `main/settings-view.tsx`. */
 export function SettingsWindowView() {
@@ -27,25 +35,11 @@ export function SettingsWindowView() {
   const [startingUrl, setStartingUrl] = useState<string>("");
   const [runHook, setRunHook] = useState<string>("");
   const [isImporting, setIsImporting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (event.defaultPrevented) return;
-
-      const el = document.activeElement;
-      if (
-        el instanceof HTMLInputElement ||
-        el instanceof HTMLTextAreaElement ||
-        el instanceof HTMLSelectElement ||
-        (el instanceof HTMLElement && el.isContentEditable)
-      ) {
-        return;
-      }
-
-      if (document.querySelector("[data-radix-popper-content-wrapper]")) {
-        return;
-      }
+      if (shouldIgnoreEscapeKey(event)) return;
 
       event.preventDefault();
       void closeSettings();
@@ -78,7 +72,7 @@ export function SettingsWindowView() {
       const updated = await settingsSet({ theme });
       setAppSettings(updated);
     } catch (error) {
-      toast.error(`Failed to set theme: ${error}`);
+      reportAppErrorFromUnknown("Failed to set theme", error);
     }
   };
 
@@ -89,7 +83,7 @@ export function SettingsWindowView() {
       const updated = await settingsSet({ startingUrl: next });
       setAppSettings(updated);
     } catch (err) {
-      toast.error(`Failed to save: ${err}`);
+      reportAppErrorFromUnknown("Failed to save", err);
     }
   };
 
@@ -99,7 +93,7 @@ export function SettingsWindowView() {
       const updated = await settingsSet({ runHook });
       setAppSettings(updated);
     } catch (err) {
-      toast.error(`Failed to save: ${err}`);
+      reportAppErrorFromUnknown("Failed to save", err);
     }
   };
 
@@ -127,9 +121,30 @@ export function SettingsWindowView() {
           : `Imported ${imported.length} stories.`,
       );
     } catch (err) {
-      toast.error(`Import failed: ${err}`);
+      reportAppErrorFromUnknown("Import failed", err);
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const result = await storiesExport();
+      if (result.canceled) return;
+      if (result.fileCount === 0) {
+        reportAppError("No .yaml files to export.");
+        return;
+      }
+      toast.success(
+        result.fileCount === 1
+          ? "Exported 1 .yaml file."
+          : `Exported ${result.fileCount} .yaml files.`,
+      );
+    } catch (err) {
+      reportAppErrorFromUnknown("Export failed", err);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -138,8 +153,8 @@ export function SettingsWindowView() {
       className="h-full min-h-0"
       toolbar={
         <Toolbar titlebar surface="main">
-          <ToolbarRow className="h-auto">
-            <ToolbarContent className="titlebar-toolbar-content">
+          <ToolbarRow className="main-titlebar-row">
+            <ToolbarContent className="titlebar-toolbar-content detail-view-toolbar-content">
               <ToolbarTitle>Settings</ToolbarTitle>
             </ToolbarContent>
           </ToolbarRow>
@@ -205,12 +220,15 @@ export function SettingsWindowView() {
               />
             </Field>
 
-            <Field label="Import stories">
+            <Field
+              label="Import stories"
+              description="Import .yaml files from your computer."
+            >
               <Button
                 variant="filled"
                 size="medium"
                 onClick={handleImport}
-                disabled={isImporting}
+                disabled={isImporting || isExporting}
               >
                 {isImporting ? (
                   <Loader2Icon className="size-4 animate-spin" />
@@ -218,6 +236,25 @@ export function SettingsWindowView() {
                   <FolderOpenIcon className="size-4" />
                 )}
                 {isImporting ? "Importing…" : "Select files"}
+              </Button>
+            </Field>
+
+            <Field
+              label="Export stories"
+              description="Copy all .yaml files to a folder on your computer."
+            >
+              <Button
+                variant="filled"
+                size="medium"
+                onClick={handleExport}
+                disabled={isImporting || isExporting}
+              >
+                {isExporting ? (
+                  <Loader2Icon className="size-4 animate-spin" />
+                ) : (
+                  <FolderDownIcon className="size-4" />
+                )}
+                {isExporting ? "Exporting…" : "Choose folder"}
               </Button>
             </Field>
           </FieldGroup>

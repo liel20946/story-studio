@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useParams } from "@tanstack/react-router";
+import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
   Link2Icon,
@@ -22,6 +22,7 @@ import {
   CopyIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  BookOpenIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -36,20 +37,23 @@ import {
   Text,
   toast,
 } from "@/components/ui";
-import { runsGet, runCancel, clipboardWriteText } from "../lib/ipc";
+import { runsGet, runCancel, clipboardWriteText, runsLiveScreenshots } from "../lib/ipc";
 import { cn } from "@/lib/utils";
+import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type {
   RunEvent,
   RunEventKind,
   RunResult,
   RunRecord,
   RunStatus,
+  AgentProvider,
 } from "../lib/contract-types";
-import { InlineCode } from "../components/inline-code";
+import { formatAgentModelLabel, formatAgentProviderLabel } from "../lib/agent-config";
 import { useRun } from "../lib/run-store";
 import { formatRunLogs } from "../lib/format-run-logs";
 import { filterTimelineEvents } from "../lib/run-events";
 import { ScreenshotImage, ScreenshotLightbox } from "../components/screenshot-image";
+import { RailAssertionLine } from "../components/rail-assertion-line";
 
 // ---------- copy run logs (toolbar action) ----------
 function CopyLogsButton({
@@ -93,15 +97,14 @@ function CopyLogsButton({
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1200);
     } catch (err) {
-      console.error("[RunView] clipboard:writeText failed", err);
-      toast.error("Failed to copy logs");
+      reportAppErrorFromUnknown("Failed to copy logs", err);
     }
   }
 
   return (
     <Button
       variant="glass"
-      size="small"
+      size="titlebar"
       onClick={handleCopy}
       aria-label="Copy run logs"
     >
@@ -111,14 +114,32 @@ function CopyLogsButton({
   );
 }
 
+// ---------- jump back to the story detail from a run ----------
+function ViewStoryButton({ storyName }: { storyName?: string }) {
+  const navigate = useNavigate();
+  if (!storyName) return null;
+  return (
+    <Button
+      variant="filled"
+      size="titlebar"
+      radius="full"
+      onClick={() =>
+        navigate({ to: "/story/$name", params: { name: storyName } })
+      }
+    >
+      <BookOpenIcon className="size-4" />
+      View story
+    </Button>
+  );
+}
+
 // ---------- status helpers (mirrors story-view) ----------
-// ---------- status helpers (mirrors story-view) ----------
-function statusColor(status: RunStatus): "green" | "red" | "secondary" {
+function statusColor(status: RunStatus): "green" | "red" | "neutral" {
   switch (status) {
     case "passed":
       return "green";
     case "cancelled":
-      return "secondary";
+      return "neutral";
     default:
       return "red";
   }
@@ -134,6 +155,8 @@ function statusLabel(status: RunStatus): string {
       return "Error";
     case "cancelled":
       return "Cancelled";
+    case "blocked":
+      return "Blocked";
   }
 }
 
@@ -185,8 +208,7 @@ function eventIcon(kind: RunEventKind): React.ReactNode {
 }
 
 // Collapse consecutive events that read as the same action (same kind + same
-// detail + same label) into one row, so a run of identical "Thinking" rows —
-// or any repeated action — shows once with a ×N count instead of stacking up.
+// detail + same label) into one row with a ×N count instead of stacking up.
 // The merged row keeps the first event's identity but adopts the LAST event's
 // status (so a still-running tail stays a spinner).
 function collapseEvents(events: RunEvent[]): { event: RunEvent; count: number }[] {
@@ -229,12 +251,12 @@ function TimelineRow({ event, count = 1 }: { event: RunEvent; count?: number }) 
         {event.detail ?? ""}
       </span>
       <span className="flex shrink-0 items-center justify-end">
-        {event.status === "running" ? (
-          <Loader2Icon className="size-3.5 animate-spin text-tertiary" />
-        ) : event.status === "ok" ? (
+        {event.status === "ok" ? (
           <CheckCircle2Icon className="size-3.5 text-support-green" />
         ) : event.status === "failed" ? (
           <XCircleIcon className="size-3.5 text-support-red" />
+        ) : event.status === "cancelled" ? (
+          <XIcon className="size-3.5 text-secondary" />
         ) : null}
       </span>
     </div>
@@ -242,7 +264,13 @@ function TimelineRow({ event, count = 1 }: { event: RunEvent; count?: number }) 
 }
 
 // ---------- elapsed timer ----------
-function ElapsedTimer({ startedAt }: { startedAt: number }) {
+function ElapsedTimer({
+  startedAt,
+  className,
+}: {
+  startedAt: number;
+  className?: string;
+}) {
   const [elapsed, setElapsed] = React.useState(0);
 
   React.useEffect(() => {
@@ -255,10 +283,165 @@ function ElapsedTimer({ startedAt }: { startedAt: number }) {
   const m = Math.floor(elapsed / 60);
   const s = elapsed % 60;
   return (
-    <span className="tabular-nums text-[10px] leading-none text-tertiary">
+    <span
+      className={cn(
+        "tabular-nums text-[10px] leading-none text-tertiary",
+        className,
+      )}
+    >
       {m > 0 ? `${m}m ` : ""}
       {s}s
     </span>
+  );
+}
+
+function AgentPills({
+  agentProvider,
+  agentModel,
+}: {
+  agentProvider?: AgentProvider;
+  agentModel?: string;
+}) {
+  if (!agentProvider && !agentModel) return null;
+  return (
+    <>
+      {agentProvider ? (
+        <Badge
+          color={agentProvider === "claude-code" ? "orange" : "blue"}
+          size="xs"
+        >
+          {formatAgentProviderLabel(agentProvider)}
+        </Badge>
+      ) : null}
+      {agentModel ? (
+        <Badge color="purple" size="xs">
+          {formatAgentModelLabel(agentProvider ?? "codex", agentModel)}
+        </Badge>
+      ) : null}
+    </>
+  );
+}
+
+// ---------- screenshot gallery (shared by live + finished runs) ----------
+function ScreenshotsGallery({
+  paths,
+  selected,
+  onSelectedChange,
+}: {
+  paths: string[];
+  selected: number;
+  onSelectedChange: (index: number) => void;
+}) {
+  const [lightboxOpen, setLightboxOpen] = React.useState(false);
+  const previewPath = paths[selected];
+
+  if (paths.length === 0) return null;
+
+  function goPrev() {
+    onSelectedChange(Math.max(0, selected - 1));
+  }
+
+  function goNext() {
+    onSelectedChange(Math.min(paths.length - 1, selected + 1));
+  }
+
+  return (
+    <div className="flex flex-col gap-2 py-1">
+      <ScreenshotImage
+        path={previewPath}
+        alt={`Step ${selected + 1}`}
+        onClick={previewPath ? () => setLightboxOpen(true) : undefined}
+      />
+      <div className="flex items-center justify-center gap-2">
+        <button
+          type="button"
+          disabled={selected === 0}
+          onClick={goPrev}
+          aria-label="Previous screenshot"
+          className={cn(
+            "flex size-6 items-center justify-center rounded-control border border-separator",
+            selected === 0 ? "cursor-not-allowed opacity-30" : "hover:bg-surface-hover",
+          )}
+        >
+          <ChevronLeftIcon className="size-3.5" />
+        </button>
+        <span className="min-w-[3rem] text-center text-[10px] tabular-nums text-tertiary">
+          {selected + 1} / {paths.length}
+        </span>
+        <button
+          type="button"
+          disabled={selected === paths.length - 1}
+          onClick={goNext}
+          aria-label="Next screenshot"
+          className={cn(
+            "flex size-6 items-center justify-center rounded-control border border-separator",
+            selected === paths.length - 1
+              ? "cursor-not-allowed opacity-30"
+              : "hover:bg-surface-hover",
+          )}
+        >
+          <ChevronRightIcon className="size-3.5" />
+        </button>
+      </div>
+      <ScreenshotLightbox
+        paths={paths}
+        index={selected}
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        onIndexChange={onSelectedChange}
+      />
+    </div>
+  );
+}
+
+function useLiveRunScreenshotPaths(runId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["runs:liveScreenshots", runId],
+    queryFn: () => runsLiveScreenshots(runId),
+    enabled,
+    staleTime: 0,
+    refetchInterval: enabled ? 1500 : false,
+    refetchIntervalInBackground: true,
+    retry: 2,
+  });
+}
+
+// Live rail screenshot — shows the gallery with nav; jumps to the latest capture
+// (with a subtle reveal) when a new file lands on disk during the run.
+function LiveScreenshotsSection({ runId }: { runId: string }) {
+  const { data } = useLiveRunScreenshotPaths(runId, true);
+  const paths = data?.paths ?? [];
+  const [selected, setSelected] = React.useState(0);
+  const [revealing, setRevealing] = React.useState(false);
+  const prevLatestRef = React.useRef<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    if (paths.length === 0) return;
+    const latest = paths[paths.length - 1];
+    if (latest !== prevLatestRef.current) {
+      prevLatestRef.current = latest;
+      setSelected(paths.length - 1);
+      setRevealing(true);
+      const timer = setTimeout(() => setRevealing(false), 480);
+      return () => clearTimeout(timer);
+    }
+    if (selected >= paths.length) {
+      setSelected(paths.length - 1);
+    }
+  }, [paths, selected]);
+
+  return (
+    <Section title="Screenshots">
+      {paths.length > 0 ? (
+        <div className={cn("screenshot-reveal", revealing && "screenshot-reveal--active")}>
+          <ScreenshotsGallery
+            paths={paths}
+            selected={selected}
+            onSelectedChange={setSelected}
+          />
+        </div>
+      ) : null}
+    </Section>
   );
 }
 
@@ -275,104 +458,33 @@ function ResultPanel({ result }: { result: RunResult }) {
         : result.screenshotPath
           ? [result.screenshotPath]
           : [];
-  const [selected, setSelected] = React.useState(0);
-  const [lightboxOpen, setLightboxOpen] = React.useState(false);
   const displayPaths =
     galleryPaths.length > 0
       ? galleryPaths
       : result.screenshotPath
         ? [result.screenshotPath]
         : [];
-  const previewPath = displayPaths[selected] ?? result.screenshotPath;
-  const hasMultiple = displayPaths.length > 1;
-
-  function goPrev() {
-    setSelected((i) => Math.max(0, i - 1));
-  }
-
-  function goNext() {
-    setSelected((i) => Math.min(displayPaths.length - 1, i + 1));
-  }
+  const [selected, setSelected] = React.useState(() =>
+    Math.max(0, displayPaths.length - 1),
+  );
 
   return (
     <>
       <Section title="Assertions">
-      <div className="flex flex-col">
-        {result.assertions.length > 0 ? (
-          result.assertions.map((a, i) => (
-            <div key={i} className="flex items-start gap-1.5 py-0.5 min-w-0">
-              <div className="min-w-0 flex-1 text-[11px] leading-[15px] text-secondary [&_code]:text-[10px]">
-                <InlineCode text={a.text} />
-              </div>
-              <span className="mt-px flex w-3.5 shrink-0 items-start justify-end">
-                {a.passed ? (
-                  <CheckCircle2Icon className="size-3 text-support-green" />
-                ) : (
-                  <XCircleIcon className="size-3 text-support-red" />
-                )}
-              </span>
-            </div>
-          ))
-        ) : (
-          <Text variant="mini" color="tertiary" className="py-1">
-            No assertions.
-          </Text>
-        )}
-      </div>
+        <div className="flex flex-col">
+          {result.assertions.map((a, i) => (
+            <RailAssertionLine key={i} text={a.text} passed={a.passed} />
+          ))}
+        </div>
       </Section>
 
       {!cancelled && (
         <Section title="Screenshots">
-          <div className="flex flex-col gap-2 py-1">
-            <ScreenshotImage
-              path={previewPath}
-              alt={`Step ${selected + 1}`}
-              onClick={previewPath ? () => setLightboxOpen(true) : undefined}
-            />
-            {hasMultiple && (
-              <div className="flex items-center justify-center gap-2">
-                <button
-                  type="button"
-                  disabled={selected === 0}
-                  onClick={goPrev}
-                  aria-label="Previous screenshot"
-                  className={cn(
-                    "flex size-6 items-center justify-center rounded-control border border-separator",
-                    selected === 0 ? "cursor-not-allowed opacity-30" : "hover:bg-surface-hover",
-                  )}
-                >
-                  <ChevronLeftIcon className="size-3.5" />
-                </button>
-                <span className="min-w-[3rem] text-center text-[10px] tabular-nums text-tertiary">
-                  {selected + 1} / {displayPaths.length}
-                </span>
-                <button
-                  type="button"
-                  disabled={selected === displayPaths.length - 1}
-                  onClick={goNext}
-                  aria-label="Next screenshot"
-                  className={cn(
-                    "flex size-6 items-center justify-center rounded-control border border-separator",
-                    selected === displayPaths.length - 1
-                      ? "cursor-not-allowed opacity-30"
-                      : "hover:bg-surface-hover",
-                  )}
-                >
-                  <ChevronRightIcon className="size-3.5" />
-                </button>
-              </div>
-            )}
-            <ScreenshotLightbox
-              paths={displayPaths}
-              index={selected}
-              open={lightboxOpen}
-              onOpenChange={setLightboxOpen}
-              onIndexChange={setSelected}
-            />
-            {displayPaths.length === 0 && (
-              <Text variant="mini" color="tertiary">No step screenshots (legacy run)</Text>
-            )}
-          </div>
+          <ScreenshotsGallery
+            paths={displayPaths}
+            selected={selected}
+            onSelectedChange={setSelected}
+          />
         </Section>
       )}
     </>
@@ -386,15 +498,16 @@ function RunStatusHeader({
   status,
   startedAt,
   finishedAt,
+  agentProvider,
+  agentModel,
 }: {
   running: boolean;
   status?: RunStatus;
   startedAt: number;
   finishedAt?: number;
+  agentProvider?: AgentProvider;
+  agentModel?: string;
 }) {
-  // Spacing mirrors the story view's status row exactly so the two views read
-  // identically: gap-3 between the status group and the time, gap-1.5 inside
-  // each group.
   return (
     <div className="run-rail-meta">
       {running ? (
@@ -403,7 +516,8 @@ function RunStatusHeader({
           <Badge color="blue" size="xs">
             Running
           </Badge>
-          <ElapsedTimer startedAt={startedAt} />
+          <AgentPills agentProvider={agentProvider} agentModel={agentModel} />
+          <ElapsedTimer startedAt={startedAt} className="ml-auto" />
         </>
       ) : (
         status && (
@@ -411,8 +525,9 @@ function RunStatusHeader({
             <Badge color={statusColor(status)} size="xs">
               {statusLabel(status)}
             </Badge>
+            <AgentPills agentProvider={agentProvider} agentModel={agentModel} />
             {finishedAt != null && (
-              <span className="inline-flex items-center gap-1 text-[10px] leading-none tabular-nums text-tertiary">
+              <span className="ml-auto inline-flex items-center gap-1 text-[10px] leading-none tabular-nums text-tertiary">
                 <ClockIcon className="size-2.5 shrink-0" />
                 {formatDuration(finishedAt - startedAt)}
               </span>
@@ -464,13 +579,15 @@ function LiveRunView({ runId }: { runId: string }) {
     try {
       await runCancel(runId);
     } catch (err) {
-      console.error("[RunView] run:cancel failed", err);
+      reportAppErrorFromUnknown("Failed to cancel run", err);
     } finally {
       setIsCancelling(false);
     }
   }
 
   const isFinished = result !== null;
+  const agentProvider = result?.agentProvider ?? run?.agentProvider;
+  const agentModel = result?.agentModel ?? run?.agentModel;
 
   return (
     <ScrollArea
@@ -478,13 +595,16 @@ function LiveRunView({ runId }: { runId: string }) {
       autoScrollDeps={[events.length]}
       toolbar={
         <Toolbar titlebar surface="main" seamless>
-          <ToolbarRow inset="main" className="detail-view-toolbar">
+          <ToolbarRow inset="main" className="main-titlebar-row detail-view-toolbar">
             <ToolbarContent className="detail-view-toolbar-content">
               <ToolbarTitle>
-                {run?.storyTitle || run?.result?.storyTitle || "Run"}
+                {run?.storyTitle || run?.result?.storyTitle || "Running story"}
               </ToolbarTitle>
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
+              <ViewStoryButton
+                storyName={run?.storyName || run?.result?.storyName}
+              />
               <CopyLogsButton
                 runId={runId}
                 storyName={run?.storyName}
@@ -496,7 +616,7 @@ function LiveRunView({ runId }: { runId: string }) {
               {!isFinished && (
                 <Button
                   variant="glass"
-                  size="small"
+                  size="titlebar"
                   onClick={handleCancel}
                   disabled={isCancelling}
                   aria-label="Cancel run"
@@ -516,12 +636,9 @@ function LiveRunView({ runId }: { runId: string }) {
         <div className="detail-view-main">
           <Section title="Actions">
             {events.length === 0 && !isFinished && (
-              <div className="flex items-center gap-2 py-3">
-                <Loader2Icon className="size-4 animate-spin text-tertiary" />
-                <Text variant="small" color="tertiary">
-                  Starting run…
-                </Text>
-              </div>
+              <Text variant="small" color="tertiary" className="py-3">
+                Starting run…
+              </Text>
             )}
 
             {collapseEvents(events).map(({ event, count }) => (
@@ -541,7 +658,10 @@ function LiveRunView({ runId }: { runId: string }) {
             status={result?.status}
             startedAt={startedAt}
             finishedAt={result?.finishedAt}
+            agentProvider={agentProvider}
+            agentModel={agentModel}
           />
+          {!isFinished && <LiveScreenshotsSection runId={runId} />}
           {isFinished && result && <ResultPanel result={result} />}
         </div>
       </div>
@@ -555,11 +675,12 @@ function HistoricalRunView({ record }: { record: RunRecord }) {
     <ScrollArea
       toolbar={
         <Toolbar titlebar surface="main" seamless>
-          <ToolbarRow inset="main" className="detail-view-toolbar">
+          <ToolbarRow inset="main" className="main-titlebar-row detail-view-toolbar">
             <ToolbarContent className="detail-view-toolbar-content">
               <ToolbarTitle>{record.storyTitle}</ToolbarTitle>
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
+              <ViewStoryButton storyName={record.storyName} />
               <CopyLogsButton
                 runId={record.runId}
                 storyName={record.storyName}
@@ -593,6 +714,8 @@ function HistoricalRunView({ record }: { record: RunRecord }) {
             status={record.status}
             startedAt={record.startedAt}
             finishedAt={record.finishedAt}
+            agentProvider={record.agentProvider}
+            agentModel={record.agentModel}
           />
           <ResultPanel result={record} />
         </div>

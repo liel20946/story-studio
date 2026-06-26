@@ -91,9 +91,11 @@ const storyYaml = `stories:
       Type password
       Click 'Sign in' button
       Click 'Issue Gift Card' button
-      Verify gift card dialog opened
       Fill gift card amount
       Click 'Confirm' button
+    assertions: |-
+      @1 Verify gift card dialog opened
+      @10 Verify confirmation step completed
     created_at: ${now}
 `;
 

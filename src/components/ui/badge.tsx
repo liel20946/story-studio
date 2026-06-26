@@ -5,8 +5,11 @@ const colorMap = {
   green: "bg-support-green-10 text-support-green",
   red: "bg-support-red-10 text-support-red",
   blue: "bg-support-blue-10 text-support-blue",
+  orange: "bg-support-orange-10 text-support-orange",
+  purple: "bg-support-purple-10 text-support-purple",
   yellow: "bg-support-yellow-10 text-support-yellow",
   secondary: "bg-control text-tertiary",
+  neutral: "bg-[var(--fg-12)] text-secondary",
 } as const;
 
 export function Badge({

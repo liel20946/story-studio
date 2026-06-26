@@ -9,15 +9,17 @@ import { app } from "../electron-api.js";
 import { broadcast as ipcBroadcast } from "../broadcast.js";
 import type { RecordingProgress, RecordingAvailability } from "./contract-types.js";
 import { resolveCodexBinary } from "./codex-runner.js";
-import { createDraftDir, discardDraftDir } from "./stories-service.js";
-import { convertPlaywrightRecording } from "./skills-python.js";
+import { createDraftDir, discardDraftDir, saveDraftToLibrary, listStories } from "./stories-service.js";
+import { convertRecordingWithCodex } from "./recording-convert-service.js";
 import { formatRecordingFailure } from "./recording-errors.js";
-import { siteSlugFromUrl } from "./bowser-stories-service.js";
+import { siteSlugFromUrl, parseCompositeName } from "./bowser-stories-service.js";
 import { getRunsDir } from "./paths.js";
+import { listRuns, buildLastRunMap } from "./run-service.js";
 
 const execFileAsync = promisify(execFile);
 
 let _recordingProcess: ChildProcess | null = null;
+let _recordingAborted = false;
 
 const CHROMIUM_EXECUTABLE_SUFFIX: Record<string, string[]> = {
   darwin: ["chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"],
@@ -235,6 +237,18 @@ export async function cancelRecording(): Promise<void> {
   }
 }
 
+export async function abortRecording(): Promise<void> {
+  _recordingAborted = true;
+  if (_recordingProcess) {
+    try {
+      _recordingProcess.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+    _recordingProcess = null;
+  }
+}
+
 function broadcastRecordingError(
   stage: "conversion" | "recording" | "start",
   err: unknown,
@@ -243,13 +257,17 @@ function broadcastRecordingError(
   const failure = fallbackMessage
     ? formatRecordingFailure(stage, fallbackMessage)
     : formatRecordingFailure(stage, err);
+  const message =
+    failure.message.trim() === failure.title.trim()
+      ? failure.detail?.trim() || failure.message
+      : failure.message;
   broadcast({
     phase: "error",
-    message: failure.message,
+    message,
     errorTitle: failure.title,
     detail: failure.detail,
   });
-  return failure;
+  return { ...failure, message };
 }
 
 function recordingFailureMessage(exitCode: number | null, stderr: string): string {
@@ -261,15 +279,15 @@ function recordingFailureMessage(exitCode: number | null, stderr: string): strin
     return `Recording failed (exit ${exitCode ?? "?"}): ${combined}`;
   }
   return (
-    "No script was generated. Perform at least one action in the browser, then close the " +
-    "Playwright Inspector window (not just the browser tab)."
+    "No script was generated. Perform at least one action in the browser, then click Save Recording."
   );
 }
 
 export async function startRecording(
   name: string,
   url: string,
-  _codexBinaryPath: string | null,
+  codexBinaryPath: string | null,
+  overwriteStoryKey?: string,
 ): Promise<{
   ok: boolean;
   storyName?: string;
@@ -277,7 +295,9 @@ export async function startRecording(
   error?: string;
   errorTitle?: string;
   errorDetail?: string;
+  cancelled?: boolean;
 }> {
+  _recordingAborted = false;
   const runsDir = getRunsDir();
   const ts = Date.now();
   const recScriptPath = path.join(runsDir, `.rec-${ts}.spec.ts`);
@@ -296,7 +316,22 @@ export async function startRecording(
     return { ok: false, error: msg, errorTitle: "Recording unavailable" };
   }
 
-  // Step 1: spawn headed playwright codegen (no codex required for conversion)
+  if (_recordingAborted) {
+    return { ok: false, cancelled: true };
+  }
+
+  const codexBinary = await resolveCodexBinary(codexBinaryPath).catch(() => null);
+  if (!codexBinary) {
+    const msg = "Codex CLI not found. Install Codex CLI (or set its path in Settings) to convert recordings.";
+    broadcast({
+      phase: "error",
+      message: msg,
+      errorTitle: "Codex CLI required",
+    });
+    return { ok: false, error: msg, errorTitle: "Codex CLI required" };
+  }
+
+  // Step 1: spawn headed playwright codegen
   const playwright = resolvePlaywrightInvocation();
 
   return new Promise<{
@@ -306,6 +341,7 @@ export async function startRecording(
     error?: string;
     errorTitle?: string;
     errorDetail?: string;
+    cancelled?: boolean;
   }>((resolve) => {
     const codegenArgs = [...playwright.prefixArgs, "codegen", url, "-o", recScriptPath];
     if (recordingBrowser.channel) {
@@ -329,7 +365,7 @@ export async function startRecording(
     broadcast({
       phase: "recording",
       message:
-        "Browser open. Perform your actions, then close the Playwright Inspector window or click Stop & Save.",
+        "Recording in progress. End on the page you want as the final screenshot, then click Save Recording.",
     });
 
     codegenProcess.stdout?.on("data", (chunk: Buffer) => {
@@ -359,63 +395,120 @@ export async function startRecording(
     codegenProcess.on("close", async (code) => {
       _recordingProcess = null;
 
-      // Step 2: read recorded script
-      let script = "";
       try {
-        script = await fs.readFile(recScriptPath, "utf-8");
-        // Clean up temp file
-        await fs.unlink(recScriptPath).catch(() => {});
-      } catch (err) {
-        const msg = recordingFailureMessage(code, codegenStderr);
-        const failure = broadcastRecordingError("recording", err, msg);
-        return resolve({
-          ok: false,
-          error: failure.message,
-          errorTitle: failure.title,
-          errorDetail: failure.detail,
+        if (_recordingAborted) {
+          await fs.unlink(recScriptPath).catch(() => {});
+          return resolve({ ok: false, cancelled: true });
+        }
+
+        // Step 2: read recorded script
+        let script = "";
+        try {
+          script = await fs.readFile(recScriptPath, "utf-8");
+          await fs.unlink(recScriptPath).catch(() => {});
+        } catch (err) {
+          const msg = recordingFailureMessage(code, codegenStderr);
+          const failure = broadcastRecordingError("recording", err, msg);
+          return resolve({
+            ok: false,
+            error: failure.message,
+            errorTitle: failure.title,
+            errorDetail: failure.detail,
+          });
+        }
+
+        if (!script.trim()) {
+          const msg = "Recorded script is empty.";
+          const failure = broadcastRecordingError("recording", msg, msg);
+          return resolve({
+            ok: false,
+            error: failure.message,
+            errorTitle: failure.title,
+            errorDetail: failure.detail,
+          });
+        }
+
+        const overwrite = overwriteStoryKey
+          ? parseCompositeName(overwriteStoryKey)
+          : null;
+        const storyId = overwrite?.storyId;
+        const siteSlug = overwrite?.siteSlug ?? siteSlugFromUrl(url);
+
+        // Step 3: convert Playwright recording → Bowser YAML via Codex
+        broadcast({
+          phase: "converting",
+          message: "Converting with AI…",
         });
-      }
 
-      if (!script.trim()) {
-        const msg = "Recorded script is empty.";
-        const failure = broadcastRecordingError("recording", msg, msg);
-        return resolve({
-          ok: false,
-          error: failure.message,
-          errorTitle: failure.title,
-          errorDetail: failure.detail,
+        const draftDir = await createDraftDir(siteSlug);
+        const specCopyPath = path.join(draftDir, "recording.spec.ts");
+        await fs.writeFile(specCopyPath, script, "utf-8");
+
+        try {
+          await convertRecordingWithCodex(
+            script,
+            draftDir,
+            codexBinary,
+            runsDir,
+            {
+              url,
+              name,
+              storyId,
+              siteSlug,
+            },
+            buildEnv,
+            (message) => broadcast({ phase: "converting", message }),
+          );
+        } catch (err) {
+          await discardDraftDir(draftDir).catch(() => {});
+          const failure = broadcastRecordingError("conversion", err);
+          return resolve({
+            ok: false,
+            error: failure.message,
+            errorTitle: failure.title,
+            errorDetail: failure.detail,
+          });
+        }
+
+        // Step 4: save directly to the story library (no manual review step).
+        broadcast({ phase: "converting", message: "Saving story to library…" });
+
+        let storyName: string;
+        try {
+          storyName = await saveDraftToLibrary(draftDir, siteSlug, storyId);
+        } catch (err) {
+          await discardDraftDir(draftDir).catch(() => {});
+          const failure = broadcastRecordingError("conversion", err);
+          return resolve({
+            ok: false,
+            error: failure.message,
+            errorTitle: failure.title,
+            errorDetail: failure.detail,
+          });
+        }
+
+        void listRuns()
+          .then((runs) => listStories(buildLastRunMap(runs)))
+          .then((summaries) => ipcBroadcast("stories:changed", summaries))
+          .catch((err) => console.warn("[recording] stories refresh failed", err));
+
+        broadcast({
+          phase: "done",
+          message: "Story saved to library.",
+          storyName,
         });
-      }
-
-      // Step 3: deterministic Python conversion → draft artifacts
-      broadcast({ phase: "converting", message: "Converting recording to story draft…" });
-
-      const siteSlug = siteSlugFromUrl(url);
-      const draftDir = await createDraftDir(siteSlug);
-      const specCopyPath = path.join(draftDir, "recording.spec.ts");
-      await fs.writeFile(specCopyPath, script, "utf-8");
-
-      try {
-        await convertPlaywrightRecording(specCopyPath, draftDir, url, name);
+        console.log("[recording] story saved", storyName);
+        resolve({ ok: true, storyName });
       } catch (err) {
-        await discardDraftDir(draftDir).catch(() => {});
+        console.error("[recording] unexpected post-recording error", err);
         const failure = broadcastRecordingError("conversion", err);
-        return resolve({
+        resolve({
           ok: false,
           error: failure.message,
           errorTitle: failure.title,
           errorDetail: failure.detail,
         });
       }
-
-      const draftId = path.basename(draftDir);
-      broadcast({
-        phase: "review",
-        message: "Draft ready for review.",
-        draftId,
-      });
-      console.log("[recording] draft created", draftId);
-      resolve({ ok: true, draftId });
     });
   });
 }

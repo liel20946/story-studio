@@ -1,16 +1,46 @@
 import { ipcMain } from "../electron-api.js";
 import { randomUUID } from "crypto";
-import { readFile } from "fs/promises";
+import { readFile, readdir, access } from "fs/promises";
 import * as path from "path";
 import { listRuns, getRun, deleteRun, clearRuns } from "../services/run-service.js";
 import { getStory } from "../services/stories-service.js";
-import { startBulkRun } from "../services/codex-bulk-runner.js";
-import { startAgentRun, cancelAgentRun } from "../services/agent-runner.js";
+import { startBulkRun } from "../services/bulk-runner.js";
+import { startAgentRun, cancelAgentRun, listActiveRuns } from "../services/agent-runner.js";
 import { resolveAgentBinary } from "../services/agent-provider.js";
 import { buildLastRunMap } from "../services/run-service.js";
 import { formatStoryForRun } from "../services/bowser-stories-service.js";
 import { getRunsDir } from "../services/paths.js";
 import { getSettingsValue } from "./settings.js";
+import { getAgentRunConfig } from "../services/agent-config.js";
+import { readRunMeta } from "../services/run-meta.js";
+import { collectLiveScreenshotPaths } from "../services/run-artifacts.js";
+
+async function resolveScreenshotFile(requested: string): Promise<string | null> {
+  const runsDir = path.resolve(getRunsDir());
+  const resolved = path.resolve(requested);
+  if (resolved === runsDir || resolved.startsWith(runsDir + path.sep)) {
+    return resolved;
+  }
+  // Back-compat: steps.json may store paths relative to the run output directory.
+  if (!path.isAbsolute(requested)) {
+    try {
+      const entries = await readdir(runsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const candidate = path.join(runsDir, entry.name, requested);
+        try {
+          await access(candidate);
+          return candidate;
+        } catch {
+          // keep searching
+        }
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 export function registerRunsHandlers(): void {
   ipcMain.handle("run:start", async (_event, params: unknown) => {
@@ -37,6 +67,8 @@ export function registerRunsHandlers(): void {
 
     const runId = randomUUID();
 
+    const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
+
     // Fire and forget — results come via broadcast; caller gets runId immediately.
     startAgentRun(
       settings.agentProvider,
@@ -46,11 +78,16 @@ export function registerRunsHandlers(): void {
       formatStoryForRun(story),
       agentBinary,
       settings.runHook,
+      agentConfig,
     ).catch((err) => {
       console.error("[agent:run] unhandled run error", { runId, err: String(err) });
     });
 
-    return { runId };
+    return {
+      runId,
+      agentProvider: settings.agentProvider,
+      agentModel: agentConfig.model,
+    };
   });
 
   ipcMain.handle("run:bulkStart", async (_event, params: unknown) => {
@@ -70,9 +107,6 @@ export function registerRunsHandlers(): void {
     }
 
     const settings = getSettingsValue();
-    if (settings.agentProvider === "claude-code") {
-      throw new Error("Bulk runs are only supported with Codex. Switch the agent provider to Codex in Settings.");
-    }
 
     const agentBinary = await resolveAgentBinary(
       settings.agentProvider,
@@ -97,10 +131,6 @@ export function registerRunsHandlers(): void {
       if (options?.storyIds?.length && story.storyId && !options.storyIds.includes(story.storyId)) {
         continue;
       }
-      if (options?.tags?.length) {
-        const storyTags = story.tags ?? [];
-        if (!options.tags.some((t) => storyTags.includes(t))) continue;
-      }
       const runId = randomUUID();
       items.push({ storyName, storyTitle: story.title, runId });
       bulkStories.push({
@@ -115,11 +145,26 @@ export function registerRunsHandlers(): void {
       throw new Error("No stories matched the selected filters");
     }
 
-    startBulkRun(bulkId, bulkStories, agentBinary, settings.runHook, options).catch((err) => {
-      console.error("[codex:bulk] unhandled bulk run error", { bulkId, err: String(err) });
+    const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
+
+    startBulkRun(
+      bulkId,
+      bulkStories,
+      settings.agentProvider,
+      agentBinary,
+      settings.runHook,
+      options,
+      agentConfig,
+    ).catch((err) => {
+      console.error("[bulk] unhandled bulk run error", { bulkId, err: String(err) });
     });
 
-    return { bulkId, items };
+    return {
+      bulkId,
+      items,
+      agentProvider: settings.agentProvider,
+      agentModel: agentConfig.model,
+    };
   });
 
   ipcMain.handle("run:cancel", async (_event, params: unknown) => {
@@ -131,12 +176,28 @@ export function registerRunsHandlers(): void {
       throw new Error("run:cancel requires { runId: string }");
     }
     const { runId } = params as { runId: string };
-    cancelAgentRun(runId);
+    const cancelled = await cancelAgentRun(runId);
+    if (!cancelled) {
+      throw new Error(`Run is not active: ${runId}`);
+    }
     return { ok: true as const };
   });
 
   ipcMain.handle("runs:list", async () => {
     return listRuns();
+  });
+
+  ipcMain.handle("runs:active", async () => {
+    const snapshots = listActiveRuns();
+    for (const snap of snapshots) {
+      if (snap.storyName && snap.storyTitle) continue;
+      const meta = await readRunMeta(snap.runId);
+      if (!meta) continue;
+      snap.storyName = snap.storyName || meta.storyName;
+      snap.storyTitle = snap.storyTitle || meta.storyTitle;
+      if (!snap.startedAt) snap.startedAt = meta.startedAt;
+    }
+    return snapshots;
   });
 
   ipcMain.handle("runs:get", async (_event, params: unknown) => {
@@ -169,6 +230,19 @@ export function registerRunsHandlers(): void {
     return { ok: true as const };
   });
 
+  ipcMain.handle("runs:liveScreenshots", async (_event, params: unknown) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      typeof (params as Record<string, unknown>)["runId"] !== "string"
+    ) {
+      throw new Error("runs:liveScreenshots requires { runId: string }");
+    }
+    const { runId } = params as { runId: string };
+    const paths = await collectLiveScreenshotPaths(runId);
+    return { paths };
+  });
+
   // Read a run screenshot off disk and return it as a base64 data URL. Loading
   // the PNG on demand over IPC avoids custom protocol registration races with
   // the renderer webview. One screenshot per view → payload is fine.
@@ -176,12 +250,8 @@ export function registerRunsHandlers(): void {
     const requested = (params as { path?: unknown } | null)?.path;
     if (typeof requested !== "string" || !requested) return { dataUrl: null };
 
-    // Allowlist: only serve PNGs that resolve inside the runs directory.
-    const runsDir = path.resolve(getRunsDir());
-    const resolved = path.resolve(requested);
-    if (resolved !== runsDir && !resolved.startsWith(runsDir + path.sep)) {
-      return { dataUrl: null };
-    }
+    const resolved = await resolveScreenshotFile(requested);
+    if (!resolved) return { dataUrl: null };
 
     try {
       const buf = await readFile(resolved);

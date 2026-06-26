@@ -1,7 +1,8 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { RunRecord, RunResult } from "./contract-types.js";
-import { enrichRunResult } from "./run-artifacts.js";
+import { enrichRunResult, getRunOutputDir } from "./run-artifacts.js";
+import { deleteRunMeta } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
 
 const RUNS_FILE = () => path.join(getRunsDir(), "runs.json");
@@ -26,10 +27,10 @@ async function persist(): Promise<void> {
 
 export async function listRuns(): Promise<RunResult[]> {
   await load();
-  // Return newest first, without events
+  // Return most recently finished first — matches the sidebar's relative time.
   return _records
     .slice()
-    .sort((a, b) => b.startedAt - a.startedAt)
+    .sort((a, b) => b.finishedAt - a.finishedAt)
     .map(({ events: _evts, ...result }) => result);
 }
 
@@ -71,6 +72,7 @@ async function removeRunFiles(runId: string): Promise<void> {
       fs.rm(path.join(dir, f), { force: true }).catch(() => {}),
     ),
   );
+  await fs.rm(getRunOutputDir(runId), { recursive: true, force: true }).catch(() => {});
 }
 
 /** Delete a single run record and its artifacts. */
@@ -79,6 +81,7 @@ export async function deleteRun(runId: string): Promise<void> {
   _records = _records.filter((r) => r.runId !== runId);
   await persist();
   await removeRunFiles(runId);
+  await deleteRunMeta(runId);
 }
 
 /** Delete all run history and artifacts. */

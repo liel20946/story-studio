@@ -153,6 +153,17 @@ export function SidebarList({
   return <ul className={cn("flex flex-col gap-0.5 px-1.5 py-1", className)}>{children}</ul>;
 }
 
+/** Vertical stack for sidebar rows — gap between story/run/schedule items. */
+export function SidebarRowGroup({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return <div className={cn("flex flex-col gap-0.5", className)}>{children}</div>;
+}
+
 export function SidebarListGroupTitle({
   className,
   children,
@@ -163,7 +174,7 @@ export function SidebarListGroupTitle({
   return (
     <span
       className={cn(
-        "text-mini text-tertiary mb-0.5 ml-1.5 tracking-normal",
+        "text-mini font-medium text-tertiary mb-0.5 ml-1.5 tracking-normal",
         className,
       )}
     >
@@ -189,7 +200,7 @@ export function SidebarListItem({
         type="button"
         onClick={onClick}
         className={cn(
-          "group/row grid w-full grid-cols-[minmax(0,1fr)_auto_2.75rem] items-center gap-x-1.5 rounded-control px-2 py-1 text-left text-[12px] leading-4 text-primary transition-colors duration-100",
+          "grid min-h-6 w-full grid-cols-[minmax(0,1fr)_auto_2.75rem] items-center gap-x-1.5 rounded-control px-2 py-0.5 text-left text-[12px] leading-4 text-primary transition-colors duration-100",
           selected && "sidebar-item-selected",
           !selected && "hover:bg-surface-hover",
           className,

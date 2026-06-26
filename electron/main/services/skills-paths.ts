@@ -37,14 +37,16 @@ function skillsScriptsCandidates(): string[] {
   const root = findProjectRoot();
   const candidates: string[] = [];
 
-  if (app.isPackaged) {
-    candidates.push(path.join(process.resourcesPath, "skills", "scripts"));
+  // Prefer the live repo scripts during local development so skill edits apply
+  // without rebuilding the branded Electron.app bundle.
+  if (root) {
+    candidates.push(path.join(root, "resources", "skills", "scripts"));
   }
 
   candidates.push(path.join(app.getAppPath(), "resources", "skills", "scripts"));
 
-  if (root) {
-    candidates.push(path.join(root, "resources", "skills", "scripts"));
+  if (app.isPackaged) {
+    candidates.push(path.join(process.resourcesPath, "skills", "scripts"));
   }
 
   candidates.push(path.join(__dirname, "..", "..", "..", "resources", "skills", "scripts"));
@@ -56,14 +58,14 @@ function skillsReferencesCandidates(): string[] {
   const root = findProjectRoot();
   const candidates: string[] = [];
 
-  if (app.isPackaged) {
-    candidates.push(path.join(process.resourcesPath, "skills", "references"));
+  if (root) {
+    candidates.push(path.join(root, "resources", "skills", "references"));
   }
 
   candidates.push(path.join(app.getAppPath(), "resources", "skills", "references"));
 
-  if (root) {
-    candidates.push(path.join(root, "resources", "skills", "references"));
+  if (app.isPackaged) {
+    candidates.push(path.join(process.resourcesPath, "skills", "references"));
   }
 
   candidates.push(path.join(__dirname, "..", "..", "..", "resources", "skills", "references"));

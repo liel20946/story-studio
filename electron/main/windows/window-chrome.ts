@@ -1,4 +1,4 @@
-import type { BrowserWindowConstructorOptions } from "electron";
+import type { BrowserWindow, BrowserWindowConstructorOptions } from "electron";
 
 export const MAC_WINDOW_CHROME_QUERY = "macWindowChrome";
 
@@ -9,7 +9,19 @@ export function getMacWindowChromeOptions(): Partial<BrowserWindowConstructorOpt
     transparent: true,
     backgroundColor: "#00000000",
     roundedCorners: true,
+    // Title bar is hidden; native traffic lights are suppressed in applyMacWindowChrome.
+    titleBarStyle: "hidden",
   };
+}
+
+/** Hide native traffic lights — we render custom ones that scale with renderer zoom. */
+export function applyMacWindowChrome(win: BrowserWindow): void {
+  if (process.platform !== "darwin") return;
+  const hideNativeButtons = () => {
+    win.setWindowButtonVisibility(false);
+  };
+  hideNativeButtons();
+  win.once("ready-to-show", hideNativeButtons);
 }
 
 export function withMacWindowChromeQuery(

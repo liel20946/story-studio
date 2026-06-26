@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   DownloadIcon,
   CircleDotIcon,
@@ -16,13 +17,13 @@ import {
   DialogDescription,
   DialogBody,
   DialogFooter,
-  DialogClose,
   Button,
   Field,
   Input,
   Text,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
 import {
   recordingCheck,
   recordingInstallBrowser,
@@ -42,50 +43,6 @@ type PrepPhase =
   | "error";
 
 type Phase = PrepPhase | RecordingPhase;
-
-function RecordingErrorBanner({
-  title,
-  message,
-  detail,
-}: {
-  title: string;
-  message: string;
-  detail?: string | null;
-}) {
-  const [showDetail, setShowDetail] = React.useState(false);
-
-  return (
-    <div className="rounded-card border border-support-red/20 bg-support-red-10 p-3">
-      <div className="flex items-start gap-2.5">
-        <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-support-red" />
-        <div className="min-w-0 flex-1">
-          <Text variant="small" className="font-medium text-support-red">
-            {title}
-          </Text>
-          <Text variant="small" color="secondary" className="mt-1">
-            {message}
-          </Text>
-          {detail ? (
-            <>
-              <button
-                type="button"
-                className="mt-2 text-mini text-tertiary transition-colors hover:text-secondary"
-                onClick={() => setShowDetail((open) => !open)}
-              >
-                {showDetail ? "Hide details" : "Show details"}
-              </button>
-              {showDetail ? (
-                <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-control bg-well p-2 font-mono text-[10px] leading-relaxed text-tertiary">
-                  {detail}
-                </pre>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function PhaseIcon({ phase }: { phase: Phase }) {
   switch (phase) {
@@ -110,23 +67,37 @@ function PhaseIcon({ phase }: { phase: Phase }) {
 
 export function RecordView() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const rec = useRecording();
   // "Record again" prefills these from the originating story so re-recording
   // overwrites the same .story.md with the same start URL.
   const search = useSearch({ from: "/record" });
   const [open, setOpen] = React.useState(true);
-  const [storyName, setStoryName] = React.useState(search.name ?? "");
+  const [storyName, setStoryName] = React.useState(
+    search.title ?? search.name ?? "",
+  );
   const [url, setUrl] = React.useState(search.url ?? "");
   // Seed the Start URL from the configured Starting URL setting on mount, unless
   // the user has already typed into the field OR a URL was prefilled.
   const urlEditedRef = React.useRef(Boolean(search.url));
+  const overwriteStoryKey = search.storyKey;
+
+  // Keep fields in sync when "Record again" navigates here with new search params
+  // (the route can rematch without remounting the dialog).
+  React.useEffect(() => {
+    if (rec.active) return;
+    setStoryName(search.title ?? search.name ?? "");
+    if (search.url !== undefined) {
+      setUrl(search.url);
+      urlEditedRef.current = Boolean(search.url);
+    }
+  }, [search.title, search.name, search.url, rec.active]);
 
   // Availability / install state (pre-recording).
   const [prepPhase, setPrepPhase] = React.useState<PrepPhase>("idle");
   const [prepMessage, setPrepMessage] = React.useState("");
   const [_availability, setAvailability] =
     React.useState<RecordingAvailability | null>(null);
-  const [installError, setInstallError] = React.useState<string | null>(null);
 
   // While a recording session is active the visible phase/message come from the
   // store; otherwise from the local prep state.
@@ -166,15 +137,17 @@ export function RecordView() {
         // Chromium gets the install button — a missing Codex CLI or Playwright
         // is a different problem (installing Chromium won't fix it).
         if (!avail.codexAvailable) {
+          const message =
+            "Codex CLI not found. Install Codex CLI (or set its path in Settings) to record stories.";
           setPrepPhase("error");
-          setPrepMessage(
-            "Codex CLI not found. Install Codex CLI (or set its path in Settings) to record stories.",
-          );
+          setPrepMessage(message);
+          reportAppError("Can't record", message);
         } else if (!avail.playwrightAvailable) {
+          const message =
+            "Playwright is not available, so recording can't start. Reinstall the app or check your setup.";
           setPrepPhase("error");
-          setPrepMessage(
-            "Playwright is not available, so recording can't start. Reinstall the app or check your setup.",
-          );
+          setPrepMessage(message);
+          reportAppError("Can't record", message);
         } else if (!avail.browserInstalled) {
           setPrepPhase("install-browser");
           setPrepMessage(
@@ -185,34 +158,31 @@ export function RecordView() {
           setPrepMessage("Ready to record.");
         }
       })
-      .catch(() => {
+      .catch((err) => {
         setPrepPhase("error");
         setPrepMessage("Failed to check prerequisites.");
+        reportAppErrorFromUnknown("Can't record", err);
       });
   }, [open]);
 
-  // Navigate to the new story once the recording is saved.
+  // Navigate to the saved story once recording finishes.
   React.useEffect(() => {
-    if (rec.active && rec.phase === "review" && rec.draftId) {
-      rec.reset();
-      navigate({ to: "/draft/$draftId", params: { draftId: rec.draftId } });
-      return;
-    }
     if (rec.active && rec.phase === "done" && rec.storyName) {
       const name = rec.storyName;
       const t = setTimeout(() => {
         setOpen(false);
         rec.reset();
+        void queryClient.invalidateQueries({ queryKey: ["stories:list"] });
+        void queryClient.invalidateQueries({ queryKey: ["stories:get", name] });
         navigate({ to: "/story/$name", params: { name } });
       }, 800);
       return () => clearTimeout(t);
     }
-  }, [rec, navigate]);
+  }, [rec, navigate, queryClient]);
 
   async function handleInstallBrowser() {
     setPrepPhase("installing");
     setPrepMessage("Installing Chromium… this may take a minute.");
-    setInstallError(null);
     try {
       const res = await recordingInstallBrowser();
       if (res.ok) {
@@ -222,28 +192,32 @@ export function RecordView() {
           prev ? { ...prev, browserInstalled: true } : prev,
         );
       } else {
+        const message = res.error ?? "Installation failed.";
         setPrepPhase("error");
-        setPrepMessage(res.error ?? "Installation failed.");
-        setInstallError(res.error ?? "Unknown error");
+        setPrepMessage(message);
+        reportAppError("Can't record", message);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setPrepPhase("error");
       setPrepMessage(`Installation failed: ${msg}`);
-      setInstallError(msg);
+      reportAppErrorFromUnknown("Can't record", err);
     }
   }
 
   function handleStart() {
     if (!storyName.trim() || !url.trim()) return;
-    void rec.start(storyName.trim(), url.trim());
+    void rec.start(storyName.trim(), url.trim(), overwriteStoryKey);
   }
 
   function handleStopRecording() {
     void rec.stop();
   }
 
-  // "Active" = a recording session that can't be dismissed by closing.
+  // Block dismiss only while conversion is in progress (brief, not cancellable).
+  const isConverting = rec.active && rec.phase === "converting";
+  const isRecordingSession =
+    rec.active && ["starting", "recording"].includes(rec.phase);
   const isActive =
     rec.active && ["starting", "recording", "converting"].includes(rec.phase);
   const isReady = prepPhase === "ready" && !rec.active;
@@ -263,105 +237,109 @@ export function RecordView() {
     !isChecking;
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && !isActive) {
-      setOpen(false);
-      rec.reset();
-      navigate({ to: "/" });
+    if (!nextOpen) {
+      if (isRecordingSession) {
+        void rec.abort();
+      } else if (rec.active) {
+        rec.reset();
+      }
+      if (!isConverting) {
+        setOpen(false);
+        navigate({ to: "/" });
+      }
     }
+  }
+
+  function handleCancel() {
+    handleOpenChange(false);
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
     <DialogContent
       size="medium"
-      onEscapeKeyDown={() => !isActive && handleOpenChange(false)}
+      onEscapeKeyDown={() => !isConverting && handleOpenChange(false)}
     >
       <DialogHeader>
         <DialogTitle>Record Story</DialogTitle>
         <DialogDescription>
-          Open a browser, perform your actions, then close the Playwright
-          Inspector window to save a story.
+          Open a browser, perform your actions, navigate to the screen you want as
+          the final screenshot, then click Save Recording.
         </DialogDescription>
       </DialogHeader>
       <DialogBody>
-        <div className="flex flex-col gap-3">
-          {/* Tight, cohesive field stack (FieldSet's auto FieldGroup spread the
-              two fields too far apart). */}
-          <div className="flex flex-col gap-2">
-            <Field label="Story name" orientation="vertical">
-              <Input
-                placeholder="e.g. login-smoke-test"
-                value={storyName}
-                onChange={(e) => setStoryName(e.target.value)}
-                disabled={isActive || isDone}
-              />
-            </Field>
-            <Field label="Start URL" orientation="vertical">
-              <Input
-                placeholder="https://…"
-                value={url}
-                onChange={(e) => {
-                  urlEditedRef.current = true;
-                  setUrl(e.target.value);
-                }}
-                disabled={isActive || isDone}
-              />
-            </Field>
-          </div>
-
-          {/* Status area */}
-          {phase !== "idle" && !isError && (
-            <div className="flex items-start gap-2.5 rounded-card bg-well p-3">
-              <PhaseIcon phase={phase} />
-              <Text
-                variant="small"
-                color={isDone ? "primary" : "secondary"}
-                className={cn(isDone && "text-support-green")}
-              >
-                {phaseMessage}
-              </Text>
-            </div>
-          )}
-
-          {isError && (
-            <RecordingErrorBanner
-              title={
-                rec.active
-                  ? rec.errorTitle ?? "Recording failed"
-                  : "Can't record"
-              }
-              message={phaseMessage}
-              detail={rec.active ? rec.errorDetail : installError}
+        {/* Tight, cohesive field stack (FieldSet's auto FieldGroup spread the
+            two fields too far apart). */}
+        <div className="flex flex-col gap-2">
+          <Field label="Story name" orientation="vertical">
+            <Input
+              placeholder="e.g. login-smoke-test"
+              value={storyName}
+              onChange={(e) => setStoryName(e.target.value)}
+              disabled={isActive || isDone}
             />
-          )}
-
-          {/* Install browser step */}
-          {needsInstall && (
-            <Button
-              variant="accent"
-              onClick={handleInstallBrowser}
-              disabled={isInstalling}
-            >
-              <DownloadIcon className="size-4.5" />
-              Install Chromium
-            </Button>
-          )}
+          </Field>
+          <Field label="Start URL" orientation="vertical">
+            <Input
+              placeholder="https://…"
+              value={url}
+              onChange={(e) => {
+                urlEditedRef.current = true;
+                setUrl(e.target.value);
+              }}
+              disabled={isActive || isDone}
+            />
+          </Field>
         </div>
+
+        {/* Status area */}
+        {phase !== "idle" && (
+          <div
+            className={cn(
+              "flex items-start gap-2.5 rounded-card p-3",
+              isError
+                ? "border border-support-red/20 bg-support-red-10"
+                : "bg-well",
+            )}
+          >
+            <PhaseIcon phase={phase} />
+            <Text
+              variant="small"
+              color={isDone ? "primary" : isError ? "primary" : "secondary"}
+              className={cn(
+                isDone && "text-support-green",
+                isError && "text-support-red",
+              )}
+            >
+              {phaseMessage}
+            </Text>
+          </div>
+        )}
+
+        {/* Install browser step */}
+        {needsInstall && (
+          <Button
+            variant="accent"
+            onClick={handleInstallBrowser}
+            disabled={isInstalling}
+          >
+            <DownloadIcon className="size-4.5" />
+            Install Chromium
+          </Button>
+        )}
       </DialogBody>
       <DialogFooter>
-        <DialogClose asChild>
-          <Button
-            variant="filled"
-            onClick={() => handleOpenChange(false)}
-            disabled={isActive}
-          >
-            Cancel
-          </Button>
-        </DialogClose>
+        <Button
+          variant="filled"
+          onClick={handleCancel}
+          disabled={isConverting}
+        >
+          Cancel
+        </Button>
         {phase === "recording" ? (
           <Button variant="accent" onClick={handleStopRecording}>
             <SquareIcon className="size-4.5" />
-            Stop &amp; Save Recording
+            Save Recording
           </Button>
         ) : (
           <Button
@@ -370,8 +348,7 @@ export function RecordView() {
             disabled={!canStart || isActive || isDone || isChecking}
           >
             {phase === "converting" ? (
-              // Single spinner only — the status panel above already shows one.
-              "Converting…"
+              "Converting with AI…"
             ) : phase === "starting" ? (
               "Starting…"
             ) : isDone ? (

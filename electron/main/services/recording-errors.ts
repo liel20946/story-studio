@@ -38,11 +38,28 @@ export function formatRecordingFailure(
   const raw = rawErrorMessage(err).replace(/^Conversion failed:\s*/i, "").trim();
   const detail = raw.length > 0 ? raw : undefined;
 
-  if (raw.includes("convert_playwright_recording.py") && raw.includes("No such file or directory")) {
+  if (raw.includes("Codex conversion timed out")) {
+    return {
+      title: "Conversion timed out",
+      message:
+        "Codex took too long to convert the recording. Quit and restart Story Studio, verify Codex CLI works, then try again.",
+      detail,
+    };
+  }
+
+  if (raw.includes("Codex did not produce story content")) {
     return {
       title: "Conversion failed",
       message:
-        "The story conversion script is missing from this app build. Restart the dev server or reinstall the app.",
+        "Codex didn't return a story. Try recording again with more actions, or check that Codex CLI is working.",
+      detail,
+    };
+  }
+
+  if (raw.includes("Codex returned invalid YAML")) {
+    return {
+      title: "Conversion failed",
+      message: "Codex returned a story that couldn't be parsed. Try recording again.",
       detail,
     };
   }
@@ -56,11 +73,37 @@ export function formatRecordingFailure(
     };
   }
 
+  if (raw.includes("already contains story ids") || raw.includes("already exists")) {
+    return {
+      title: "Could not save story",
+      message:
+        "This story already exists in your library. Use Record again from the story page to overwrite it.",
+      detail,
+    };
+  }
+
+  if (/Story must include at least one (Verify step|assertion)/i.test(raw)) {
+    return {
+      title: "Invalid story",
+      message: "The recording is missing verification steps. Try recording again.",
+      detail,
+    };
+  }
+
+  if (raw.includes("has invalid position @")) {
+    return {
+      title: "Conversion failed",
+      message:
+        "An assertion was tagged with an @N position past the end of the workflow (common off-by-one). Try recording again.",
+      detail,
+    };
+  }
+
   if (raw.includes("Recorded script is empty")) {
     return {
       title: "Recording empty",
       message:
-        "No actions were captured. Perform steps in the browser, then close the Playwright Inspector to save.",
+        "No actions were captured. Perform steps in the browser, then click Save Recording.",
     };
   }
 
@@ -68,14 +111,6 @@ export function formatRecordingFailure(
     return {
       title: "Conversion failed",
       message: "A required file was missing during conversion. Try recording again.",
-      detail,
-    };
-  }
-
-  if (raw.includes("python3") && (raw.includes("not found") || raw.includes("can't open file"))) {
-    return {
-      title: "Conversion failed",
-      message: "Python 3 is required to convert recordings. Install Python 3 and try again.",
       detail,
     };
   }

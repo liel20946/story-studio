@@ -10,9 +10,8 @@ import type {
   AppSettings,
   RecordingAvailability,
   DraftDetail,
-  GenerateSessionDetail,
-  GenerateSessionSummary,
   BulkRunOptions,
+  ScheduledRun,
 } from "./contract-types";
 
 export function ipcInvoke<Res>(channel: string, req?: unknown): Promise<Res> {
@@ -30,6 +29,11 @@ export const storiesDelete = (name: string): Promise<{ ok: true }> =>
 
 export const storiesImport = (paths?: string[]): Promise<StorySummary[]> =>
   ipcInvoke("stories:import", { paths });
+
+export const storiesExport = (
+  destDir?: string,
+): Promise<{ fileCount: number; canceled: boolean }> =>
+  ipcInvoke("stories:export", { destDir });
 
 export const storiesUpdate = (
   name: string,
@@ -55,16 +59,29 @@ export const recordingInstallBrowser = (): Promise<{
   error?: string;
 }> => ipcInvoke("recording:installBrowser");
 
-export const recordingStart = (
-  name: string,
-  url: string,
-): Promise<{ ok: boolean; storyName?: string; draftId?: string; error?: string; errorTitle?: string; errorDetail?: string }> =>
-  ipcInvoke("recording:start", { name, url });
+export const recordingStart = (params: {
+  name: string;
+  url: string;
+  overwriteStoryKey?: string;
+}): Promise<{
+  ok: boolean;
+  storyName?: string;
+  draftId?: string;
+  error?: string;
+  errorTitle?: string;
+  errorDetail?: string;
+  cancelled?: boolean;
+}> => ipcInvoke("recording:start", params);
 
 export const recordingCancel = (): Promise<{ ok: true }> =>
   ipcInvoke("recording:cancel");
 
-export const runStart = (storyName: string): Promise<{ runId: string }> =>
+export const recordingAbort = (): Promise<{ ok: true }> =>
+  ipcInvoke("recording:abort");
+
+export const runStart = (
+  storyName: string,
+): Promise<{ runId: string; agentProvider: import("./contract-types").AgentProvider; agentModel: string }> =>
   ipcInvoke("run:start", { storyName });
 
 export const runBulkStart = (
@@ -73,12 +90,17 @@ export const runBulkStart = (
 ): Promise<{
   bulkId: string;
   items: { storyName: string; storyTitle: string; runId: string }[];
+  agentProvider: import("./contract-types").AgentProvider;
+  agentModel: string;
 }> => ipcInvoke("run:bulkStart", { storyNames, options });
 
 export const runCancel = (runId: string): Promise<{ ok: true }> =>
   ipcInvoke("run:cancel", { runId });
 
 export const runsList = (): Promise<RunResult[]> => ipcInvoke("runs:list");
+
+export const runsActive = (): Promise<import("./contract-types").ActiveRunSnapshot[]> =>
+  ipcInvoke("runs:active");
 
 export const runsGet = (runId: string): Promise<RunRecord> =>
   ipcInvoke("runs:get", { runId });
@@ -93,8 +115,23 @@ export const runsScreenshot = (
 ): Promise<{ dataUrl: string | null }> =>
   ipcInvoke("runs:screenshot", { path });
 
+export const runsLiveScreenshots = (
+  runId: string,
+): Promise<{ paths: string[] }> =>
+  ipcInvoke("runs:liveScreenshots", { runId });
+
 export const settingsGet = (): Promise<AppSettings> =>
   ipcInvoke("settings:get");
+
+export const agentGetAllCapabilities = (): Promise<{
+  codex: import("./contract-types").AgentCapabilities;
+  claude: import("./contract-types").AgentCapabilities;
+}> => ipcInvoke("agent:getAllCapabilities");
+
+export const agentGetCapabilities = (
+  provider: import("./contract-types").AgentProvider,
+): Promise<import("./contract-types").AgentCapabilities> =>
+  ipcInvoke("agent:getCapabilities", { provider });
 
 export const settingsSet = (
   patch: Partial<
@@ -103,7 +140,18 @@ export const settingsSet = (
       | "agentProvider"
       | "codexBinaryPath"
       | "claudeBinaryPath"
+      | "codexModel"
+      | "codexEffort"
+      | "claudeModel"
+      | "claudeEffort"
       | "theme"
+      | "colorThemeLight"
+      | "colorThemeDark"
+      | "colorThemePaletteLight"
+      | "colorThemePaletteDark"
+      | "colorThemeContrastLight"
+      | "colorThemeContrastDark"
+      | "usePointerCursors"
       | "startingUrl"
       | "runHook"
     >
@@ -157,41 +205,68 @@ export const draftsDiscard = (draftId: string) =>
 export const storiesMigrateLegacy = () =>
   ipcInvoke<{ migrated: number; errors: string[] }>("stories:migrateLegacy");
 
-export const generateCreate = (url: string, message?: string) =>
-  ipcInvoke<GenerateSessionDetail>("generate:create", { url, message });
-export const generateList = () =>
-  ipcInvoke<GenerateSessionSummary[]>("generate:list");
-export const generateGet = (sessionId: string) =>
-  ipcInvoke<GenerateSessionDetail>("generate:get", { sessionId });
-export const generateSend = (sessionId: string, message: string) =>
-  ipcInvoke<{ ok: true }>("generate:send", { sessionId, message });
-export const generateCancel = (sessionId: string) =>
-  ipcInvoke<{ ok: true }>("generate:cancel", { sessionId });
-export const generateSave = (sessionId: string) =>
-  ipcInvoke<{ storyName: string }>("generate:save", { sessionId });
-export const generateDiscard = (sessionId: string) =>
-  ipcInvoke<{ ok: true }>("generate:discard", { sessionId });
+export const schedulesList = (): Promise<ScheduledRun[]> =>
+  ipcInvoke("schedules:list");
 
-export function onGenerateEvent(
-  cb: (event: import("./contract-types").GenerateEvent) => void,
+export const schedulesGet = (id: string): Promise<ScheduledRun> =>
+  ipcInvoke("schedules:get", { id });
+
+export const schedulesCreate = (input: {
+  name: string;
+  storyNames: string[];
+  scheduledAt: number;
+  enabled?: boolean;
+  repeat?: import("./contract-types").ScheduleRepeat;
+  hour?: number;
+  minute?: number;
+  dayOfWeek?: number;
+}): Promise<ScheduledRun> => ipcInvoke("schedules:create", input);
+
+export const schedulesUpdate = (
+  id: string,
+  patch: Partial<
+    Pick<
+      ScheduledRun,
+      | "name"
+      | "storyNames"
+      | "scheduledAt"
+      | "enabled"
+      | "repeat"
+      | "hour"
+      | "minute"
+      | "dayOfWeek"
+      | "lastRunAt"
+    >
+  >,
+): Promise<ScheduledRun> => ipcInvoke("schedules:update", { id, ...patch });
+
+export const schedulesDelete = (id: string): Promise<{ ok: true }> =>
+  ipcInvoke("schedules:delete", { id });
+
+export function onSchedulesChanged(
+  cb: (schedules: ScheduledRun[]) => void,
 ): () => void {
-  return window.electronAPI.on("generate:event", (payload: unknown) =>
-    cb(payload as import("./contract-types").GenerateEvent),
+  return window.electronAPI.on("schedules:changed", (payload: unknown) =>
+    cb(payload as ScheduledRun[]),
   );
 }
 
-export function onGenerateDraftUpdated(
-  cb: (payload: { sessionId: string }) => void,
+export function onSchedulesFired(
+  cb: (payload: {
+    scheduleId: string;
+    items: { storyName: string; storyTitle: string; runId: string }[];
+    agentProvider: import("./contract-types").AgentProvider;
+    agentModel: string;
+  }) => void,
 ): () => void {
-  return window.electronAPI.on("generate:draftUpdated", (payload: unknown) =>
-    cb(payload as { sessionId: string }),
-  );
-}
-
-export function onGenerateSessionChanged(
-  cb: (session: GenerateSessionSummary) => void,
-): () => void {
-  return window.electronAPI.on("generate:sessionChanged", (payload: unknown) =>
-    cb(payload as GenerateSessionSummary),
+  return window.electronAPI.on("schedules:fired", (payload: unknown) =>
+    cb(
+      payload as {
+        scheduleId: string;
+        items: { storyName: string; storyTitle: string; runId: string }[];
+        agentProvider: import("./contract-types").AgentProvider;
+        agentModel: string;
+      },
+    ),
   );
 }

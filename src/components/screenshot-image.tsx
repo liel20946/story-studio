@@ -1,6 +1,7 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeftIcon, ChevronRightIcon, ImageOffIcon, XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { runsScreenshot } from "../lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -54,12 +55,7 @@ export function ScreenshotImage({
   }
 
   if (!path || !dataUrl) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-1.5 rounded-card border border-separator bg-well py-6 text-center">
-        <ImageOffIcon className="size-5 text-quaternary" />
-        <span className="text-[11px] text-tertiary">No screenshot</span>
-      </div>
-    );
+    return null;
   }
 
   const image = (
@@ -147,6 +143,11 @@ export function ScreenshotLightbox({
   const dataUrl = data?.dataUrl ?? null;
   const hasMultiple = paths.length > 1;
   const openedAtRef = React.useRef(0);
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   React.useEffect(() => {
     if (open) openedAtRef.current = Date.now();
@@ -163,16 +164,25 @@ export function ScreenshotLightbox({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, index, paths.length, onOpenChange, onIndexChange]);
 
+  React.useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   function handleBackdropClose() {
     // Ignore the same click that opened the lightbox (mouseup lands on the backdrop).
     if (Date.now() - openedAtRef.current < 400) return;
     onOpenChange(false);
   }
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" role="dialog" aria-modal="true">
       <button
         type="button"
         className="absolute inset-0 bg-black/80"
@@ -207,12 +217,7 @@ export function ScreenshotLightbox({
             className="size-[min(90vw,960px)] animate-pulse rounded-card bg-well"
             style={{ aspectRatio: "16 / 10" }}
           />
-        ) : !dataUrl ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-card border border-separator bg-well px-8 py-12">
-            <ImageOffIcon className="size-8 text-quaternary" />
-            <span className="text-[12px] text-tertiary">No screenshot</span>
-          </div>
-        ) : (
+        ) : !dataUrl ? null : (
           <img
             src={dataUrl}
             alt={`Screenshot ${index + 1}`}
@@ -230,6 +235,7 @@ export function ScreenshotLightbox({
           />
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

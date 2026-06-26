@@ -1,6 +1,8 @@
-import type { AgentProvider } from "./contract-types.js";
-import { startRun, cancelRun } from "./codex-runner.js";
-import { startClaudeRun, cancelClaudeRun } from "./claude-runner.js";
+import type { AgentProvider, ActiveRunSnapshot } from "./contract-types.js";
+import type { AgentRunConfig } from "./agent-config.js";
+import { startRun, cancelRun, listActiveCodexRuns } from "./codex-runner.js";
+import { startClaudeRun, cancelClaudeRun, listActiveClaudeRuns } from "./claude-runner.js";
+import { cancelRecoveredRun, isRecoveredRun, listRecoveredRuns } from "./run-recovery.js";
 
 const _runProviders = new Map<string, AgentProvider>();
 
@@ -12,26 +14,66 @@ export async function startAgentRun(
   storyFilePath: string,
   agentBinary: string,
   runHook?: string,
+  agentConfig?: AgentRunConfig,
 ) {
   _runProviders.set(runId, provider);
   if (provider === "claude-code") {
-    return startClaudeRun(runId, storyName, storyTitle, storyFilePath, agentBinary, runHook);
+    return startClaudeRun(
+      runId,
+      storyName,
+      storyTitle,
+      storyFilePath,
+      agentBinary,
+      runHook,
+      agentConfig,
+    );
   }
-  return startRun(runId, storyName, storyTitle, storyFilePath, agentBinary, runHook);
+  return startRun(
+    runId,
+    storyName,
+    storyTitle,
+    storyFilePath,
+    agentBinary,
+    runHook,
+    agentConfig,
+  );
 }
 
-export function cancelAgentRun(runId: string): boolean {
+export async function cancelAgentRun(runId: string): Promise<boolean> {
+  if (isRecoveredRun(runId)) {
+    return cancelRecoveredRun(runId);
+  }
+
   const provider = _runProviders.get(runId);
   if (provider === "claude-code") {
     const cancelled = cancelClaudeRun(runId);
-    if (cancelled) _runProviders.delete(runId);
-    return cancelled;
+    if (cancelled) {
+      _runProviders.delete(runId);
+      return true;
+    }
+  } else {
+    const cancelled = cancelRun(runId);
+    if (cancelled) {
+      _runProviders.delete(runId);
+      return true;
+    }
   }
-  const cancelled = cancelRun(runId);
-  if (cancelled) _runProviders.delete(runId);
-  return cancelled;
+  return cancelRecoveredRun(runId);
 }
 
 export function clearAgentRunProvider(runId: string): void {
   _runProviders.delete(runId);
+}
+
+/** In-flight runs across all runners — used to hydrate the renderer after reload. */
+export function listActiveRuns(): ActiveRunSnapshot[] {
+  const byId = new Map<string, ActiveRunSnapshot>();
+  for (const snap of [
+    ...listActiveCodexRuns(),
+    ...listActiveClaudeRuns(),
+    ...listRecoveredRuns(),
+  ]) {
+    byId.set(snap.runId, snap);
+  }
+  return Array.from(byId.values());
 }

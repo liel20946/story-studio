@@ -4,6 +4,7 @@ export { Text } from "./text";
 export { Input, Textarea, Label, Field, FieldGroup, FieldSet } from "./forms";
 export { RadioGroup, RadioGroupItem } from "./radio-group";
 export { Checkbox } from "./checkbox";
+export { Switch } from "./switch";
 export {
   CollapsibleRoot,
   CollapsibleTrigger,
@@ -15,6 +16,7 @@ export {
   Sidebar,
   SidebarFooter,
   SidebarList,
+  SidebarRowGroup,
   SidebarListItem,
   SidebarListItemContent,
   SidebarListItemTitle,

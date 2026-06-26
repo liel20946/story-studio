@@ -22,9 +22,9 @@ import {
   Text,
   Checkbox,
   EmptyState,
-  toast,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
 import { storiesList, runBulkStart } from "../lib/ipc";
 import type { StorySummary, RunStatus } from "../lib/contract-types";
 import {
@@ -33,7 +33,7 @@ import {
   type StorySection,
 } from "../lib/sections-store";
 import { useRegisterRun, useAllRuns, useActiveRunMap } from "../lib/run-store";
-import { useBulkRun, type BulkLaunchedItem } from "../lib/bulk-run-store";
+import { useBulkRun, type BulkLaunchedItem, readPersistedLaunched } from "../lib/bulk-run-store";
 
 // A section as rendered here: built-in "Stories" group + each user section.
 interface Group {
@@ -53,7 +53,7 @@ function statusBadge(status: LiveStatus): React.ReactNode {
     case "error":
       return <Badge color="red">Failed</Badge>;
     case "cancelled":
-      return <Badge color="secondary">Cancelled</Badge>;
+      return <Badge color="neutral">Cancelled</Badge>;
     default:
       return <Badge color="blue">Running</Badge>;
   }
@@ -154,10 +154,7 @@ function SelectionView({
         );
       })}
       {total === 0 && (
-        <EmptyState
-          title="No stories yet"
-          description="Record a story first, then come back to run several at once."
-        />
+        <EmptyState title="No stories yet." />
       )}
     </div>
   );
@@ -187,7 +184,7 @@ function Dashboard({ launched }: { launched: BulkLaunchedItem[] }) {
         {running > 0 && <Badge color="blue">{running} running</Badge>}
         {passed > 0 && <Badge color="green">{passed} passed</Badge>}
         {failed > 0 && <Badge color="red">{failed} failed</Badge>}
-        {cancelled > 0 && <Badge color="secondary">{cancelled} cancelled</Badge>}
+        {cancelled > 0 && <Badge color="neutral">{cancelled} cancelled</Badge>}
       </div>
 
       <div className="flex flex-col">
@@ -223,12 +220,51 @@ export function BulkRunView() {
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [isStarting, setIsStarting] = React.useState(false);
 
-  // The launched bulk is still in progress while any of its runs has no result.
-  // While active we keep showing the dashboard and block starting another bulk.
+  // Keep showing the dashboard while any bulk story is still running. Recover
+  // from sessionStorage or multiple in-flight runs if provider state was lost.
+  const displayLaunched = React.useMemo((): BulkLaunchedItem[] | null => {
+    if (launched?.length) return launched;
+
+    const stored = readPersistedLaunched();
+    if (stored?.length) {
+      const anyRunning = stored.some((item) => !allRuns[item.runId]?.result);
+      if (anyRunning) return stored;
+    }
+
+    const active = Object.values(allRuns).filter(
+      (r) => r.result === null && r.storyName,
+    );
+    if (active.length >= 2) {
+      return active.map((r) => ({
+        storyName: r.storyName,
+        storyTitle: r.storyTitle,
+        runId: r.runId,
+      }));
+    }
+
+    return null;
+  }, [launched, allRuns]);
+
+  // Sync recovered bulk back into the store so navigation away/back stays stable.
+  React.useEffect(() => {
+    if (launched == null && displayLaunched != null) {
+      setLaunched(displayLaunched);
+    }
+  }, [launched, displayLaunched, setLaunched]);
+
+  // Return to selection only after every bulk story has a result.
+  React.useEffect(() => {
+    if (!launched?.length) return;
+    const allDone = launched.every((item) => !!allRuns[item.runId]?.result);
+    if (!allDone) return;
+    setLaunched(null);
+    setSelected(new Set());
+  }, [launched, allRuns, setLaunched]);
+
   const bulkRunning =
-    launched != null &&
-    launched.length > 0 &&
-    launched.some((item) => !allRuns[item.runId]?.result);
+    displayLaunched != null &&
+    displayLaunched.length > 0 &&
+    displayLaunched.some((item) => !allRuns[item.runId]?.result);
 
   const storiesQuery = useQuery({
     queryKey: ["stories:list"],
@@ -305,8 +341,7 @@ export function BulkRunView() {
     const chosen = stories.filter((s) => selected.has(s.name));
     setIsStarting(true);
     try {
-      // One Codex thread orchestrates subagents for stories that are not already
-      // running individually. Reuse any in-flight single-story runs as-is.
+      // Start one agent thread per story. Reuse any in-flight single-story runs as-is.
       const alreadyRunning: BulkLaunchedItem[] = [];
       const toBulk: typeof chosen = [];
       for (const story of chosen) {
@@ -324,46 +359,49 @@ export function BulkRunView() {
 
       let bulkLaunched: BulkLaunchedItem[] = [];
       if (toBulk.length > 0) {
-        const { items } = await runBulkStart(toBulk.map((s) => s.name));
+        const { items, agentProvider, agentModel } = await runBulkStart(
+          toBulk.map((s) => s.name),
+        );
         for (const item of items) {
-          registerRun(item.runId, item.storyName, item.storyTitle);
+          registerRun(item.runId, item.storyName, item.storyTitle, {
+            agentProvider,
+            agentModel,
+          });
         }
         bulkLaunched = items;
       }
 
       const launchedItems = [...alreadyRunning, ...bulkLaunched];
       if (launchedItems.length === 0) {
-        toast.error("No stories were started");
+        reportAppError("No stories were started");
         return;
       }
       setLaunched(launchedItems);
     } catch (err) {
-      console.error("[BulkRunView] bulk run start failed", err);
-      const message = err instanceof Error ? err.message : String(err);
-      toast.error(message || "Bulk run failed to start");
+      reportAppErrorFromUnknown("Bulk run failed to start", err);
     } finally {
       setIsStarting(false);
     }
   }
 
   // ----- running dashboard -----
-  if (launched != null && launched.length > 0) {
+  if (displayLaunched != null && displayLaunched.length > 0) {
     return (
       <ScrollArea
         toolbar={
           <Toolbar titlebar surface="main" seamless>
-            <ToolbarRow inset="main">
-              <ToolbarContent>
+            <ToolbarRow inset="main" className="main-titlebar-row detail-view-toolbar">
+              <ToolbarContent className="detail-view-toolbar-content">
                 <ToolbarTitle>
                   {bulkRunning
-                    ? `Running ${launched.length} stories`
-                    : `Ran ${launched.length} stories`}
+                    ? `Running ${displayLaunched.length} stories`
+                    : `Ran ${displayLaunched.length} stories`}
                 </ToolbarTitle>
               </ToolbarContent>
-              <ToolbarActions>
+              <ToolbarActions className="detail-view-toolbar-actions">
                 <Button
                   variant="glass"
-                  size="medium"
+                  size="titlebar"
                   disabled={bulkRunning}
                   onClick={() => {
                     setLaunched(null);
@@ -378,7 +416,7 @@ export function BulkRunView() {
           </Toolbar>
         }
       >
-        <Dashboard launched={launched} />
+        <Dashboard launched={displayLaunched} />
       </ScrollArea>
     );
   }
@@ -388,19 +426,19 @@ export function BulkRunView() {
     <ScrollArea
       toolbar={
         <Toolbar titlebar surface="main" seamless>
-          <ToolbarRow inset="main">
-            <ToolbarContent>
+          <ToolbarRow inset="main" className="main-titlebar-row detail-view-toolbar">
+            <ToolbarContent className="detail-view-toolbar-content">
               <ToolbarTitle>Run stories</ToolbarTitle>
             </ToolbarContent>
-            <ToolbarActions>
+            <ToolbarActions className="detail-view-toolbar-actions">
               {total > 0 && (
-                <Button variant="glass" size="medium" radius="full" onClick={toggleAll}>
+                <Button variant="glass" size="titlebar" radius="full" onClick={toggleAll}>
                   {allSelected ? "Deselect all" : "Select all"}
                 </Button>
               )}
               <Button
                 variant="accent"
-                size="medium"
+                size="titlebar"
                 radius="full"
                 onClick={handleRun}
                 disabled={selected.size === 0 || isStarting}

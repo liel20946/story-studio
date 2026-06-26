@@ -58,7 +58,7 @@ export interface RunEvent {
   kind: RunEventKind;
   label: string; // friendly title, e.g. "Navigate", "Click", "Type"
   detail?: string; // url / typed text / target / message body / error text
-  status: "running" | "ok" | "failed";
+  status: "running" | "ok" | "failed" | "cancelled";
 }
 
 export interface AssertionResult {

@@ -11,16 +11,16 @@ import { appHandlers } from "./app.js";
 import { getSettingsWindow } from "../windows/settings-window.js";
 import { navigateMainWindow } from "../windows/main-window.js";
 
-import { ipcMain, clipboard } from "../electron-api.js";
+import { app, ipcMain, clipboard, BrowserWindow } from "../electron-api.js";
 import { logger } from "../logger.js";
 
 import { registerStoriesHandlers } from "./stories.js";
 import { registerRecordingHandlers } from "./recording.js";
 import { registerRunsHandlers } from "./runs.js";
 import { registerSettingsHandlers } from "./settings.js";
+import { registerAgentHandlers } from "./agent.js";
 import { registerDraftHandlers, registerMigrationHandlers } from "./drafts.js";
-import { registerGenerateHandlers } from "./generate.js";
-
+import { registerSchedulesHandlers } from "./schedules.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -47,6 +47,24 @@ export function registerHandlers(): void {
     getSettingsWindow()?.close();
   });
 
+  ipcMain.handle("window:close", async () => {
+    app.quit();
+  });
+
+  ipcMain.handle("window:minimize", async (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+
+  ipcMain.handle("window:toggleMaximize", async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
+  });
+
   // Copy arbitrary text to the system clipboard (used by the variable-table
   // copy buttons in the story detail view). NOTE: the channel is app-namespaced
   // ("app:copyText") because the native API already registers "clipboard:*"
@@ -69,9 +87,10 @@ export function registerHandlers(): void {
   registerRecordingHandlers();
   registerRunsHandlers();
   registerSettingsHandlers();
+  registerAgentHandlers();
   registerDraftHandlers();
   registerMigrationHandlers();
-  registerGenerateHandlers();
+  registerSchedulesHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 }

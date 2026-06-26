@@ -9,15 +9,17 @@ import {
   SettingsIcon,
   Loader2Icon,
   SearchIcon,
+  XIcon,
   ChevronLeftIcon,
   BookOpenIcon,
   HistoryIcon,
-  MessageSquareIcon,
+  ClockIcon,
 } from "lucide-react";
 import {
   Sidebar,
   SidebarFooter,
   SidebarList,
+  SidebarRowGroup,
   SidebarListItem,
   SidebarListItemContent,
   SidebarListItemTitle,
@@ -43,7 +45,9 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui";
+import { MacTitlebarRow } from "./mac-traffic-lights";
 import { cn } from "@/lib/utils";
+import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type { RunStatus, StorySummary, RunResult } from "../lib/contract-types";
 import {
   storiesList,
@@ -52,8 +56,13 @@ import {
   runsList,
   runsDelete,
   storiesRename,
+  schedulesList,
+  onSchedulesChanged,
+  schedulesDelete,
+  schedulesUpdate,
 } from "../lib/ipc";
-import { useActiveRunMap } from "../lib/run-store";
+import type { ScheduledRun } from "../lib/contract-types";
+import { useActiveRunMap, useAllRuns } from "../lib/run-store";
 import {
   useSections,
   DEFAULT_SECTION_ID,
@@ -106,7 +115,9 @@ function ExpandableRows<T>({
   const canShowLess = visible > PAGE_SIZE;
   return (
     <>
-      {shown.map(renderItem)}
+      <SidebarRowGroup>
+        {shown.map(renderItem)}
+      </SidebarRowGroup>
       {(canShowMore || canShowLess) && (
         // pl-2 lines the labels up with the row titles — story rows no longer
         // have a leading icon, so the title sits at the SidebarListItem's inset.
@@ -135,12 +146,12 @@ function ExpandableRows<T>({
 // Error / Cancelled, or a blue "Running" pill while a run is in flight.
 function statusBadgeColor(
   status: RunStatus,
-): "green" | "red" | "secondary" {
+): "green" | "red" | "neutral" {
   switch (status) {
     case "passed":
       return "green";
     case "cancelled":
-      return "secondary";
+      return "neutral";
     default:
       return "red";
   }
@@ -434,11 +445,13 @@ function StoryRow({
 function HistoryRunRow({
   run,
   selected,
+  running,
   onOpen,
   onDelete,
 }: {
   run: RunResult;
   selected: boolean;
+  running?: boolean;
   onOpen: () => void;
   onDelete: () => void;
 }) {
@@ -453,10 +466,15 @@ function HistoryRunRow({
           <SidebarListItemTitle>{run.storyTitle}</SidebarListItemTitle>
         </SidebarListItemContent>
         <span className="col-start-2 flex w-[4.5rem] shrink-0 items-center justify-end self-center">
-          <StatusPill status={run.status} />
+          <StatusPill status={run.status} running={running} />
         </span>
         <RowAccessory
-          time={formatRelative(run.finishedAt)}
+          time={
+            running
+              ? formatRelative(run.startedAt)
+              : formatRelative(run.finishedAt)
+          }
+          isRunning={running}
           archiveTitle="Remove run"
           confirmTitle="Remove this run?"
           confirmDescription="This run will be removed from history. This cannot be undone."
@@ -472,6 +490,8 @@ function HistoryRunRow({
 function NameDialog({
   open,
   title,
+  description,
+  fieldLabel,
   confirmLabel,
   placeholder,
   initialName,
@@ -480,6 +500,8 @@ function NameDialog({
 }: {
   open: boolean;
   title: string;
+  description?: string;
+  fieldLabel?: string;
   confirmLabel: string;
   placeholder: string;
   initialName: string;
@@ -497,6 +519,9 @@ function NameDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={title}
+      description={description}
+      fieldLabel={fieldLabel}
+      size="medium"
       confirmLabel={confirmLabel}
       confirmDisabled={!name.trim()}
       onConfirm={() => onSubmit(name.trim())}
@@ -521,26 +546,49 @@ function NameDialog({
 // Dialog kinds — a SINGLE NameDialog instance handles all three (two mounted
 // Dialog roots could leave a lingering focus scope that made the New Section
 // dialog open unreliably).
-type DialogKind = "section-create" | "section-rename" | "story-rename";
+type DialogKind =
+  | "section-create"
+  | "section-rename"
+  | "story-rename"
+  | "schedule-rename";
 
 const DIALOG_META: Record<
   DialogKind,
-  { title: string; confirmLabel: string; placeholder: string }
+  {
+    title: string;
+    confirmLabel: string;
+    placeholder: string;
+    description: string;
+    fieldLabel: string;
+  }
 > = {
   "section-create": {
     title: "New Section",
     confirmLabel: "Create",
     placeholder: "Section name",
+    description: "Group related stories together in the sidebar.",
+    fieldLabel: "Section name",
   },
   "section-rename": {
     title: "Rename Section",
     confirmLabel: "Rename",
     placeholder: "Section name",
+    description: "Change how this section appears in the sidebar.",
+    fieldLabel: "Section name",
   },
   "story-rename": {
     title: "Rename Story",
     confirmLabel: "Rename",
     placeholder: "Story name",
+    description: "Change how this story appears in the sidebar.",
+    fieldLabel: "Story name",
+  },
+  "schedule-rename": {
+    title: "Rename Schedule",
+    confirmLabel: "Rename",
+    placeholder: "Schedule name",
+    description: "Change how this schedule appears in the sidebar.",
+    fieldLabel: "Schedule name",
   },
 };
 
@@ -549,15 +597,16 @@ function SegmentControl({
   value,
   onChange,
 }: {
-  value: "stories" | "generate" | "runs";
-  onChange: (value: "stories" | "generate" | "runs") => void;
+  value: "stories" | "runs" | "scheduled";
+  onChange: (value: "stories" | "runs" | "scheduled") => void;
 }) {
   const options = [
     { value: "stories" as const, label: "Stories", icon: BookOpenIcon },
-    { value: "generate" as const, label: "Generate", icon: MessageSquareIcon },
     { value: "runs" as const, label: "Runs", icon: HistoryIcon },
+    { value: "scheduled" as const, label: "Scheduled", icon: ClockIcon },
   ];
-  const activeIndex = value === "stories" ? 0 : value === "generate" ? 1 : 2;
+  const activeIndex =
+    value === "stories" ? 0 : value === "runs" ? 1 : 2;
   return (
     <div
       className="segment-control segment-control--three"
@@ -576,7 +625,6 @@ function SegmentControl({
             role="tab"
             aria-selected={active}
             aria-label={opt.label}
-            title={opt.label}
             data-active={active}
             onClick={() => onChange(opt.value)}
           >
@@ -605,14 +653,19 @@ export function AppSidebar() {
       return {
         storyName: routeId === "/story/$name" ? params.name : undefined,
         historyRunId: routeId === "/history/$runId" ? params.runId : undefined,
-        // A running story navigates to its live run view — track that runId so
-        // the originating story row stays highlighted while it runs.
         liveRunId: routeId === "/run/$runId" ? params.runId : undefined,
+        scheduledId:
+          routeId === "/scheduled/$id" && params.id !== "new"
+            ? params.id
+            : undefined,
+        onScheduledRoute:
+          routeId === "/scheduled" || routeId === "/scheduled/$id",
       };
     },
   });
 
   const activeRuns = useActiveRunMap();
+  const allRuns = useAllRuns();
   const {
     sections,
     assignments,
@@ -624,18 +677,42 @@ export function AppSidebar() {
     setCollapsed,
   } = useSections();
 
-  // Sidebar tab: reusable Stories vs past Runs. Initialised from the current
-  // route (opening a history run lands on Runs) then switched manually.
-  const [tab, setTab] = React.useState<"stories" | "generate" | "runs">(
-    activeSelection.historyRunId ? "runs" : "stories",
+  // Sidebar tab: reusable Stories vs past Runs. Follows the main-pane route —
+  // story detail → Stories, live/history run → Runs.
+  const [tab, setTab] = React.useState<"stories" | "runs" | "scheduled">(
+    activeSelection.onScheduledRoute
+      ? "scheduled"
+      : activeSelection.historyRunId || activeSelection.liveRunId
+        ? "runs"
+        : "stories",
   );
   const [searchQuery, setSearchQuery] = React.useState("");
 
   React.useEffect(() => {
-    if (activeSelection.historyRunId) {
+    if (activeSelection.onScheduledRoute) {
+      setTab("scheduled");
+    } else if (activeSelection.storyName) {
+      setTab("stories");
+    } else if (activeSelection.historyRunId || activeSelection.liveRunId) {
       setTab("runs");
     }
-  }, [activeSelection.historyRunId]);
+  }, [
+    activeSelection.storyName,
+    activeSelection.historyRunId,
+    activeSelection.liveRunId,
+    activeSelection.onScheduledRoute,
+  ]);
+
+  function handleTabChange(next: "stories" | "runs" | "scheduled") {
+    setTab(next);
+    if (next === "scheduled") {
+      navigate({ to: "/scheduled" });
+    } else if (next === "stories" && activeSelection.onScheduledRoute) {
+      navigate({ to: "/" });
+    } else if (next === "runs" && activeSelection.onScheduledRoute) {
+      navigate({ to: "/" });
+    }
+  }
 
   // One unified dialog state for section create/rename and story rename.
   const [dialog, setDialog] = React.useState<{
@@ -644,6 +721,7 @@ export function AppSidebar() {
     initialName: string;
     sectionId?: string;
     storyName?: string;
+    scheduleId?: string;
     pendingStory?: string;
   }>({ open: false, kind: "section-create", initialName: "" });
 
@@ -657,6 +735,18 @@ export function AppSidebar() {
     queryFn: runsList,
   });
 
+  const schedulesQuery = useQuery({
+    queryKey: ["schedules:list"],
+    queryFn: schedulesList,
+  });
+
+  React.useEffect(() => {
+    const unsub = onSchedulesChanged((updated) => {
+      queryClient.setQueryData(["schedules:list"], updated);
+    });
+    return unsub;
+  }, [queryClient]);
+
   React.useEffect(() => {
     const unsub = onStoriesChanged((updated) => {
       queryClient.setQueryData(["stories:list"], updated);
@@ -668,7 +758,38 @@ export function AppSidebar() {
     () => storiesQuery.data ?? [],
     [storiesQuery.data],
   );
-  const recentRuns: RunResult[] = (runsQuery.data ?? []).slice(0, RECENT_RUNS);
+
+  type SidebarRunRow = RunResult & { isRunning?: boolean };
+
+  const recentRuns = React.useMemo((): SidebarRunRow[] => {
+    const history = runsQuery.data ?? [];
+    const activeInStore = Object.values(allRuns).filter((r) => r.result === null);
+    const activeIds = new Set(activeInStore.map((r) => r.runId));
+
+    const activeRows: SidebarRunRow[] = activeInStore.map((r) => ({
+      runId: r.runId,
+      storyName: r.storyName,
+      storyTitle: r.storyTitle || "Running story",
+      status: "passed",
+      summary: "",
+      assertions: [],
+      startedAt: r.startedAt,
+      finishedAt: r.startedAt,
+      isRunning: true,
+    }));
+
+    const historyRows: SidebarRunRow[] = history
+      .filter((r) => !activeIds.has(r.runId))
+      .map((r) => ({ ...r, isRunning: false }));
+
+    return [...activeRows, ...historyRows]
+      .sort((a, b) => {
+        const aTime = a.isRunning ? a.startedAt : a.finishedAt;
+        const bTime = b.isRunning ? b.startedAt : b.finishedAt;
+        return bTime - aTime;
+      })
+      .slice(0, RECENT_RUNS);
+  }, [runsQuery.data, allRuns]);
 
   // Group stories by section. Assignments pointing at a deleted section fall
   // back to the default "Stories" group.
@@ -724,14 +845,29 @@ export function AppSidebar() {
     [recentRuns, matchesSearch],
   );
 
-  function openStory(story: StorySummary) {
-    const runId = activeRuns.get(story.name);
-    if (runId) {
-      // Running → jump straight to its live run view (not the story detail).
-      navigate({ to: "/run/$runId", params: { runId } });
-    } else {
-      navigate({ to: "/story/$name", params: { name: story.name } });
+  const schedules = React.useMemo(
+    () => schedulesQuery.data ?? [],
+    [schedulesQuery.data],
+  );
+
+  const filteredSchedules = React.useMemo(
+    () =>
+      schedules.filter(
+        (s) => matchesSearch(s.name) || s.storyNames.some((n) => matchesSearch(n)),
+      ),
+    [schedules, matchesSearch],
+  );
+
+  async function handleDeleteSchedule(id: string) {
+    await schedulesDelete(id);
+    queryClient.invalidateQueries({ queryKey: ["schedules:list"] });
+    if (activeSelection.scheduledId === id) {
+      navigate({ to: "/scheduled" });
     }
+  }
+
+  function openStory(story: StorySummary) {
+    navigate({ to: "/story/$name", params: { name: story.name } });
   }
 
   function handleDialogSubmit(name: string) {
@@ -749,7 +885,19 @@ export function AppSidebar() {
           // Run history rows show the story title — refresh them after rename.
           queryClient.invalidateQueries({ queryKey: ["runs:list"] });
         })
-        .catch((err) => console.error("[Sidebar] stories:rename failed", err));
+        .catch((err) =>
+          reportAppErrorFromUnknown("Failed to rename story", err),
+        );
+    } else if (dialog.kind === "schedule-rename" && dialog.scheduleId) {
+      const scheduleId = dialog.scheduleId;
+      void schedulesUpdate(scheduleId, { name })
+        .then((updated) => {
+          queryClient.setQueryData(["schedules:get", scheduleId], updated);
+          queryClient.invalidateQueries({ queryKey: ["schedules:list"] });
+        })
+        .catch((err) =>
+          reportAppErrorFromUnknown("Failed to rename schedule", err),
+        );
     }
     setDialog((d) => ({ ...d, open: false }));
   }
@@ -764,7 +912,7 @@ export function AppSidebar() {
     try {
       await storiesDelete(name);
     } catch (err) {
-      console.error("[Sidebar] stories:delete failed", err);
+      reportAppErrorFromUnknown("Failed to delete story", err);
       return;
     }
     queryClient.removeQueries({ queryKey: ["stories:get", name] });
@@ -787,7 +935,15 @@ export function AppSidebar() {
   }
 
   function renderStoryRow(story: StorySummary) {
-    const runId = activeRuns.get(story.name);
+    const runIdByName = activeRuns.get(story.name);
+    const runByTitle = !runIdByName
+      ? Object.values(allRuns).find(
+          (r) =>
+            r.result === null &&
+            (r.storyName === story.name || r.storyTitle === story.title),
+        )
+      : undefined;
+    const runId = runIdByName ?? runByTitle?.runId;
     const selected =
       activeSelection.storyName === story.name ||
       (!!runId && activeSelection.liveRunId === runId);
@@ -796,7 +952,7 @@ export function AppSidebar() {
         key={story.name}
         story={story}
         selected={selected}
-        isRunning={activeRuns.has(story.name)}
+        isRunning={!!runId}
         sections={sections}
         onOpen={() => openStory(story)}
         onRename={() =>
@@ -824,14 +980,19 @@ export function AppSidebar() {
   const hasStories = stories.length > 0;
   const dialogMeta = DIALOG_META[dialog.kind];
 
-  // Window keyboard shortcuts for the toolbar actions: mod+N records a story,
-  // shift+mod+N creates a section, shift+mod+R opens bulk run. Keyed off e.code so they're
+  // Window keyboard shortcuts for the toolbar actions: mod+N records a story
+  // (or creates a schedule on the Scheduled tab), shift+mod+N creates a section,
+  // shift+mod+R opens bulk run. Keyed off e.code so they're
   React.useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.code === "KeyN" && !e.shiftKey) {
         e.preventDefault();
-        navigate({ to: "/record" });
+        if (tab === "scheduled") {
+          navigate({ to: "/scheduled/$id", params: { id: "new" } });
+        } else {
+          navigate({ to: "/record" });
+        }
       } else if (e.code === "KeyN" && e.shiftKey) {
         e.preventDefault();
         setDialog({ open: true, kind: "section-create", initialName: "" });
@@ -843,7 +1004,7 @@ export function AppSidebar() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate, hasStories]);
+  }, [navigate, hasStories, tab]);
 
   return (
     <Sidebar
@@ -873,16 +1034,29 @@ export function AppSidebar() {
       // Custom toolbar: traffic-light spacer, then toggle + actions on one row.
       toolbar={
         <Toolbar className="border-b-0 bg-surface-sidebar">
-          <div className="drag-region sidebar-titlebar-spacer" aria-hidden />
+          <MacTitlebarRow />
           <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-1.5">
-            <SegmentControl
-              value={tab}
-              onChange={(next) => {
-                setTab(next);
-                if (next === "generate") navigate({ to: "/generate" });
-              }}
-            />
+            <SegmentControl value={tab} onChange={handleTabChange} />
             <div className="ml-auto flex items-center gap-0.5">
+              {tab === "scheduled" ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="transparent"
+                      size="toolbar"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        navigate({ to: "/scheduled/$id", params: { id: "new" } });
+                      }}
+                      aria-label="New schedule"
+                    >
+                      <PlusIcon className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent shortcut={["mod", "N"]} />
+                </Tooltip>
+              ) : (
+                <>
               {hasStories && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -939,18 +1113,42 @@ export function AppSidebar() {
                 </TooltipTrigger>
                 <TooltipContent shortcut={["mod", "N"]} />
               </Tooltip>
+                </>
+              )}
             </div>
           </ToolbarRow>
           <ToolbarRow className="h-auto px-2 pb-2">
             <label className="sidebar-search w-full">
               <SearchIcon className="size-3.5 shrink-0 text-tertiary" />
               <input
-                type="search"
+                type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={tab === "stories" ? "Filter stories…" : "Filter runs…"}
-                aria-label={tab === "stories" ? "Filter stories" : "Filter runs"}
+                placeholder={
+                  tab === "stories"
+                    ? "Filter stories…"
+                    : tab === "runs"
+                      ? "Filter runs…"
+                      : "Filter schedules…"
+                }
+                aria-label={
+                  tab === "stories"
+                    ? "Filter stories"
+                    : tab === "runs"
+                      ? "Filter runs"
+                      : "Filter schedules"
+                }
               />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  className="flex shrink-0 items-center text-tertiary transition-colors hover:text-secondary"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                >
+                  <XIcon className="size-3.5" />
+                </button>
+              ) : null}
             </label>
           </ToolbarRow>
         </Toolbar>
@@ -960,13 +1158,7 @@ export function AppSidebar() {
         {/* Keyed by `tab` so the panel re-mounts and replays the crossfade/slide
             animation on every Stories ↔ Runs toggle. */}
         <div key={tab} className="tab-panel-in">
-          {tab === "generate" ? (
-            <div className="px-3 py-4">
-              <Text variant="mini" color="tertiary">
-                AI story generation — use the main pane to start or continue a session.
-              </Text>
-            </div>
-          ) : tab === "stories" ? (
+          {tab === "stories" ? (
             <StoriesTab
               hasStories={hasStories}
               sections={sections}
@@ -986,15 +1178,39 @@ export function AppSidebar() {
               }
               onDeleteSection={deleteSection}
             />
-          ) : (
+          ) : tab === "runs" ? (
             <RunsTab
               runs={filteredRuns}
               searchActive={!!normalizedSearch}
-              activeRunId={activeSelection.historyRunId}
-              onOpen={(runId) =>
-                navigate({ to: "/history/$runId", params: { runId } })
+              activeRunId={
+                activeSelection.historyRunId ?? activeSelection.liveRunId
+              }
+              onOpen={(runId, running) =>
+                navigate(
+                  running
+                    ? { to: "/run/$runId", params: { runId } }
+                    : { to: "/history/$runId", params: { runId } },
+                )
               }
               onDelete={handleDeleteRun}
+            />
+          ) : (
+            <ScheduledTab
+              schedules={filteredSchedules}
+              searchActive={!!normalizedSearch}
+              activeScheduleId={activeSelection.scheduledId}
+              onOpen={(id) =>
+                navigate({ to: "/scheduled/$id", params: { id } })
+              }
+              onRename={(schedule) =>
+                setDialog({
+                  open: true,
+                  kind: "schedule-rename",
+                  initialName: schedule.name,
+                  scheduleId: schedule.id,
+                })
+              }
+              onDelete={handleDeleteSchedule}
             />
           )}
         </div>
@@ -1003,6 +1219,8 @@ export function AppSidebar() {
       <NameDialog
         open={dialog.open}
         title={dialogMeta.title}
+        description={dialogMeta.description}
+        fieldLabel={dialogMeta.fieldLabel}
         confirmLabel={dialogMeta.confirmLabel}
         placeholder={dialogMeta.placeholder}
         initialName={dialog.initialName}
@@ -1046,7 +1264,7 @@ function StoriesTab({
       {!hasStories && (
         <div className="px-3 py-6 text-center">
           <Text variant="small" color="tertiary">
-            No stories yet.{"\n"}Click + to record one.
+            No stories yet.
           </Text>
         </div>
       )}
@@ -1093,7 +1311,7 @@ function StoriesTab({
               color="quaternary"
               className="block px-3 py-1.5"
             >
-              No Stories.
+              No stories yet.
             </Text>
           )}
         </CollapsibleSection>
@@ -1113,12 +1331,134 @@ function StoriesTab({
               color="quaternary"
               className="block px-3 py-1.5"
             >
-              No Stories.
+              No stories yet.
             </Text>
           )}
         </CollapsibleSection>
       )}
     </>
+  );
+}
+
+// ---------- Scheduled tab: upcoming and past scheduled runs ----------
+function formatScheduleRelative(epochMs: number): string | undefined {
+  const now = Date.now();
+  const diff = epochMs - now;
+  if (diff <= 0) return "due";
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d`;
+}
+
+function ScheduledRow({
+  schedule,
+  selected,
+  onOpen,
+  onRename,
+  onDelete,
+}: {
+  schedule: ScheduledRun;
+  selected: boolean;
+  onOpen: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const timeLabel = schedule.lastRunAt
+    ? formatRelative(schedule.lastRunAt)
+    : formatScheduleRelative(schedule.scheduledAt);
+
+  const isRecurring = (schedule.repeat ?? "once") !== "once";
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="group/row w-full">
+          <SidebarListItem
+            selected={selected}
+            onClick={onOpen}
+            className={cn(!selected && "hover:bg-surface-hover")}
+          >
+            <SidebarListItemContent>
+              <SidebarListItemTitle>{schedule.name}</SidebarListItemTitle>
+            </SidebarListItemContent>
+            <span className="col-start-2 flex w-[4.5rem] shrink-0 items-center justify-end self-center">
+              {isRecurring ? (
+                <Badge color="blue" size="xs">
+                  {schedule.repeat === "daily" ? "Daily" : "Weekly"}
+                </Badge>
+              ) : schedule.lastRunAt ? (
+                <Badge color="neutral" size="xs">
+                  Ran
+                </Badge>
+              ) : (
+                <Badge color="blue" size="xs">
+                  Scheduled
+                </Badge>
+              )}
+            </span>
+            <RowAccessory
+              time={timeLabel}
+              archiveTitle="Remove schedule"
+              confirmTitle={`Remove "${schedule.name}"?`}
+              confirmDescription="This scheduled run will be removed. This cannot be undone."
+              confirmLabel="Remove"
+              onConfirm={onDelete}
+            />
+          </SidebarListItem>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function ScheduledTab({
+  schedules,
+  searchActive,
+  activeScheduleId,
+  onOpen,
+  onRename,
+  onDelete,
+}: {
+  schedules: ScheduledRun[];
+  searchActive?: boolean;
+  activeScheduleId?: string;
+  onOpen: (id: string) => void;
+  onRename: (schedule: ScheduledRun) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (schedules.length === 0) {
+    return (
+      <div className="px-3 py-6 text-center">
+        <Text variant="small" color="tertiary">
+          {searchActive
+            ? "No schedules match your search."
+            : "No schedules yet."}
+        </Text>
+      </div>
+    );
+  }
+  return (
+    <div className="pt-1">
+      <ExpandableRows
+        items={schedules}
+        renderItem={(schedule) => (
+          <ScheduledRow
+            key={schedule.id}
+            schedule={schedule}
+            selected={activeScheduleId === schedule.id}
+            onOpen={() => onOpen(schedule.id)}
+            onRename={() => onRename(schedule)}
+            onDelete={() => onDelete(schedule.id)}
+          />
+        )}
+      />
+    </div>
   );
 }
 
@@ -1130,10 +1470,10 @@ function RunsTab({
   onOpen,
   onDelete,
 }: {
-  runs: RunResult[];
+  runs: (RunResult & { isRunning?: boolean })[];
   searchActive?: boolean;
   activeRunId?: string;
-  onOpen: (runId: string) => void;
+  onOpen: (runId: string, running: boolean) => void;
   onDelete: (runId: string) => void;
 }) {
   if (runs.length === 0) {
@@ -1142,7 +1482,7 @@ function RunsTab({
         <Text variant="small" color="tertiary">
           {searchActive
             ? "No runs match your search."
-            : "No runs yet.\nRun a story to see it here."}
+            : "No runs yet."}
         </Text>
       </div>
     );
@@ -1156,7 +1496,8 @@ function RunsTab({
             key={run.runId}
             run={run}
             selected={activeRunId === run.runId}
-            onOpen={() => onOpen(run.runId)}
+            running={run.isRunning}
+            onOpen={() => onOpen(run.runId, !!run.isRunning)}
             onDelete={() => onDelete(run.runId)}
           />
         )}

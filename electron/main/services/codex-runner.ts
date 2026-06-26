@@ -12,10 +12,12 @@ import type {
   RunRecord,
   AssertionResult,
   RunStatus,
+  ActiveRunSnapshot,
 } from "./contract-types.js";
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
+import { writeRunMeta, deleteRunMeta } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
-import { RUN_STORY_PLAYBOOK } from "./story-skill.js";
+import { RUN_STORY_PLAYBOOK, buildRunPromptSuffix } from "./story-skill.js";
 import {
   ensureRunOutputDir,
   getHeroScreenshotPath,
@@ -24,18 +26,29 @@ import {
   enrichRunResult,
 } from "./run-artifacts.js";
 import {
+  deletePersistedRunEvents,
+  deleteRunPid,
+  flushPersistRunEvents,
+  schedulePersistRunEvents,
+  writeRunPid,
+} from "./run-events-persist.js";
+import {
   acquirePlaywrightSlot,
   releasePlaywrightSlot,
   MAX_CONCURRENT_PLAYWRIGHT,
 } from "./playwright-slots.js";
 import { buildCodexMcpConfigArgs, ensureCodexProjectConfig } from "./codex-mcp-config.js";
+import {
+  DEFAULT_CODEX_EFFORT,
+  DEFAULT_CODEX_MODEL,
+  type AgentRunConfig,
+} from "./agent-config.js";
+import {
+  markRunCancelled,
+  settleRunningEvents,
+} from "./run-event-settle.js";
 
 const execFileAsync = promisify(execFile);
-
-// Model + reasoning effort the run is pinned to, independent of the user's
-// global ~/.codex/config.toml defaults. "medium" balances speed and quality.
-const RUN_MODEL = "gpt-5.5";
-const RUN_REASONING_EFFORT = "medium";
 
 // How many codex exec processes may run AT ONCE (single-story runs + one bulk
 // orchestrator). Playwright MCP browser sessions are capped separately — see
@@ -68,6 +81,12 @@ export function releaseRunSlot(): void {
 // cancel only hit the last-started run).
 interface RunState {
   runId: string;
+  storyName: string;
+  storyTitle: string;
+  startedAt: number;
+  agentProvider: "codex";
+  agentModel: string;
+  events: RunEvent[];
   // Child process — kept for cancellation.
   process: ChildProcess | null;
   // The user asked to cancel. Tracked explicitly so the close handler reports
@@ -83,6 +102,18 @@ interface RunState {
   queued: boolean;
 }
 const _runs = new Map<string, RunState>();
+
+export function listActiveCodexRuns(): ActiveRunSnapshot[] {
+  return Array.from(_runs.values()).map((state) => ({
+    runId: state.runId,
+    storyName: state.storyName,
+    storyTitle: state.storyTitle,
+    startedAt: state.startedAt,
+    agentProvider: state.agentProvider,
+    agentModel: state.agentModel,
+    events: state.events.filter((e) => !isBenignCodexStderrEvent(e)),
+  }));
+}
 
 // JSON Schema consumed by `codex exec --output-schema`. Must be written to disk
 // before spawn or codex exits with "Failed to read output schema file". Strict-mode
@@ -164,16 +195,21 @@ function buildEnv(): NodeJS.ProcessEnv {
 }
 
 // ---------- Event helpers ----------
+function syncRunTimeline(runId: string, events: RunEvent[]): void {
+  schedulePersistRunEvents(runId, events);
+}
+
 // Resolve the leading "Starting" status row (and any other lingering status
 // spinner) to a settled state once real activity begins, so it doesn't spin
 // forever once the run is underway.
-function resolveStartingRow(events: RunEvent[]): void {
+function resolveStartingRow(events: RunEvent[], runId: string): void {
   for (const e of events) {
     if (e.kind === "status" && e.status === "running") {
       e.status = "ok";
       broadcast("run:event", { ...e });
     }
   }
+  syncRunTimeline(runId, events);
 }
 
 // Codex prints some stderr lines during normal startup that are not failures.
@@ -206,6 +242,7 @@ function toolNameToKind(toolName: string): RunEventKind {
 
 function toolNameToLabel(toolName: string): string {
   const bare = toolName.replace(/^playwright__browser[-_]?|^browser[-_]?/, "");
+  if (bare.includes("screenshot")) return "Screenshot";
   return bare.charAt(0).toUpperCase() + bare.slice(1).replace(/[-_]/g, " ");
 }
 
@@ -260,9 +297,18 @@ export async function startRun(
   storyFilePath: string,
   codexBinary: string,
   runHook?: string,
+  agentConfig?: AgentRunConfig,
 ): Promise<RunResult> {
+  const startedAt = Date.now();
+  const model = agentConfig?.model ?? DEFAULT_CODEX_MODEL;
   const state: RunState = {
     runId,
+    storyName,
+    storyTitle,
+    startedAt,
+    agentProvider: "codex",
+    agentModel: model,
+    events: [],
     process: null,
     cancelled: false,
     seq: 0,
@@ -270,6 +316,14 @@ export async function startRun(
     queued: true,
   };
   _runs.set(runId, state);
+  await writeRunMeta({
+    runId,
+    storyName,
+    storyTitle,
+    startedAt,
+    agentProvider: "codex",
+    agentModel: model,
+  });
   const runsDir = getRunsDir();
   const runOutputDir = await ensureRunOutputDir(runId);
   const schemaPath = path.join(runsDir, `${runId}.schema.json`);
@@ -280,7 +334,7 @@ export async function startRun(
 
   // codex --output-schema reads this file; it must exist before spawn.
   await fs.writeFile(schemaPath, JSON.stringify(RUN_OUTPUT_SCHEMA), "utf-8");
-  await ensureCodexProjectConfig(runsDir);
+  await ensureCodexProjectConfig(runOutputDir);
 
   const storyContents = storyFilePath.includes("\n")
     ? storyFilePath
@@ -288,34 +342,31 @@ export async function startRun(
 
   const prompt =
     RUN_STORY_PLAYBOOK +
-    `\n\n## This run\n` +
-    `Run output directory: ${runOutputDir}\n` +
-    `Screenshots directory: ${screenshotsDir}\n` +
-    `Steps JSON path: ${stepsPath}\n` +
-    `Hero screenshot path: ${screenshotPath}\n\n` +
-    `The full story to run is included below.\n\n` +
-    "```markdown\n" +
-    storyContents +
-    "\n```\n\n" +
-    `Write steps.json to ${stepsPath} and save step screenshots under ${screenshotsDir}. ` +
-    `Set screenshotPath in the output schema to ${screenshotPath} (hero/final image).` +
-    (runHook && runHook.trim()
-      ? `\n\n## Additional instructions\n${runHook.trim()}`
-      : "");
+    buildRunPromptSuffix({
+      runOutputDir,
+      screenshotsDir,
+      stepsPath,
+      heroScreenshotPath: screenshotPath,
+      storyContents,
+      runHook,
+    });
+
+  const effort = agentConfig?.effort ?? DEFAULT_CODEX_EFFORT;
 
   const args = [
     "exec",
     "--dangerously-bypass-approvals-and-sandbox",
     "--json",
     "--skip-git-repo-check",
+    "--ignore-user-config",
     "-C",
-    runsDir,
+    runOutputDir,
     // Pin model + reasoning effort so runs are deterministic regardless of the
     // user's global ~/.codex/config.toml defaults.
     "-c",
-    `model="${RUN_MODEL}"`,
+    `model="${state.agentModel}"`,
     "-c",
-    `model_reasoning_effort="${RUN_REASONING_EFFORT}"`,
+    `model_reasoning_effort="${effort}"`,
     ...buildCodexMcpConfigArgs(),
     "--output-schema",
     schemaPath,
@@ -326,8 +377,7 @@ export async function startRun(
 
   console.log("[codex:run]", { runId, storyName, codexBinary, args: args.slice(0, 8) });
 
-  const startedAt = Date.now();
-  const events: RunEvent[] = [];
+  const events = state.events;
 
   // Status event — run starting
   const startEvent: RunEvent = {
@@ -341,6 +391,7 @@ export async function startRun(
   };
   events.push(startEvent);
   broadcast("run:event", startEvent);
+  syncRunTimeline(runId, events);
 
   // Wait for a codex exec slot, then a Playwright MCP slot. Singles use both;
   // bulk orchestrators only take a codex slot (subagents acquire Playwright later).
@@ -362,6 +413,8 @@ export async function startRun(
       startedAt,
       finishedAt: Date.now(),
       error: "Cancelled by user",
+      agentProvider: state.agentProvider,
+      agentModel: state.agentModel,
     };
     return finalizeRun(cancelledResult, events);
   }
@@ -384,19 +437,22 @@ export async function startRun(
       startedAt,
       finishedAt: Date.now(),
       error: "Cancelled by user",
+      agentProvider: state.agentProvider,
+      agentModel: state.agentModel,
     };
     return finalizeRun(cancelledResult, events);
   }
 
   const runPromise = new Promise<RunResult>((resolve) => {
     const child = spawn(codexBinary, args, {
-      cwd: runsDir,
+      cwd: runOutputDir,
       env: buildEnv(),
       detached: true, // allows process group kill on cancel
       // stdin must be closed (EOF) or codex hangs on "Reading additional input from stdin..."
       stdio: ["ignore", "pipe", "pipe"],
     });
     state.process = child;
+    if (child.pid) void writeRunPid(runId, child.pid);
 
     let tokenUsage: { inputTokens: number; outputTokens: number } | undefined;
     let lastAgentMessage = "";
@@ -455,8 +511,18 @@ export async function startRun(
       };
       events.push(errEvent);
       broadcast("run:event", errEvent);
+      syncRunTimeline(runId, events);
       _runs.delete(runId);
-      const result = buildErrorResult(runId, storyName, storyTitle, startedAt, err.message, screenshotPath);
+      const result = buildErrorResult(
+        runId,
+        storyName,
+        storyTitle,
+        startedAt,
+        err.message,
+        screenshotPath,
+        state.agentProvider,
+        state.agentModel,
+      );
       finalizeRun(result, events).then(resolve);
     });
 
@@ -506,6 +572,8 @@ export async function startRun(
             finishedAt: Date.now(),
             tokenUsage,
             error: cancelled ? "Cancelled by user" : exitError,
+            agentProvider: state.agentProvider,
+            agentModel: state.agentModel,
           };
 
           return finalizeRun(result, events).then(resolve);
@@ -518,6 +586,8 @@ export async function startRun(
             startedAt,
             `Failed to read result: ${String(err)}`,
             screenshotPath,
+            state.agentProvider,
+            state.agentModel,
           );
           return finalizeRun(result, events).then(resolve);
         });
@@ -574,7 +644,7 @@ function handleCodexLine(
     // One row per tool call: item.started and item.completed share the codex
     // item id, so they reuse the same seq and the started row is updated in
     // place (running -> ok/failed) instead of producing a duplicate row.
-    resolveStartingRow(events);
+    resolveStartingRow(events, runId);
     const itemId = (item["id"] as string | undefined) ?? `mcp-${state.seq}`;
     let seq = state.itemSeq.get(itemId);
     if (seq === undefined) {
@@ -595,6 +665,7 @@ function handleCodexLine(
     if (idx >= 0) events[idx] = evt;
     else events.push(evt);
     broadcast("run:event", evt);
+    syncRunTimeline(runId, events);
     console.log("[codex:run] tool event", { kind, label, status, tool });
   } else if (itemType === "agent_message") {
     const text = (item["text"] as string | undefined) ?? "";
@@ -602,7 +673,7 @@ function handleCodexLine(
     // comes from result.json. Only surface human-readable narration in the timeline.
     if (text && !isStarted && !text.trimStart().startsWith("{")) {
       onAgentMessage(text);
-      resolveStartingRow(events);
+      resolveStartingRow(events, runId);
       const evt: RunEvent = {
         runId,
         seq: state.seq++,
@@ -614,11 +685,12 @@ function handleCodexLine(
       };
       events.push(evt);
       broadcast("run:event", evt);
+      syncRunTimeline(runId, events);
     }
   } else if (itemType === "reasoning") {
     const text = (item["text"] as string | undefined) ?? "";
     if (!isStarted && text.trim()) {
-      resolveStartingRow(events);
+      resolveStartingRow(events, runId);
       const evt: RunEvent = {
         runId,
         seq: state.seq++,
@@ -630,6 +702,7 @@ function handleCodexLine(
       };
       events.push(evt);
       broadcast("run:event", evt);
+      syncRunTimeline(runId, events);
     }
   }
   // command_execution and other internal item types (codex reading skills/story
@@ -653,6 +726,8 @@ function buildErrorResult(
   startedAt: number,
   error: string,
   screenshotPath: string,
+  agentProvider: "codex" = "codex",
+  agentModel?: string,
 ): RunResult {
   return {
     runId,
@@ -666,6 +741,8 @@ function buildErrorResult(
     startedAt,
     finishedAt: Date.now(),
     error,
+    agentProvider,
+    agentModel,
   };
 }
 
@@ -674,31 +751,20 @@ async function finalizeRun(result: RunResult, events: RunEvent[]): Promise<RunRe
   events.length = 0;
   events.push(...timelineEvents);
 
-  const settled: RunEvent["status"] =
-    result.status === "failed" || result.status === "error" ? "failed" : "ok";
-  for (const e of events) {
-    if (e.status === "running") {
-      e.status = settled;
-      broadcast("run:event", { ...e });
-    }
-  }
+  settleRunningEvents(events, result.status);
+  await flushPersistRunEvents(result.runId, events);
   const enriched = await enrichRunResult(result);
   const record: RunRecord = { ...enriched, events };
   await saveRun(record);
+  await deleteRunMeta(result.runId);
+  await deleteRunPid(result.runId);
+  await deletePersistedRunEvents(result.runId);
   broadcast("run:result", enriched);
   console.log("[codex:run] run finalized", { runId: result.runId, status: result.status });
   return enriched;
 }
 
-// Optional hook registered by codex-bulk-runner to cancel shared bulk threads.
-let _bulkCancel: ((runId: string) => boolean) | null = null;
-export function registerBulkCancel(fn: (runId: string) => boolean): void {
-  _bulkCancel = fn;
-}
-
 export function cancelRun(runId: string): boolean {
-  if (_bulkCancel?.(runId)) return true;
-
   const state = _runs.get(runId);
   if (!state) {
     console.log("[codex:run] cancel ignored — run not active", { runId });
@@ -707,6 +773,11 @@ export function cancelRun(runId: string): boolean {
   // Record intent first so the close handler (or the queued-run path in
   // startRun) finalizes as "cancelled" no matter how the run ends up exiting.
   state.cancelled = true;
+
+  if (state.process) {
+    state.seq = markRunCancelled(state.events, runId, state.seq);
+    syncRunTimeline(runId, state.events);
+  }
 
   // A queued run has no process yet — marking it cancelled is enough; when its
   // slot opens, startRun finalizes it as cancelled without spawning codex.

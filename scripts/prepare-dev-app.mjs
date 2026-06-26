@@ -34,7 +34,7 @@ if (!fs.existsSync(iconSrc)) {
 const electronVersion = JSON.parse(
   fs.readFileSync(path.join(root, "node_modules/electron/package.json"), "utf8"),
 ).version;
-const stamp = `${electronVersion}-${fs.statSync(iconSrc).mtimeMs}-v3`;
+const stamp = `${electronVersion}-${fs.statSync(iconSrc).mtimeMs}-v4`;
 
 if (fs.existsSync(stampFile) && fs.readFileSync(stampFile, "utf8") === stamp && fs.existsSync(devApp)) {
   process.exit(0);

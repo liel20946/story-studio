@@ -4,13 +4,11 @@ import { ipcMain } from "../electron-api.js";
 import {
   readDraftArtifact,
   discardDraftDir,
-  appendApprovedStory,
+  saveDraftToLibrary,
+  listStories,
   parseDraftYamlSnippet,
 } from "../services/stories-service.js";
 import { getDraftsDir } from "../services/paths.js";
-import { promoteReviewedStory, appendBowserStories } from "../services/skills-python.js";
-import { siteFilePath } from "../services/bowser-stories-service.js";
-import { listStories } from "../services/stories-service.js";
 import { listRuns, buildLastRunMap } from "../services/run-service.js";
 import { broadcast } from "../broadcast.js";
 import type { StoryDraft } from "../services/contract-types.js";
@@ -74,15 +72,13 @@ export function registerDraftHandlers(): void {
     const meta = drafts.find((d) => d.draftId === draftId);
     if (!meta) throw new Error(`Draft not found: ${draftId}`);
 
-    await promoteReviewedStory(artifactDir);
-    const reviewedYaml = path.join(artifactDir, "reviewed.story.yaml");
-    const destination = siteFilePath(meta.siteSlug);
-    await appendBowserStories(reviewedYaml, destination);
-
-    const reviewedContent = await fs.readFile(reviewedYaml, "utf-8");
-    const entry = parseDraftYamlSnippet(reviewedContent);
-    const storyName = `${meta.siteSlug}--${entry.id}`;
-    await discardDraftDir(artifactDir);
+    const artifacts = await readDraftArtifact(artifactDir);
+    const entry = parseDraftYamlSnippet(artifacts.draftYaml);
+    const storyName = await saveDraftToLibrary(
+      artifactDir,
+      meta.siteSlug,
+      entry.id,
+    );
 
     const runs = await listRuns();
     const summaries = await listStories(buildLastRunMap(runs));

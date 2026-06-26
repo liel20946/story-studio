@@ -9,13 +9,20 @@ import { getStoriesDir } from "./paths.js";
 
 export type BowserStoryMode = "recorded" | "generated";
 
+export interface BowserAssertion {
+  /** Number of workflow action steps completed before this assertion runs. */
+  after: number;
+  text: string;
+}
+
 export interface BowserStoryEntry {
   id: string;
   name: string;
   url: string;
-  tags?: string[];
   mode?: BowserStoryMode;
   workflow: string;
+  /** Multiline block — one assertion per line, optionally prefixed with @N (step index). */
+  assertions?: string;
   variables?: Record<string, string>;
   created_at?: number;
 }
@@ -71,6 +78,12 @@ export function siteSlugFromUrl(url: string): string {
   } catch {
     return slugify(url);
   }
+}
+
+/** Drop legacy `tags` fields when reading or writing Bowser entries. */
+export function stripBowserEntryTags(entry: BowserStoryEntry & { tags?: unknown }): BowserStoryEntry {
+  const { tags: _tags, ...rest } = entry;
+  return rest;
 }
 
 export function siteFilePath(siteSlug: string): string {
@@ -141,22 +154,116 @@ export function cleanRecordedSteps(steps: string[]): string[] {
   return result;
 }
 
-/** Add fallback Verify steps when a recorded workflow has actions but no assertions. */
-export function ensureVerifyStepsInWorkflow(lines: string[], baseUrl: string): string[] {
-  if (lines.some((l) => /^verify\b/i.test(l))) return lines;
+export function normalizeAssertionText(text: string): string {
+  const trimmed = text.trim();
+  if (/^verify\b/i.test(trimmed)) return trimmed;
+  return `Verify ${trimmed}`;
+}
 
-  const result = [...lines];
-  const firstNav = result.findIndex((l) => l.startsWith("Navigate to "));
+/** Split interleaved legacy workflows into action steps and positioned assertions. */
+export function splitWorkflowWithAssertions(workflowLines: string[]): {
+  steps: string[];
+  assertions: BowserAssertion[];
+} {
+  const steps: string[] = [];
+  const assertions: BowserAssertion[] = [];
+  for (const line of workflowLines) {
+    if (/^verify\b/i.test(line)) {
+      assertions.push({ after: steps.length, text: line });
+    } else {
+      steps.push(line);
+    }
+  }
+  return { steps, assertions };
+}
+
+/** @deprecated Use splitWorkflowWithAssertions — kept for callers expecting string assertions. */
+export function splitWorkflowSteps(workflowLines: string[]): {
+  steps: string[];
+  assertions: string[];
+} {
+  const { steps, assertions } = splitWorkflowWithAssertions(workflowLines);
+  return { steps, assertions: assertions.map((a) => a.text) };
+}
+
+export function parseAssertionsBlock(assertions: string): BowserAssertion[] {
+  return parseWorkflowLines(assertions).map((line) => {
+    const positioned = line.match(/^@(\d+)\s+(.+)$/);
+    if (positioned) {
+      return {
+        after: parseInt(positioned[1], 10),
+        text: normalizeAssertionText(positioned[2]),
+      };
+    }
+    return { after: -1, text: normalizeAssertionText(line) };
+  });
+}
+
+export function formatAssertionsBlock(assertions: BowserAssertion[]): string {
+  return assertions.map((a) => `@${a.after} ${a.text}`).join("\n");
+}
+
+/** Click/Navigate steps that only open another page, panel, or row — common end-of-recording tail. */
+export function isEndStateNavigationStep(step: string): boolean {
+  return /^(Click|Navigate to)\b/i.test(step.trim());
+}
+
+/** True when every step from fromIndex onward is end-state navigation only. */
+export function hasOnlyEndStateNavigationTail(steps: string[], fromIndex: number): boolean {
+  const tail = steps.slice(fromIndex);
+  return tail.length > 0 && tail.every(isEndStateNavigationStep);
+}
+
+/**
+ * Move the latest assertion(s) past trailing navigation clicks captured after the
+ * main action — e.g. opening a wallet row so the hero screenshot is the detail page.
+ */
+export function alignAssertionsWithEndStateNavigation(
+  steps: string[],
+  assertions: BowserAssertion[],
+): BowserAssertion[] {
+  if (steps.length === 0 || assertions.length === 0) return assertions;
+
+  const maxAfter = Math.max(...assertions.map((a) => a.after));
+  if (maxAfter >= steps.length) return assertions;
+  if (!hasOnlyEndStateNavigationTail(steps, maxAfter)) return assertions;
+
+  const endAfter = steps.length;
+  return assertions.map((a) => (a.after === maxAfter ? { ...a, after: endAfter } : a));
+}
+
+/** Clamp @N positions into 0..stepCount — fixes common off-by-one from AI conversion. */
+export function clampAssertionPositions(
+  assertions: BowserAssertion[],
+  stepCount: number,
+): BowserAssertion[] {
+  return assertions.map((a) => {
+    if (a.after < 0) return { ...a, after: 0 };
+    if (a.after > stepCount) {
+      console.warn(
+        `[bowser] clamping assertion "${a.text}" from @${a.after} to @${stepCount} (${stepCount} workflow steps)`,
+      );
+      return { ...a, after: stepCount };
+    }
+    return a;
+  });
+}
+
+/** Add fallback assertions when a recorded workflow has actions but none defined. */
+export function ensureFallbackAssertions(
+  steps: string[],
+  baseUrl: string,
+): BowserAssertion[] {
+  const assertions: BowserAssertion[] = [];
+  const firstNav = steps.findIndex((l) => l.startsWith("Navigate to "));
   if (firstNav >= 0) {
-    result.splice(firstNav + 1, 0, "Verify the page loads successfully");
-  } else if (baseUrl) {
-    result.unshift(`Navigate to ${baseUrl}`, "Verify the page loads successfully");
+    assertions.push({ after: firstNav + 1, text: "Verify the page loads successfully" });
   } else {
-    result.unshift("Verify the page loads successfully");
+    assertions.push({ after: 0, text: "Verify the page loads successfully" });
   }
 
   let lastUrl = baseUrl;
-  for (const line of result) {
+  for (const line of steps) {
     if (line.startsWith("Navigate to ")) {
       lastUrl = line.slice("Navigate to ".length).trim();
     }
@@ -165,31 +272,95 @@ export function ensureVerifyStepsInWorkflow(lines: string[], baseUrl: string): s
   try {
     const pathname = new URL(lastUrl).pathname;
     if (pathname && pathname !== "/") {
-      result.push(`Verify the current URL contains "${pathname}"`);
+      assertions.push({
+        after: steps.length,
+        text: `Verify the current URL contains "${pathname}"`,
+      });
     } else {
-      result.push("Verify the expected page state is visible");
+      assertions.push({
+        after: steps.length,
+        text: "Verify the expected page state is visible",
+      });
     }
   } catch {
-    result.push("Verify the expected page state is visible");
+    assertions.push({
+      after: steps.length,
+      text: "Verify the expected page state is visible",
+    });
   }
 
+  return assertions;
+}
+
+/** Reconstruct execution order from separate workflow steps and positioned assertions. */
+export function mergeWorkflowForExecution(
+  steps: string[],
+  assertions: BowserAssertion[],
+): string[] {
+  const byAfter = new Map<number, string[]>();
+  for (const assertion of assertions) {
+    const bucket = byAfter.get(assertion.after) ?? [];
+    bucket.push(assertion.text);
+    byAfter.set(assertion.after, bucket);
+  }
+
+  const result: string[] = [];
+  for (let i = 0; i <= steps.length; i++) {
+    const pending = byAfter.get(i);
+    if (pending) result.push(...pending);
+    if (i < steps.length) result.push(steps[i]);
+  }
   return result;
 }
 
-export function splitWorkflowSteps(workflowLines: string[]): {
+/** Resolve action steps and assertions from a Bowser entry (new or legacy format). */
+export function resolveStoryParts(entry: BowserStoryEntry): {
   steps: string[];
-  assertions: string[];
+  assertions: BowserAssertion[];
 } {
-  const steps: string[] = [];
-  const assertions: string[] = [];
-  for (const line of workflowLines) {
-    if (/^verify\b/i.test(line)) {
-      assertions.push(line);
-    } else {
-      steps.push(line);
-    }
+  const rawWorkflow = cleanRecordedSteps(parseWorkflowLines(entry.workflow));
+  const hasAssertionsField =
+    entry.assertions !== undefined &&
+    entry.assertions !== null &&
+    String(entry.assertions).trim().length > 0;
+
+  if (hasAssertionsField) {
+    const { steps } = splitWorkflowWithAssertions(rawWorkflow);
+    let assertions = parseAssertionsBlock(String(entry.assertions));
+    assertions = assertions.map((a) =>
+      a.after >= 0 ? a : { ...a, after: steps.length },
+    );
+    return { steps, assertions };
+  }
+
+  const { steps, assertions } = splitWorkflowWithAssertions(rawWorkflow);
+  if (assertions.length === 0) {
+    return { steps, assertions: ensureFallbackAssertions(steps, entry.url) };
   }
   return { steps, assertions };
+}
+
+/** Normalize an entry for YAML storage: workflow = actions only, assertions = separate block. */
+export function normalizeBowserEntryForStorage(entry: BowserStoryEntry): BowserStoryEntry {
+  const { steps, assertions } = resolveStoryParts(entry);
+  let finalAssertions =
+    assertions.length > 0 ? assertions : ensureFallbackAssertions(steps, entry.url);
+  finalAssertions = alignAssertionsWithEndStateNavigation(steps, finalAssertions);
+  finalAssertions = clampAssertionPositions(finalAssertions, steps.length);
+  const { tags: _tags, ...rest } = stripBowserEntryTags(entry);
+  return {
+    ...rest,
+    workflow: steps.join("\n"),
+    assertions: formatAssertionsBlock(finalAssertions),
+  };
+}
+
+/** @deprecated Use resolveStoryParts + mergeWorkflowForExecution. */
+export function ensureVerifyStepsInWorkflow(lines: string[], baseUrl: string): string[] {
+  const { steps, assertions } = splitWorkflowWithAssertions(lines);
+  const resolved =
+    assertions.length > 0 ? assertions : ensureFallbackAssertions(steps, baseUrl);
+  return mergeWorkflowForExecution(steps, resolved);
 }
 
 function inferVariableKeyFromTarget(target: string, _value: string): string {
@@ -269,7 +440,8 @@ function parseVariablesFromEntry(
     Object.keys(explicit).length > 0
       ? explicit
       : inferVariablesFromWorkflow(workflowLines.join("\n"));
-  const merged = { ...inferred, ...collectPlaceholderVariables(workflowLines) };
+  // Placeholders fill in missing keys only — explicit/inferred values must win.
+  const merged = { ...collectPlaceholderVariables(workflowLines), ...inferred };
   return Object.entries(merged).map(([key, value]) => ({
     key,
     value,
@@ -285,26 +457,23 @@ function entryToDetail(
   lastRun?: StorySummary["lastRun"],
   fileCreatedAt?: number,
 ): StoryDetail {
-  const name = compositeStoryName(siteSlug, entry.id);
-  const workflowLines = ensureVerifyStepsInWorkflow(
-    cleanRecordedSteps(parseWorkflowLines(entry.workflow)),
-    entry.url,
-  );
-  const { steps, assertions } = splitWorkflowSteps(workflowLines);
+  const normalized = stripBowserEntryTags(entry);
+  const name = compositeStoryName(siteSlug, normalized.id);
+  const { steps, assertions } = resolveStoryParts(normalized);
+  const workflowLines = mergeWorkflowForExecution(steps, assertions);
   return {
     name,
-    title: entry.name,
-    baseUrl: entry.url,
-    createdAt: resolveCreatedAt(entry.created_at, fileCreatedAt ?? Date.now()),
+    title: normalized.name,
+    baseUrl: normalized.url,
+    createdAt: resolveCreatedAt(normalized.created_at, fileCreatedAt ?? Date.now()),
     lastRun: lastRun ?? null,
     filePath,
     siteSlug,
-    storyId: entry.id,
-    tags: entry.tags ?? [],
-    mode: entry.mode ?? "recorded",
-    variables: parseVariablesFromEntry(entry, workflowLines),
+    storyId: normalized.id,
+    mode: normalized.mode ?? "recorded",
+    variables: parseVariablesFromEntry(normalized, steps),
     steps,
-    assertions,
+    assertions: assertions.map((a) => a.text),
     workflow: workflowLines,
     raw: rawYaml,
   };
@@ -316,9 +485,20 @@ export function validateBowserEntry(entry: BowserStoryEntry): string[] {
   if (!entry.name?.trim()) errors.push("Story name is required");
   if (!entry.url?.trim()) errors.push("Story url is required");
   if (!entry.workflow?.trim()) errors.push("Story workflow is required");
-  const lines = parseWorkflowLines(entry.workflow);
-  if (!lines.some((l) => /^verify\b/i.test(l))) {
-    errors.push("Story must include at least one Verify step");
+
+  const { steps, assertions } = resolveStoryParts(entry);
+  if (steps.some((l) => /^verify\b/i.test(l))) {
+    errors.push("Workflow must contain action steps only — move Verify lines to assertions");
+  }
+  if (assertions.length === 0) {
+    errors.push("Story must include at least one assertion");
+  }
+  for (const assertion of assertions) {
+    if (assertion.after < 0 || assertion.after > steps.length) {
+      errors.push(
+        `Assertion "${assertion.text}" has invalid position @${assertion.after} (workflow has ${steps.length} steps)`,
+      );
+    }
   }
   return errors;
 }
@@ -342,7 +522,10 @@ export async function loadSiteFile(siteSlug: string): Promise<BowserSiteFile> {
 
 export async function saveSiteFile(siteSlug: string, file: BowserSiteFile): Promise<void> {
   const filePath = siteFilePath(siteSlug);
-  const content = stringifyYaml(file, { lineWidth: 0 });
+  const normalized: BowserSiteFile = {
+    stories: file.stories.map((story) => normalizeBowserEntryForStorage(story)),
+  };
+  const content = stringifyYaml(normalized, { lineWidth: 0 });
   await fs.writeFile(filePath, content, "utf-8");
 }
 
@@ -358,10 +541,10 @@ export async function appendStoryToSite(
   if (file.stories.some((s) => s.id === entry.id)) {
     throw new Error(`Story id "${entry.id}" already exists in ${siteSlug}.yaml`);
   }
-  const toAppend: BowserStoryEntry = {
+  const toAppend: BowserStoryEntry = normalizeBowserEntryForStorage({
     ...entry,
     created_at: resolveCreatedAt(entry.created_at, Date.now()),
-  };
+  });
   file.stories.push(toAppend);
   await saveSiteFile(siteSlug, file);
 }
@@ -383,7 +566,7 @@ export async function updateStoryInSite(
   if (entry.id !== storyId && file.stories.some((s) => s.id === entry.id)) {
     throw new Error(`Story id "${entry.id}" already exists`);
   }
-  file.stories[idx] = entry;
+  file.stories[idx] = normalizeBowserEntryForStorage(entry);
   await saveSiteFile(siteSlug, file);
 }
 
@@ -432,7 +615,6 @@ export async function listBowserSummaries(
           lastRun: lastRunMap.get(name) ?? null,
           siteSlug,
           storyId: story.id,
-          tags: story.tags ?? [],
           mode: story.mode ?? "recorded",
         });
       }
@@ -471,8 +653,7 @@ export async function getBowserStory(
 }
 
 export function storyEntryToMarkdown(entry: BowserStoryEntry): string {
-  const lines = parseWorkflowLines(entry.workflow);
-  const { steps, assertions } = splitWorkflowSteps(lines);
+  const { steps, assertions } = resolveStoryParts(entry);
   const vars = entry.variables
     ? Object.entries(entry.variables)
         .map(([k, v]) => `- \`${k}\`: ${v}`)
@@ -483,7 +664,7 @@ export function storyEntryToMarkdown(entry: BowserStoryEntry): string {
     `# ${entry.name}\n\n` +
     (vars ? `## Variables\n${vars}\n\n` : "") +
     `## Steps\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\n` +
-    `## Assertions\n${assertions.map((a) => `- ${a}`).join("\n")}\n`
+    `## Assertions\n${assertions.map((a) => `- ${a.text}`).join("\n")}\n`
   );
 }
 
@@ -498,20 +679,23 @@ export function legacyMdToBowserEntry(
 ): { siteSlug: string; entry: BowserStoryEntry } {
   const { meta, body } = parseFrontmatter(raw);
   const steps = parseSteps(body);
-  const assertions = parseAssertions(body);
+  const assertionTexts = parseAssertions(body);
   const variables = parseVariables(body);
   const baseUrl = meta["base_url"] ?? "";
   const title = meta["title"] ?? name;
   const siteSlug = baseUrl ? siteSlugFromUrl(baseUrl) : slugify(name);
   const storyId = slugify(name);
-  const workflowLines = [...steps, ...assertions.map((a) => (a.startsWith("Verify") ? a : `Verify ${a}`))];
+  const assertions: BowserAssertion[] = assertionTexts.map((text) => ({
+    after: steps.length,
+    text: text.startsWith("Verify") ? text : `Verify ${text}`,
+  }));
   const entry: BowserStoryEntry = {
     id: storyId,
     name: title,
     url: baseUrl || "https://example.com",
-    tags: ["migrated"],
     mode: "recorded",
-    workflow: workflowLines.join("\n"),
+    workflow: steps.join("\n"),
+    assertions: formatAssertionsBlock(assertions),
     created_at: meta["created_at"]
       ? resolveCreatedAt(meta["created_at"], Date.now())
       : Date.now(),
@@ -524,9 +708,14 @@ export function legacyMdToBowserEntry(
 
 /** Format a story for agent run prompts (inline markdown). */
 export function formatStoryForRun(story: StoryDetail): string {
-  const rawLines =
-    story.workflow.length > 0 ? story.workflow : [...story.steps, ...story.assertions];
-  const lines = ensureVerifyStepsInWorkflow(rawLines, story.baseUrl ?? "");
+  const steps = story.steps.length > 0 ? story.steps : story.workflow.filter((l) => !/^verify\b/i.test(l));
+  const assertionLines =
+    story.assertions.length > 0
+      ? story.assertions
+      : story.workflow.filter((l) => /^verify\b/i.test(l));
+  const execution = story.workflow.length > 0 ? story.workflow : [...steps, ...assertionLines];
+  const lastStep = execution[execution.length - 1] ?? "";
+  const lastIndex = execution.length;
   const vars =
     story.variables.length > 0
       ? `\n## Variables\n${story.variables.map((v) => `- ${v.key}: ${v.value}`).join("\n")}\n`
@@ -534,11 +723,30 @@ export function formatStoryForRun(story: StoryDetail): string {
   return (
     `# ${story.title}\n\n` +
     `URL: ${story.baseUrl ?? ""}\n` +
-    `Tags: ${(story.tags ?? []).join(", ")}\n` +
     `Mode: ${story.mode ?? "recorded"}\n` +
     vars +
-    `\n## Workflow\n${lines.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n`
+    `\n## Steps\n${steps.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
+    `\n## Assertions\n${assertionLines.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
+    `\n## Execution order\n${execution.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
+    (lastStep
+      ? `\n## Hero screenshot\n` +
+        `After execution step ${lastIndex} ("${lastStep}") passes, wait for the UI to fully reflect the outcome ` +
+        `(e.g. new table row, success toast, or destination page), then capture a fresh hero screenshot. ` +
+        `If the last action is a submit/click, do not screenshot until the resulting page state is visible.\n`
+      : "")
   );
+}
+
+export async function findStoryById(
+  storyId: string,
+): Promise<{ siteSlug: string; entry: BowserStoryEntry } | null> {
+  const slugs = await listSiteSlugs();
+  for (const siteSlug of slugs) {
+    const file = await loadSiteFile(siteSlug);
+    const entry = file.stories.find((s) => s.id === storyId);
+    if (entry) return { siteSlug, entry };
+  }
+  return null;
 }
 
 export async function listSiteSlugs(): Promise<string[]> {

@@ -1,7 +1,19 @@
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { ChevronLeftIcon } from "lucide-react";
-import { Sidebar, Toolbar, ToolbarRow } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { useReturnFromSettings } from "@/lib/return-from-settings";
+import { useSettingsSection } from "@/lib/use-settings-section";
+import { MacTitlebarRow } from "./mac-traffic-lights";
+import {
+  Sidebar,
+  Toolbar,
+  ToolbarRow,
+  SidebarListGroupTitle,
+  SidebarList,
+  SidebarListItem,
+  SidebarListItemContent,
+  SidebarListItemTitle,
+  SidebarRowGroup,
+} from "@/components/ui";
 import {
   SETTINGS_NAV,
   type SettingsSection,
@@ -9,10 +21,11 @@ import {
 
 export function SettingsSidebar() {
   const navigate = useNavigate();
-  const { section: activeSection } = useSearch({ from: "/settings" });
+  const returnFromSettings = useReturnFromSettings();
+  const activeSection = useSettingsSection();
 
   function handleBack() {
-    navigate({ to: "/" });
+    returnFromSettings();
   }
 
   function selectSection(section: SettingsSection) {
@@ -24,46 +37,55 @@ export function SettingsSidebar() {
       className="!p-0 [&>div]:rounded-none"
       toolbar={
         <Toolbar className="border-b-0 bg-surface-sidebar">
-          <div className="drag-region sidebar-titlebar-spacer" aria-hidden />
-          <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-1.5">
-            <button
-              type="button"
-              onClick={handleBack}
-              className="flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left text-[12px] leading-4 text-secondary transition-colors hover:bg-surface-hover hover:text-primary"
-            >
-              <ChevronLeftIcon className="size-3.5 shrink-0" />
-              Back to app
-            </button>
+          <MacTitlebarRow />
+          <ToolbarRow className="h-auto min-h-0 px-1.5 pt-3 pb-2">
+            <ul className="flex w-full flex-col">
+              <SidebarListItem onClick={handleBack}>
+                <SidebarListItemContent>
+                  <ChevronLeftIcon
+                    className="size-3.5 shrink-0 text-tertiary"
+                    strokeWidth={1.75}
+                  />
+                  <SidebarListItemTitle>Back to app</SidebarListItemTitle>
+                </SidebarListItemContent>
+              </SidebarListItem>
+            </ul>
           </ToolbarRow>
         </Toolbar>
       }
     >
-      <nav className="px-1.5">
-        <span className="sidebar-section-label">Story Studio</span>
-        <ul className="flex flex-col gap-0.5">
-          {SETTINGS_NAV.map((item) => {
-            const Icon = item.icon;
-            const selected = activeSection === item.id;
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => selectSection(item.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-[12px] leading-4 transition-colors",
-                    selected
-                      ? "sidebar-item-selected text-primary"
-                      : "text-secondary hover:bg-surface-hover hover:text-primary",
-                  )}
-                >
-                  <Icon className="size-3.5 shrink-0 opacity-80" strokeWidth={1.75} />
-                  {item.label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      <SidebarList className="pt-2">
+        <div>
+          <div className="flex w-full items-center gap-2 px-2 pt-2 pb-0.5">
+            <SidebarListGroupTitle className="mb-0 ml-0">
+              Story Studio
+            </SidebarListGroupTitle>
+          </div>
+          <div className="pb-1">
+            <SidebarRowGroup>
+              {SETTINGS_NAV.map((item) => {
+                const Icon = item.icon;
+                const selected = activeSection === item.id;
+                return (
+                  <SidebarListItem
+                    key={item.id}
+                    selected={selected}
+                    onClick={() => selectSection(item.id)}
+                  >
+                    <SidebarListItemContent>
+                      <Icon
+                        className="size-3.5 shrink-0 text-tertiary"
+                        strokeWidth={1.75}
+                      />
+                      <SidebarListItemTitle>{item.label}</SidebarListItemTitle>
+                    </SidebarListItemContent>
+                  </SidebarListItem>
+                );
+              })}
+            </SidebarRowGroup>
+          </div>
+        </div>
+      </SidebarList>
     </Sidebar>
   );
 }

@@ -18,6 +18,7 @@ const buttonVariants = cva(
           "bg-accent hover:opacity-90 border border-transparent disabled:opacity-100",
       },
       size: {
+        titlebar: "h-6 px-2 gap-1 text-small",
         small: "h-7 px-2.5 text-small",
         medium: "h-8 px-3 text-small",
         toolbar: "size-8 p-0",
@@ -32,6 +33,7 @@ const buttonVariants = cva(
       },
     },
     compoundVariants: [
+      { size: "titlebar", iconOnly: true, className: "size-6" },
       { size: "small", iconOnly: true, className: "size-7" },
       { size: "medium", iconOnly: true, className: "size-8" },
       { size: "toolbar", iconOnly: true, className: "size-8" },

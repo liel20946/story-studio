@@ -21,8 +21,14 @@ function CodeChip({
 }
 
 // Story workflow lines reference variables as `{{name}}` or as a quoted name in
-// Fill/Type steps (e.g. with "login_email"). Highlight both when colorMap matches.
+// Fill/Type steps (e.g. with "login_email" or "{{login_email}}"). Highlight
+// all of these when colorMap matches.
 const PLAIN_TOKEN_RE = /\{\{\s*([^}]+?)\s*\}\}|"([^"]+)"/g;
+
+function variableNameFromQuoted(quoted: string): string | null {
+  const mustache = quoted.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+  return mustache ? mustache[1]!.trim() : null;
+}
 
 function renderPlainWithVariables(
   text: string,
@@ -38,9 +44,14 @@ function renderPlainWithVariables(
     const index = match.index ?? 0;
     const mustacheName = match[1]?.trim();
     const quotedName = match[2];
-    const variableName = mustacheName ?? quotedName;
+    const quotedMustacheName = quotedName
+      ? variableNameFromQuoted(quotedName)
+      : null;
+    const variableName =
+      mustacheName ?? quotedMustacheName ?? quotedName ?? null;
     const isVariable =
       mustacheName !== undefined ||
+      quotedMustacheName !== null ||
       (quotedName !== undefined && colorMap?.[quotedName] !== undefined);
 
     if (index > lastIndex) {

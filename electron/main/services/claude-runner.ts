@@ -10,18 +10,53 @@ import type {
   RunRecord,
   AssertionResult,
   RunStatus,
+  ActiveRunSnapshot,
 } from "./contract-types.js";
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
+import { writeRunMeta, deleteRunMeta } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
-import { RUN_STORY_PLAYBOOK } from "./story-skill.js";
+import { RUN_STORY_PLAYBOOK, buildRunPromptSuffix } from "./story-skill.js";
+import {
+  ensureRunOutputDir,
+  getHeroScreenshotPath,
+  getRunStepsPath,
+  getRunScreenshotsDir,
+  enrichRunResult,
+} from "./run-artifacts.js";
+import {
+  deletePersistedRunEvents,
+  deleteRunPid,
+  flushPersistRunEvents,
+  schedulePersistRunEvents,
+  writeRunPid,
+} from "./run-events-persist.js";
+import {
+  acquirePlaywrightSlot,
+  releasePlaywrightSlot,
+} from "./playwright-slots.js";
 import {
   RUN_OUTPUT_SCHEMA,
   acquireRunSlot,
   releaseRunSlot,
 } from "./codex-runner.js";
+import {
+  DEFAULT_CLAUDE_EFFORT,
+  DEFAULT_CLAUDE_MODEL,
+  type AgentRunConfig,
+} from "./agent-config.js";
+import {
+  markRunCancelled,
+  settleRunningEvents,
+} from "./run-event-settle.js";
 
 interface RunState {
   runId: string;
+  storyName: string;
+  storyTitle: string;
+  startedAt: number;
+  agentProvider: "claude-code";
+  agentModel: string;
+  events: RunEvent[];
   process: ChildProcess | null;
   cancelled: boolean;
   seq: number;
@@ -30,6 +65,18 @@ interface RunState {
 }
 
 const _runs = new Map<string, RunState>();
+
+export function listActiveClaudeRuns(): ActiveRunSnapshot[] {
+  return Array.from(_runs.values()).map((state) => ({
+    runId: state.runId,
+    storyName: state.storyName,
+    storyTitle: state.storyTitle,
+    startedAt: state.startedAt,
+    agentProvider: state.agentProvider,
+    agentModel: state.agentModel,
+    events: [...state.events],
+  }));
+}
 
 function buildEnv(): NodeJS.ProcessEnv {
   const extraPath = `/opt/homebrew/bin:${path.dirname(process.execPath)}`;
@@ -41,17 +88,30 @@ function buildEnv(): NodeJS.ProcessEnv {
   };
 }
 
-function resolveStartingRow(events: RunEvent[]): void {
+function syncRunTimeline(runId: string, events: RunEvent[]): void {
+  schedulePersistRunEvents(runId, events);
+}
+
+function resolveStartingRow(events: RunEvent[], runId: string): void {
   for (const e of events) {
     if (e.kind === "status" && e.status === "running") {
       e.status = "ok";
       broadcast("run:event", { ...e });
     }
   }
+  syncRunTimeline(runId, events);
 }
 
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+}
+
+function isPlaywrightMcpTool(toolName: string): boolean {
+  return (
+    toolName.startsWith("mcp__playwright__") ||
+    toolName.startsWith("playwright__") ||
+    /^browser[-_]/i.test(toolName)
+  );
 }
 
 function toolNameToKind(toolName: string): RunEventKind {
@@ -67,6 +127,7 @@ function toolNameToKind(toolName: string): RunEventKind {
 
 function toolNameToLabel(toolName: string): string {
   const bare = toolName.replace(/^mcp__playwright__|^playwright__browser[-_]?|^browser[-_]?/, "");
+  if (bare.includes("screenshot")) return "Screenshot";
   return bare.charAt(0).toUpperCase() + bare.slice(1).replace(/[-_]/g, " ");
 }
 
@@ -76,6 +137,15 @@ function extractToolInput(input: Record<string, unknown>): string | undefined {
   if (typeof input["text"] === "string") return input["text"];
   if (typeof input["value"] === "string") return input["value"];
   if (typeof input["selector"] === "string") return input["selector"];
+  if (Array.isArray(input["fields"])) {
+    const names = (input["fields"] as Array<Record<string, unknown>>)
+      .map((f) => (f["name"] ?? f["ref"]) as string | undefined)
+      .filter((n): n is string => typeof n === "string");
+    if (names.length) return names.join(", ");
+  }
+  if (typeof input["function"] === "string" || typeof input["expression"] === "string") {
+    return undefined;
+  }
   const json = JSON.stringify(input);
   return json.length <= 80 ? json : undefined;
 }
@@ -96,6 +166,8 @@ function buildErrorResult(
   startedAt: number,
   error: string,
   screenshotPath: string,
+  agentProvider: "claude-code" = "claude-code",
+  agentModel?: string,
 ): RunResult {
   return {
     runId,
@@ -109,23 +181,23 @@ function buildErrorResult(
     startedAt,
     finishedAt: Date.now(),
     error,
+    agentProvider,
+    agentModel,
   };
 }
 
 async function finalizeRun(result: RunResult, events: RunEvent[]): Promise<RunResult> {
-  const settled: RunEvent["status"] =
-    result.status === "failed" || result.status === "error" ? "failed" : "ok";
-  for (const e of events) {
-    if (e.status === "running") {
-      e.status = settled;
-      broadcast("run:event", { ...e });
-    }
-  }
-  const record: RunRecord = { ...result, events };
+  settleRunningEvents(events, result.status);
+  await flushPersistRunEvents(result.runId, events);
+  const enriched = await enrichRunResult(result);
+  const record: RunRecord = { ...enriched, events };
   await saveRun(record);
-  broadcast("run:result", result);
+  await deleteRunMeta(result.runId);
+  await deleteRunPid(result.runId);
+  await deletePersistedRunEvents(result.runId);
+  broadcast("run:result", enriched);
   console.log("[claude:run] run finalized", { runId: result.runId, status: result.status });
-  return result;
+  return enriched;
 }
 
 function upsertToolEvent(
@@ -137,7 +209,7 @@ function upsertToolEvent(
   detail: string | undefined,
   status: RunEvent["status"],
 ): void {
-  resolveStartingRow(events);
+  resolveStartingRow(events, state.runId);
   let seq = state.itemSeq.get(itemId);
   if (seq === undefined) {
     seq = state.seq++;
@@ -156,6 +228,7 @@ function upsertToolEvent(
   if (idx >= 0) events[idx] = evt;
   else events.push(evt);
   broadcast("run:event", evt);
+  syncRunTimeline(state.runId, events);
 }
 
 function handleClaudeLine(
@@ -192,6 +265,8 @@ function handleClaudeLine(
       const blockType = block["type"] as string | undefined;
       if (blockType === "tool_use") {
         const toolName = (block["name"] as string | undefined) ?? "tool";
+        // Only surface Playwright MCP browser actions — hide Write/Bash/StructuredOutput.
+        if (!isPlaywrightMcpTool(toolName)) continue;
         const toolId = (block["id"] as string | undefined) ?? toolName;
         const input = (block["input"] as Record<string, unknown> | undefined) ?? {};
         const kind = toolNameToKind(toolName);
@@ -201,18 +276,6 @@ function handleClaudeLine(
         const text = (block["text"] as string | undefined) ?? "";
         if (text.trim() && !text.trimStart().startsWith("{")) {
           onAgentMessage(text);
-          resolveStartingRow(events);
-          const evt: RunEvent = {
-            runId: state.runId,
-            seq: state.seq++,
-            ts: Date.now(),
-            kind: "message",
-            label: "Agent",
-            detail: text.slice(0, 500),
-            status: "ok",
-          };
-          events.push(evt);
-          broadcast("run:event", evt);
         }
       }
     }
@@ -233,6 +296,7 @@ function handleClaudeLine(
       if (idx < 0) continue;
       events[idx] = { ...events[idx], status: isError ? "failed" : "ok" };
       broadcast("run:event", events[idx]);
+      syncRunTimeline(state.runId, events);
     }
   }
 }
@@ -244,9 +308,18 @@ export async function startClaudeRun(
   storyFilePath: string,
   claudeBinary: string,
   runHook?: string,
+  agentConfig?: AgentRunConfig,
 ): Promise<RunResult> {
+  const startedAt = Date.now();
+  const model = agentConfig?.model ?? DEFAULT_CLAUDE_MODEL;
   const state: RunState = {
     runId,
+    storyName,
+    storyTitle,
+    startedAt,
+    agentProvider: "claude-code",
+    agentModel: model,
+    events: [],
     process: null,
     cancelled: false,
     seq: 0,
@@ -254,23 +327,35 @@ export async function startClaudeRun(
     queued: true,
   };
   _runs.set(runId, state);
+  await writeRunMeta({
+    runId,
+    storyName,
+    storyTitle,
+    startedAt,
+    agentProvider: "claude-code",
+    agentModel: model,
+  });
 
   const runsDir = getRunsDir();
+  const runOutputDir = await ensureRunOutputDir(runId);
   const resultPath = path.join(runsDir, `${runId}.result.json`);
-  const screenshotPath = path.join(runsDir, `${runId}.png`);
-  const storyContents = await fs.readFile(storyFilePath, "utf-8").catch(() => "");
+  const screenshotPath = getHeroScreenshotPath(runId);
+  const stepsPath = getRunStepsPath(runId);
+  const screenshotsDir = getRunScreenshotsDir(runId);
+  const storyContents = storyFilePath.includes("\n")
+    ? storyFilePath
+    : await fs.readFile(storyFilePath, "utf-8").catch(() => "");
 
   const prompt =
     RUN_STORY_PLAYBOOK +
-    `\n\n## This run\n` +
-    `The full story to run is included below. You already have its complete contents, ` +
-    `so do NOT attempt to open or read any local file unless required for the screenshot path.\n\n` +
-    "```markdown\n" +
-    storyContents +
-    "\n```\n\n" +
-    `Save the final screenshot to the absolute path ${screenshotPath} (it MUST be inside ${runsDir}). ` +
-    `Populate the required output schema with the verdict, per-assertion evidence, the last successful step, and the screenshot path.` +
-    (runHook && runHook.trim() ? `\n\n## Additional instructions\n${runHook.trim()}` : "");
+    buildRunPromptSuffix({
+      runOutputDir,
+      screenshotsDir,
+      stepsPath,
+      heroScreenshotPath: screenshotPath,
+      storyContents,
+      runHook,
+    });
 
   const mcpConfig = JSON.stringify({
     mcpServers: {
@@ -281,10 +366,16 @@ export async function startClaudeRun(
     },
   });
 
+  const effort = agentConfig?.effort ?? DEFAULT_CLAUDE_EFFORT;
+
   const args = [
     "-p",
     prompt,
     "--dangerously-skip-permissions",
+    "--model",
+    state.agentModel,
+    "--effort",
+    effort,
     "--output-format",
     "stream-json",
     "--include-partial-messages",
@@ -293,14 +384,15 @@ export async function startClaudeRun(
     JSON.stringify(RUN_OUTPUT_SCHEMA),
     "--add-dir",
     runsDir,
+    "--add-dir",
+    runOutputDir,
     "--mcp-config",
     mcpConfig,
   ];
 
   console.log("[claude:run]", { runId, storyName, claudeBinary, args: args.slice(0, 6) });
 
-  const startedAt = Date.now();
-  const events: RunEvent[] = [];
+  const events = state.events;
 
   const startEvent: RunEvent = {
     runId,
@@ -313,6 +405,7 @@ export async function startClaudeRun(
   };
   events.push(startEvent);
   broadcast("run:event", startEvent);
+  syncRunTimeline(runId, events);
 
   await acquireRunSlot();
   state.queued = false;
@@ -332,6 +425,32 @@ export async function startClaudeRun(
       startedAt,
       finishedAt: Date.now(),
       error: "Cancelled by user",
+      agentProvider: state.agentProvider,
+      agentModel: state.agentModel,
+    };
+    return finalizeRun(cancelledResult, events);
+  }
+
+  await acquirePlaywrightSlot();
+
+  if (state.cancelled) {
+    _runs.delete(runId);
+    releaseRunSlot();
+    releasePlaywrightSlot();
+    const cancelledResult: RunResult = {
+      runId,
+      storyName,
+      storyTitle,
+      status: "cancelled",
+      summary: "",
+      assertions: [],
+      screenshotPath,
+      screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+      startedAt,
+      finishedAt: Date.now(),
+      error: "Cancelled by user",
+      agentProvider: state.agentProvider,
+      agentModel: state.agentModel,
     };
     return finalizeRun(cancelledResult, events);
   }
@@ -345,12 +464,13 @@ export async function startClaudeRun(
     let stderrLog = "";
 
     const child = spawn(claudeBinary, args, {
-      cwd: runsDir,
+      cwd: runOutputDir,
       env: buildEnv(),
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     state.process = child;
+    if (child.pid) void writeRunPid(runId, child.pid);
 
     child.stdout?.on("data", (chunk: Buffer) => {
       buffer += chunk.toString("utf-8");
@@ -405,8 +525,18 @@ export async function startClaudeRun(
       };
       events.push(errEvent);
       broadcast("run:event", errEvent);
+      syncRunTimeline(runId, events);
       _runs.delete(runId);
-      const result = buildErrorResult(runId, storyName, storyTitle, startedAt, err.message, screenshotPath);
+      const result = buildErrorResult(
+        runId,
+        storyName,
+        storyTitle,
+        startedAt,
+        err.message,
+        screenshotPath,
+        state.agentProvider,
+        state.agentModel,
+      );
       finalizeRun(result, events).then(resolve);
     });
 
@@ -458,13 +588,18 @@ export async function startClaudeRun(
         finishedAt: Date.now(),
         tokenUsage,
         error: cancelled ? "Cancelled by user" : exitError,
+        agentProvider: state.agentProvider,
+        agentModel: state.agentModel,
       };
 
       finalizeRun(result, events).then(resolve);
     });
   });
 
-  void runPromise.finally(() => releaseRunSlot());
+  void runPromise.finally(() => {
+    releaseRunSlot();
+    releasePlaywrightSlot();
+  });
   return runPromise;
 }
 
@@ -475,6 +610,10 @@ export function cancelClaudeRun(runId: string): boolean {
     return false;
   }
   state.cancelled = true;
+  if (state.process) {
+    state.seq = markRunCancelled(state.events, runId, state.seq);
+    syncRunTimeline(runId, state.events);
+  }
   if (!state.process) {
     console.log("[claude:run] cancel — run still queued, will finalize cancelled", { runId });
     return true;

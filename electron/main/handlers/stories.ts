@@ -5,6 +5,7 @@ import {
   getStory,
   deleteStory,
   importStories,
+  exportStories,
   updateStoryVariables,
   renameStory,
 } from "../services/stories-service.js";
@@ -85,8 +86,7 @@ export function registerStoriesHandlers(): void {
     return detail;
   });
 
-  // Open the story's underlying .story.md in the user's default editor so they
-  // can edit steps / assertions / frontmatter directly (the "Edit" action).
+  // Open the story's underlying site .yaml in the user's default editor.
   ipcMain.handle("stories:openFile", async (_event, params: unknown) => {
     if (
       typeof params !== "object" ||
@@ -99,7 +99,7 @@ export function registerStoriesHandlers(): void {
     const detail = await getStory(name, new Map());
     const err = await shell.openPath(detail.filePath);
     if (err) {
-      throw new Error(`Could not open story file: ${err}`);
+      throw new Error(`Could not open YAML file: ${err}`);
     }
     return { ok: true as const };
   });
@@ -120,7 +120,7 @@ export function registerStoriesHandlers(): void {
       const result = await dialog.showOpenDialog({
         title: "Import Stories",
         defaultPath,
-        filters: [{ name: "Story Files", extensions: ["story.md", "md"] }],
+        filters: [{ name: "YAML Files", extensions: ["yaml", "yml"] }],
         properties: ["openFile", "multiSelections"],
       });
       if (result.canceled || result.filePaths.length === 0) return [];
@@ -129,5 +129,32 @@ export function registerStoriesHandlers(): void {
 
     const lastRunMap = await getLastRunMap();
     return importStories(filePaths, lastRunMap);
+  });
+
+  ipcMain.handle("stories:export", async (_event, params: unknown) => {
+    let destDir: string | undefined;
+
+    if (typeof params === "object" && params !== null) {
+      const p = params as Record<string, unknown>;
+      if (typeof p["destDir"] === "string" && p["destDir"].trim()) {
+        destDir = p["destDir"].trim();
+      }
+    }
+
+    if (!destDir) {
+      const result = await dialog.showOpenDialog({
+        title: "Export Stories",
+        defaultPath: os.homedir(),
+        buttonLabel: "Export here",
+        properties: ["openDirectory", "createDirectory"],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { fileCount: 0, canceled: true as const };
+      }
+      destDir = result.filePaths[0];
+    }
+
+    const { fileCount } = await exportStories(destDir);
+    return { fileCount, canceled: false as const };
   });
 }

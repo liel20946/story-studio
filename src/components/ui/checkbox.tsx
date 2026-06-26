@@ -14,16 +14,17 @@ export function Checkbox({
       checked={checked}
       onCheckedChange={onCheckedChange}
       className={cn(
-        "flex size-4 shrink-0 items-center justify-center rounded border border-separator bg-control data-[state=checked]:bg-accent data-[state=checked]:border-accent data-[state=indeterminate]:bg-accent",
+        "flex size-4 shrink-0 items-center justify-center rounded border border-separator bg-control",
+        "data-[state=checked]:border-accent data-[state=indeterminate]:border-accent",
         className,
       )}
       {...props}
     >
       <CheckboxPrimitive.Indicator>
         {checked === "indeterminate" ? (
-          <MinusIcon className="size-3 text-accent-contrast" />
+          <MinusIcon className="size-3 text-accent" />
         ) : (
-          <CheckIcon className="size-3 text-accent-contrast" />
+          <CheckIcon className="size-3 text-accent" />
         )}
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>

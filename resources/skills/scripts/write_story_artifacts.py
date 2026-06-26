@@ -30,13 +30,19 @@ def derive_story_id(url: str, story_name: str) -> str:
     return f"{host}-{name_slug}"
 
 
-def normalize_tags(tags: list[str]) -> list[str]:
-    normalized: list[str] = []
-    for tag in tags:
-        candidate = slugify(tag)
-        if candidate and candidate not in normalized:
-            normalized.append(candidate)
-    return normalized
+def split_workflow_with_assertions(steps: list[str]) -> tuple[list[str], list[tuple[int, str]]]:
+    workflow: list[str] = []
+    assertions: list[tuple[int, str]] = []
+    for step in steps:
+        if re.match(r"^verify\b", step, flags=re.IGNORECASE):
+            assertions.append((len(workflow), step))
+        else:
+            workflow.append(step)
+    return workflow, assertions
+
+
+def format_assertions_block(assertions: list[tuple[int, str]]) -> str:
+    return "\n".join(f"      @{after} {text}" for after, text in assertions)
 
 
 def build_markdown(
@@ -45,11 +51,14 @@ def build_markdown(
     story_name: str,
     url: str,
     mode: str,
-    tags: list[str],
     workflow_steps: list[str],
+    assertions: list[tuple[int, str]],
     source_path: str | None,
 ) -> str:
     numbered_steps = "\n".join(f"{index}. {step}" for index, step in enumerate(workflow_steps, start=1))
+    numbered_assertions = "\n".join(
+        f"{index}. @{after} {text}" for index, (after, text) in enumerate(assertions, start=1)
+    )
     parts = [
         f"# {title}",
         "",
@@ -57,28 +66,33 @@ def build_markdown(
         f"**Story:** {story_name}",
         f"**URL:** {url}",
         f"**Mode:** {mode}",
-        f"**Tags:** {', '.join(tags) if tags else 'none'}",
     ]
     if source_path:
         parts.append(f"**Source Exploration:** `{source_path}`")
-    parts.extend(["", "## Workflow", "", numbered_steps, ""])
+    parts.extend(["", "## Steps", "", numbered_steps, "", "## Assertions", "", numbered_assertions, ""])
     return "\n".join(parts)
 
 
-def build_yaml(story_id: str, story_name: str, url: str, mode: str, tags: list[str], workflow_steps: list[str]) -> str:
+def build_yaml(
+    story_id: str,
+    story_name: str,
+    url: str,
+    mode: str,
+    workflow_steps: list[str],
+    assertions: list[tuple[int, str]],
+) -> str:
     workflow = "\n".join(f"      {step}" for step in workflow_steps)
-    tags_yaml = ""
-    if tags:
-        tags_yaml = "    tags: [" + ", ".join(yaml_quote(tag) for tag in tags) + "]\n"
+    assertions_block = format_assertions_block(assertions)
     return (
         "stories:\n"
         f"  - id: {yaml_quote(story_id)}\n"
         f"    name: {yaml_quote(story_name)}\n"
         f"    url: {yaml_quote(url)}\n"
-        f"{tags_yaml}"
         f"    mode: {yaml_quote(mode)}\n"
         "    workflow: |\n"
         f"{workflow}\n"
+        "    assertions: |\n"
+        f"{assertions_block}\n"
     )
 
 
@@ -88,14 +102,16 @@ def write_outputs(
     story_name: str,
     url: str,
     mode: str,
-    tags: list[str],
     workflow_steps: list[str],
+    assertions: list[tuple[int, str]],
     source_path: str | None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    draft_md = build_markdown("Draft UI Story", story_id, story_name, url, mode, tags, workflow_steps, source_path)
-    draft_yaml = build_yaml(story_id, story_name, url, mode, tags, workflow_steps)
+    draft_md = build_markdown(
+        "Draft UI Story", story_id, story_name, url, mode, workflow_steps, assertions, source_path
+    )
+    draft_yaml = build_yaml(story_id, story_name, url, mode, workflow_steps, assertions)
     (output_dir / "draft.story.md").write_text(draft_md)
     (output_dir / "draft.story.yaml").write_text(draft_yaml)
 
@@ -108,7 +124,6 @@ def main() -> int:
     parser.add_argument("--mode", required=True, choices=["recorded", "generated"], help="Story authoring mode")
     parser.add_argument("--workflow-file", required=True, help="Text file with one workflow step per line")
     parser.add_argument("--story-id", help="Optional explicit story id")
-    parser.add_argument("--tags", default="", help="Comma-separated tags")
     parser.add_argument("--source-path", help="Optional source artifact path to embed in Markdown")
     args = parser.parse_args()
 
@@ -117,11 +132,12 @@ def main() -> int:
     workflow_steps = [line.strip() for line in workflow_path.read_text().splitlines() if line.strip()]
     if not workflow_steps:
         raise SystemExit(f"No workflow steps found in {workflow_path}")
-    if not any(step.startswith("Verify ") for step in workflow_steps):
-        raise SystemExit("Workflow must include at least one 'Verify' step.")
+
+    workflow_steps, assertions = split_workflow_with_assertions(workflow_steps)
+    if not assertions:
+        raise SystemExit("Workflow must include at least one Verify step (move to assertions block).")
 
     story_id = args.story_id or derive_story_id(args.url, args.name)
-    tags = normalize_tags([tag.strip() for tag in args.tags.split(",") if tag.strip()])
 
     write_outputs(
         output_dir,
@@ -129,8 +145,8 @@ def main() -> int:
         args.name,
         args.url,
         args.mode,
-        tags,
         workflow_steps,
+        assertions,
         args.source_path,
     )
     print(f"output_dir={output_dir}")

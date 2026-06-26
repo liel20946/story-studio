@@ -4,16 +4,24 @@ import { fileURLToPath } from "url";
 import { app, BrowserWindow, Menu, protocol, net } from "./electron-api.js";
 import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getMainWindowLoadOptions } from "./windows/window-paths.js";
-import { getMacWindowChromeOptions } from "./windows/window-chrome.js";
+import { getMacWindowChromeOptions, applyMacWindowChrome } from "./windows/window-chrome.js";
 import { disableReloadShortcut } from "./windows/disable-reload-shortcut.js";
+import { applyDefaultZoom } from "./windows/window-zoom.js";
+import {
+  getMainWindowStateOptions,
+  trackMainWindowState,
+  saveMainWindowState,
+} from "./windows/window-state.js";
 import { setMainWindow, navigateMainWindow } from "./windows/main-window.js";
 import { initPaths } from "./services/paths.js";
 import { initSettings } from "./handlers/settings.js";
 import { watchStories, stopWatchingStories, migrateLegacyStories } from "./services/stories-service.js";
 import { listRuns, buildLastRunMap } from "./services/run-service.js";
+import { recoverOrphanedRuns } from "./services/run-recovery.js";
 import { logger } from "./logger.js";
 import { applyAppBranding, getAppIcon } from "./app-icon.js";
 import { checkForUpdatesManually, initAutoUpdates } from "./services/auto-update-service.js";
+import { startScheduleWatcher, stopScheduleWatcher } from "./services/schedule-service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,17 +60,14 @@ async function createMainWindow(): Promise<void> {
     // use default
   }
 
+  const { options: windowStateOptions, isMaximized } = getMainWindowStateOptions();
+
   mainWindow = new BrowserWindow({
-    width: 1160,
-    height: 780,
-    minWidth: 860,
-    minHeight: 560,
+    ...windowStateOptions,
     title: windowTitle,
     icon: getAppIcon(),
     show: false,
     backgroundColor: "#141416",
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 12, y: 12 },
     ...getMacWindowChromeOptions(),
     webPreferences: {
       preload: getPreloadPath(),
@@ -72,7 +77,14 @@ async function createMainWindow(): Promise<void> {
     },
   });
 
+  applyMacWindowChrome(mainWindow);
+
+  trackMainWindowState(mainWindow);
+
   mainWindow.once("ready-to-show", () => {
+    if (isMaximized) {
+      mainWindow?.maximize();
+    }
     mainWindow?.show();
   });
 
@@ -83,6 +95,7 @@ async function createMainWindow(): Promise<void> {
 
   setMainWindow(mainWindow);
   disableReloadShortcut(mainWindow.webContents);
+  applyDefaultZoom(mainWindow.webContents);
 
   const load = getMainWindowLoadOptions();
   logger.info("main", "Loading main window", load);
@@ -103,7 +116,7 @@ function setupApplicationMenu(): void {
         { type: "separator" },
         {
           label: "Settings…",
-          accelerator: "Command+,",
+          accelerator: "CommandOrControl+,",
           click: () => {
             navigateMainWindow("/settings");
           },
@@ -144,7 +157,7 @@ function setupApplicationMenu(): void {
 }
 
 app.on("window-all-closed", () => {
-  // macOS: keep app running when all windows closed
+  app.quit();
 });
 
 app.on("activate", () => {
@@ -156,7 +169,11 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    saveMainWindowState(mainWindow);
+  }
   stopWatchingStories();
+  stopScheduleWatcher();
 });
 
 app.whenReady().then(async () => {
@@ -180,8 +197,11 @@ app.whenReady().then(async () => {
   setupApplicationMenu();
   initAutoUpdates();
 
+  await recoverOrphanedRuns();
+
   const runs = await listRuns();
   watchStories(buildLastRunMap(runs));
+  startScheduleWatcher();
 
   await createMainWindow();
 });

@@ -12,7 +12,6 @@ export interface StorySummary {
   lastRun?: { status: RunStatus; finishedAt: number } | null;
   siteSlug?: string;
   storyId?: string;
-  tags?: string[];
   mode?: BowserStoryMode;
 }
 
@@ -32,6 +31,7 @@ export interface StoryDetail extends StorySummary {
 }
 
 export type RunStatus = "passed" | "failed" | "cancelled" | "error" | "blocked";
+export type AgentProvider = "codex" | "claude-code";
 
 export interface RunStep {
   index: number;
@@ -65,7 +65,7 @@ export interface RunEvent {
   kind: RunEventKind;
   label: string;
   detail?: string;
-  status: "running" | "ok" | "failed";
+  status: "running" | "ok" | "failed" | "cancelled";
 }
 
 export interface AssertionResult {
@@ -90,16 +90,29 @@ export interface RunResult {
   finishedAt: number;
   tokenUsage?: { inputTokens: number; outputTokens: number };
   error?: string;
+  agentProvider?: AgentProvider;
+  agentModel?: string;
 }
 
 export interface RunRecord extends RunResult {
   events: RunEvent[];
 }
 
+/** Snapshot of an in-flight run returned by runs:active for UI hydration. */
+export interface ActiveRunSnapshot {
+  runId: string;
+  storyName: string;
+  storyTitle: string;
+  startedAt: number;
+  events: RunEvent[];
+  agentProvider?: AgentProvider;
+  agentModel?: string;
+}
+
 export interface RecordingProgress {
-  phase: "starting" | "recording" | "converting" | "done" | "error" | "review";
+  phase: "starting" | "recording" | "converting" | "done" | "error";
   message: string;
-  draftId?: string;
+  storyName?: string;
   errorTitle?: string;
   detail?: string;
 }
@@ -110,16 +123,43 @@ export interface RecordingAvailability {
   browserInstalled: boolean;
 }
 
-export type AgentProvider = "codex" | "claude-code";
 export type ThemePreference = "system" | "light" | "dark";
+export type { ColorThemeId } from "./color-themes";
+export type {
+  CodexModel,
+  CodexEffort,
+  ClaudeModel,
+  ClaudeEffort,
+  AgentCapabilities,
+  AgentModelOption,
+} from "./agent-config";
+
+import type {
+  CodexModel,
+  CodexEffort,
+  ClaudeModel,
+  ClaudeEffort,
+} from "./agent-config";
+import type { ColorThemeId, ColorThemePalette } from "./color-themes";
 
 export interface AppSettings {
   agentProvider: AgentProvider;
   codexBinaryPath: string | null;
   claudeBinaryPath: string | null;
+  codexModel: CodexModel;
+  codexEffort: CodexEffort;
+  claudeModel: ClaudeModel;
+  claudeEffort: ClaudeEffort;
   storiesDir: string;
   runsDir: string;
   theme: ThemePreference;
+  colorThemeLight: ColorThemeId;
+  colorThemeDark: ColorThemeId;
+  colorThemePaletteLight: ColorThemePalette | null;
+  colorThemePaletteDark: ColorThemePalette | null;
+  colorThemeContrastLight: number;
+  colorThemeContrastDark: number;
+  usePointerCursors: boolean;
   startingUrl: string;
   runHook: string;
 }
@@ -140,47 +180,25 @@ export interface DraftDetail extends StoryDraft {
   recordingSpec?: string;
 }
 
-export type GenerateMessageRole = "user" | "assistant" | "system";
-
-export interface GenerateMessage {
-  id: string;
-  role: GenerateMessageRole;
-  content: string;
-  ts: number;
-}
-
-export interface GenerateSessionSummary {
-  sessionId: string;
-  siteSlug: string;
-  url: string;
-  status: "idle" | "running" | "ready" | "saved" | "discarded";
-  updatedAt: number;
-  draftStoryId?: string;
-  draftStoryName?: string;
-}
-
-export interface GenerateSessionDetail extends GenerateSessionSummary {
-  artifactDir: string;
-  messages: GenerateMessage[];
-  draftYaml?: string;
-  draftMd?: string;
-  screenshotPaths: string[];
-}
-
-export interface GenerateEvent {
-  sessionId: string;
-  seq: number;
-  ts: number;
-  kind: RunEventKind;
-  label: string;
-  detail?: string;
-  status: "running" | "ok" | "failed";
-}
-
 export interface BulkRunOptions {
   storyIds?: string[];
-  tags?: string[];
   headed?: boolean;
   baseUrlOverride?: string;
   maxParallel?: number;
 }
+
+export interface ScheduledRun {
+  id: string;
+  name: string;
+  storyNames: string[];
+  scheduledAt: number;
+  repeat?: ScheduleRepeat;
+  hour?: number;
+  minute?: number;
+  dayOfWeek?: number;
+  enabled: boolean;
+  createdAt: number;
+  lastRunAt: number | null;
+}
+
+export type ScheduleRepeat = "once" | "daily" | "weekly";

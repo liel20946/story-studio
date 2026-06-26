@@ -1,5 +1,19 @@
 import * as React from "react";
 import type { ThemePreference } from "./contract-types";
+import type { ColorThemeId } from "./color-themes";
+import {
+  colorThemeAvailable,
+  DEFAULT_COLOR_THEME_ID,
+  type ThemeMode,
+} from "./color-themes";
+import {
+  type AppearanceSettings,
+  resolveEffectiveContrast,
+  resolveEffectivePalette,
+} from "./color-theme-config";
+import { applyColorThemePalette, clearColorThemeOverrides } from "./color-theme-apply";
+import { normalizeAppSettings } from "./app-settings";
+import { setCachedAppSettings } from "./settings-cache";
 import { settingsGet } from "./ipc";
 
 const LEGACY_APPEARANCE_PROPS = [
@@ -28,6 +42,13 @@ const LEGACY_APPEARANCE_PROPS = [
   "--accent-glow",
 ] as const;
 
+export type { AppearanceSettings } from "./color-theme-config";
+
+export interface ColorThemePreferences {
+  colorThemeLight: ColorThemeId;
+  colorThemeDark: ColorThemeId;
+}
+
 function clearLegacyAppearanceOverrides(): void {
   const root = document.documentElement;
   for (const prop of LEGACY_APPEARANCE_PROPS) {
@@ -38,33 +59,81 @@ function clearLegacyAppearanceOverrides(): void {
 /** Remove inline appearance overrides from an older build. */
 export function resetThemeStyles(): void {
   clearLegacyAppearanceOverrides();
+  clearColorThemeOverrides();
 }
 
 export function systemPrefersDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-export function resolveTheme(theme: ThemePreference): "light" | "dark" {
+export function resolveTheme(theme: ThemePreference): ThemeMode {
   if (theme === "system") {
     return systemPrefersDark() ? "dark" : "light";
   }
   return theme;
 }
 
-/** Apply the resolved light/dark class for a theme preference. */
-export function applyTheme(theme: ThemePreference): void {
-  resetThemeStyles();
-  document.documentElement.classList.toggle("dark", resolveTheme(theme) === "dark");
+export function activeColorThemeForMode(
+  mode: ThemeMode,
+  colorThemes: ColorThemePreferences,
+): ColorThemeId {
+  return mode === "light"
+    ? colorThemes.colorThemeLight
+    : colorThemes.colorThemeDark;
 }
 
-/** Sync document theme class with saved app settings. */
+export function activeColorTheme(
+  theme: ThemePreference,
+  colorThemes: ColorThemePreferences,
+): ColorThemeId {
+  return activeColorThemeForMode(resolveTheme(theme), colorThemes);
+}
+
+/** Apply light/dark class and the color theme for the resolved mode. */
+export function applyAppearance(
+  theme: ThemePreference,
+  appearance: Partial<AppearanceSettings> & ColorThemePreferences,
+): void {
+  resetThemeStyles();
+  const resolved = resolveTheme(theme);
+  document.documentElement.classList.toggle("dark", resolved === "dark");
+
+  const settings = normalizeAppSettings(appearance);
+  const colorTheme = activeColorThemeForMode(resolved, settings);
+  const effectiveColorTheme = colorThemeAvailable(colorTheme, resolved)
+    ? colorTheme
+    : DEFAULT_COLOR_THEME_ID;
+  const effectiveSettings: AppearanceSettings = {
+    ...settings,
+    ...(resolved === "light"
+      ? { colorThemeLight: effectiveColorTheme }
+      : { colorThemeDark: effectiveColorTheme }),
+  };
+  const palette = resolveEffectivePalette(effectiveSettings, resolved);
+  const contrast = resolveEffectiveContrast(settings, resolved);
+  applyColorThemePalette(palette, resolved, contrast);
+  document.documentElement.classList.toggle(
+    "use-pointer-cursors",
+    settings.usePointerCursors,
+  );
+}
+
+/** @deprecated Use applyAppearance instead. */
+export function applyTheme(theme: ThemePreference): void {
+  applyAppearance(theme, normalizeAppSettings(null));
+}
+
+/** Sync document theme with saved app settings. */
 export function useTheme(): void {
   React.useEffect(() => {
     let preference: ThemePreference = "dark";
+    let appearance: AppearanceSettings = normalizeAppSettings(null);
+    let cancelled = false;
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     const sync = () => {
-      applyTheme(preference);
+      if (cancelled) return;
+      applyAppearance(preference, appearance);
     };
 
     const onSystemThemeChange = () => {
@@ -77,15 +146,20 @@ export function useTheme(): void {
 
     settingsGet()
       .then((settings) => {
-        preference = settings.theme;
+        if (cancelled) return;
+        const normalized = setCachedAppSettings(settings);
+        preference = normalized.theme;
+        appearance = normalized;
         sync();
       })
       .catch(() => {
+        if (cancelled) return;
         preference = "dark";
+        appearance = normalizeAppSettings(null);
         sync();
       });
 
-    const unsubscribe = window.electronAPI.on(
+    const unsubscribeTheme = window.electronAPI.on(
       "settings:theme-changed",
       (payload: unknown) => {
         const data = payload as { theme?: ThemePreference };
@@ -95,14 +169,42 @@ export function useTheme(): void {
           data.theme === "dark"
         ) {
           preference = data.theme;
+          setCachedAppSettings({ theme: data.theme });
           sync();
         }
       },
     );
 
+    const unsubscribeColorTheme = window.electronAPI.on(
+      "settings:color-theme-changed",
+      (payload: unknown) => {
+        const data = payload as Partial<AppearanceSettings>;
+        appearance = normalizeAppSettings({ ...appearance, ...data });
+        setCachedAppSettings(data);
+        sync();
+      },
+    );
+
+    const unsubscribeAppearance = window.electronAPI.on(
+      "settings:appearance-changed",
+      (payload: unknown) => {
+        const data = payload as { usePointerCursors?: boolean };
+        if (typeof data.usePointerCursors !== "boolean") return;
+        appearance = normalizeAppSettings({
+          ...appearance,
+          usePointerCursors: data.usePointerCursors,
+        });
+        setCachedAppSettings({ usePointerCursors: data.usePointerCursors });
+        sync();
+      },
+    );
+
     return () => {
+      cancelled = true;
       mediaQuery.removeEventListener("change", onSystemThemeChange);
-      unsubscribe();
+      unsubscribeTheme();
+      unsubscribeColorTheme();
+      unsubscribeAppearance();
     };
   }, []);
 }

@@ -11,10 +11,9 @@ import { StoryView } from "./story-view";
 import { RunView, HistoryRunDetailView } from "./run-view";
 import { RecordView } from "./record-view";
 import { BulkRunView } from "./bulk-run-view";
+import { ScheduledOverviewView, ScheduledEditorView } from "./scheduled-view";
 import { HomeView } from "./home-view";
 import { SettingsView } from "./settings-view";
-import { DraftReviewView } from "./draft-review-view";
-import { GenerateView } from "./generate-view";
 import { parseSettingsSection } from "../components/settings-sections";
 
 const rootRoute = createRootRouteWithContext<{
@@ -70,9 +69,16 @@ const recordRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/record",
   component: RecordView,
-  validateSearch: (search: Record<string, unknown>): { name?: string; url?: string } => ({
+  validateSearch: (search: Record<string, unknown>): {
+    name?: string;
+    url?: string;
+    storyKey?: string;
+    title?: string;
+  } => ({
     name: typeof search.name === "string" ? search.name : undefined,
     url: typeof search.url === "string" ? search.url : undefined,
+    storyKey: typeof search.storyKey === "string" ? search.storyKey : undefined,
+    title: typeof search.title === "string" ? search.title : undefined,
   }),
   staticData: { title: "Record" },
 });
@@ -85,18 +91,25 @@ const bulkRunRoute = createRoute({
   staticData: { title: "Run stories" },
 });
 
-const draftReviewRoute = createRoute({
+// "/scheduled" — overview of scheduled runs
+const scheduledRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/draft/$draftId",
-  component: DraftReviewView,
-  staticData: { title: "Review draft" },
+  path: "/scheduled",
+  component: ScheduledOverviewView,
+  staticData: { title: "Scheduled" },
 });
 
-const generateRoute = createRoute({
+// "/scheduled/$id" — create (id=new) or edit an existing schedule
+const scheduledDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/generate",
-  component: GenerateView,
-  staticData: { title: "Generate" },
+  path: "/scheduled/$id",
+  component: function ScheduledDetailRoute() {
+    const { id } = scheduledDetailRoute.useParams();
+    return (
+      <ScheduledEditorView scheduleId={id === "new" ? undefined : id} />
+    );
+  },
+  staticData: { title: "Schedule" },
 });
 
 // "/settings" — in-app settings (Codex-style sidebar + main pane)
@@ -117,8 +130,8 @@ const routeTree = rootRoute.addChildren([
   historyRunRoute,
   recordRoute,
   bulkRunRoute,
-  draftReviewRoute,
-  generateRoute,
+  scheduledRoute,
+  scheduledDetailRoute,
   settingsRoute,
 ]);
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
@@ -233,27 +234,6 @@ def derive_story_id(url: str, story_name: str) -> str:
     return f"{host}-{name_slug}"
 
 
-def derive_tags(url: str, story_name: str) -> list[str]:
-    parsed = urlparse(url)
-    tags: list[str] = []
-
-    for segment in parsed.path.split("/"):
-        if not segment.strip():
-            continue
-        normalized = slugify(segment)
-        if normalized and normalized not in tags:
-            tags.append(normalized)
-
-    for token in re.findall(r"[a-z0-9]+", story_name.lower()):
-        if token in STOP_WORDS:
-            continue
-        normalized = slugify(token)
-        if normalized and normalized not in tags:
-            tags.append(normalized)
-
-    return tags[:4]
-
-
 # Keyboard navigation / edit keys captured while fixing typos — not story intent.
 _CORRECTION_KEY_BASES = frozenset(
     {
@@ -328,34 +308,101 @@ def clean_recorded_steps(steps: list[str]) -> list[str]:
     return result
 
 
-def ensure_verify_steps(steps: list[str], url: str) -> list[str]:
-    """Add fallback Verify steps when Playwright codegen produced none."""
-    if any(step.startswith("Verify ") for step in steps):
-        return steps
+def split_workflow_with_assertions(steps: list[str]) -> tuple[list[str], list[tuple[int, str]]]:
+    workflow: list[str] = []
+    assertions: list[tuple[int, str]] = []
+    for step in steps:
+        if re.match(r"^verify\b", step, flags=re.IGNORECASE):
+            assertions.append((len(workflow), step))
+        else:
+            workflow.append(step)
+    return workflow, assertions
 
-    result = list(steps)
-    first_nav = next((i for i, step in enumerate(result) if step.startswith("Navigate to ")), None)
+
+def format_assertions_block(assertions: list[tuple[int, str]]) -> str:
+    return "\n".join(f"      @{after} {text}" for after, text in assertions)
+
+
+def is_end_state_navigation_step(step: str) -> bool:
+    return bool(re.match(r"^(Click|Navigate to)\b", step.strip(), flags=re.IGNORECASE))
+
+
+def has_only_end_state_navigation_tail(steps: list[str], from_index: int) -> bool:
+    tail = steps[from_index:]
+    return len(tail) > 0 and all(is_end_state_navigation_step(step) for step in tail)
+
+
+def align_assertions_with_end_state_navigation(
+    steps: list[str],
+    assertions: list[tuple[int, str]],
+) -> list[tuple[int, str]]:
+    if not steps or not assertions:
+        return assertions
+
+    max_after = max(after for after, _ in assertions)
+    if max_after >= len(steps):
+        return assertions
+    if not has_only_end_state_navigation_tail(steps, max_after):
+        return assertions
+
+    end_after = len(steps)
+    return [(end_after if after == max_after else after, text) for after, text in assertions]
+
+
+def clamp_assertion_positions(
+    assertions: list[tuple[int, str]],
+    step_count: int,
+) -> list[tuple[int, str]]:
+    clamped: list[tuple[int, str]] = []
+    for after, text in assertions:
+        if after < 0:
+            clamped.append((0, text))
+        elif after > step_count:
+            print(
+                f"[bowser] clamping assertion {text!r} from @{after} to @{step_count} ({step_count} workflow steps)",
+                file=sys.stderr,
+            )
+            clamped.append((step_count, text))
+        else:
+            clamped.append((after, text))
+    return clamped
+
+
+def ensure_fallback_assertions(steps: list[str], url: str) -> list[tuple[int, str]]:
+    assertions: list[tuple[int, str]] = []
+    first_nav = next((i for i, step in enumerate(steps) if step.startswith("Navigate to ")), None)
     if first_nav is not None:
-        result.insert(first_nav + 1, "Verify the page loads successfully")
+        assertions.append((first_nav + 1, "Verify the page loads successfully"))
     else:
-        result.insert(0, f"Navigate to {url}")
-        result.insert(1, "Verify the page loads successfully")
+        assertions.append((0, "Verify the page loads successfully"))
 
-    last_url: str | None = None
-    for step in result:
+    last_url = url
+    for step in steps:
         if step.startswith("Navigate to "):
             last_url = step.removeprefix("Navigate to ").strip()
 
-    if last_url:
-        parsed = urlparse(last_url)
-        if parsed.path and parsed.path not in ("/", ""):
-            result.append(f'Verify the current URL contains "{parsed.path}"')
-        else:
-            result.append("Verify the expected page state is visible")
+    parsed = urlparse(last_url)
+    if parsed.path and parsed.path not in ("/", ""):
+        assertions.append((len(steps), f'Verify the current URL contains "{parsed.path}"'))
     else:
-        result.append("Verify the expected page state is visible")
+        assertions.append((len(steps), "Verify the expected page state is visible"))
+    return assertions
 
-    return result
+
+def ensure_verify_steps(steps: list[str], url: str) -> list[str]:
+    """Legacy helper — returns interleaved workflow for callers that still expect it."""
+    workflow, assertions = split_workflow_with_assertions(steps)
+    if not assertions:
+        assertions = ensure_fallback_assertions(workflow, url)
+    merged: list[str] = []
+    by_after: dict[int, list[str]] = {}
+    for after, text in assertions:
+        by_after.setdefault(after, []).append(text)
+    for index in range(len(workflow) + 1):
+        merged.extend(by_after.get(index, []))
+        if index < len(workflow):
+            merged.append(workflow[index])
+    return merged
 
 
 def infer_variable_key(target: str, value: str) -> str:
@@ -428,14 +475,16 @@ def build_review_markdown(
     story_id: str,
     story_name: str,
     url: str,
-    steps: list[str],
+    workflow_steps: list[str],
+    assertions: list[tuple[int, str]],
     *,
     mode: str,
-    tags: list[str],
     variables: dict[str, str] | None = None,
 ) -> str:
-    numbered_steps = "\n".join(f"{index}. {step}" for index, step in enumerate(steps, start=1))
-    tags_text = ", ".join(tags) if tags else "none"
+    numbered_steps = "\n".join(f"{index}. {step}" for index, step in enumerate(workflow_steps, start=1))
+    numbered_assertions = "\n".join(
+        f"{index}. @{after} {text}" for index, (after, text) in enumerate(assertions, start=1)
+    )
     variables_section = ""
     if variables:
         var_lines = "\n".join(f"- `{key}`: {value}" for key, value in variables.items())
@@ -445,11 +494,12 @@ def build_review_markdown(
         f"**ID:** {story_id}\n"
         f"**Story:** {story_name}\n"
         f"**URL:** {url}\n"
-        f"**Mode:** {mode}\n"
-        f"**Tags:** {tags_text}\n\n"
+        f"**Mode:** {mode}\n\n"
         f"{variables_section}"
-        f"## Workflow\n\n"
-        f"{numbered_steps}\n"
+        f"## Steps\n\n"
+        f"{numbered_steps}\n\n"
+        f"## Assertions\n\n"
+        f"{numbered_assertions}\n"
     )
 
 
@@ -461,17 +511,14 @@ def build_yaml(
     story_id: str,
     story_name: str,
     url: str,
-    steps: list[str],
+    workflow_steps: list[str],
+    assertions: list[tuple[int, str]],
     *,
     mode: str,
-    tags: list[str],
     variables: dict[str, str] | None = None,
 ) -> str:
-    workflow = "\n".join(f"      {step}" for step in steps)
-    tags_yaml = ""
-    if tags:
-        tag_items = ", ".join(yaml_quote(tag) for tag in tags)
-        tags_yaml = f"    tags: [{tag_items}]\n"
+    workflow = "\n".join(f"      {step}" for step in workflow_steps)
+    assertions_block = format_assertions_block(assertions)
     variables_yaml = ""
     if variables:
         variables_yaml = "    variables:\n"
@@ -482,11 +529,12 @@ def build_yaml(
         f"  - id: {yaml_quote(story_id)}\n"
         f"    name: {yaml_quote(story_name)}\n"
         f"    url: {yaml_quote(url)}\n"
-        f"{tags_yaml}"
         f"    mode: {yaml_quote(mode)}\n"
         f"{variables_yaml}"
         "    workflow: |\n"
         f"{workflow}\n"
+        "    assertions: |\n"
+        f"{assertions_block}\n"
     )
 
 
@@ -496,6 +544,7 @@ def convert_recording_file(
     source_url: str | None = None,
     *,
     mode: str = "recorded",
+    story_id: str | None = None,
 ) -> dict[str, str]:
     source = recording_path.read_text()
     statements = extract_await_statements(source)
@@ -513,28 +562,38 @@ def convert_recording_file(
             detected_url = "https://example.com"
 
     final_name = story_name or derive_default_name(detected_url, steps)
-    story_id = derive_story_id(detected_url, final_name)
-    tags = derive_tags(detected_url, final_name)
+    resolved_story_id = story_id or derive_story_id(detected_url, final_name)
     steps = clean_recorded_steps(steps)
-    steps = ensure_verify_steps(steps, detected_url)
-    steps, variables = apply_variables_to_steps(steps)
+    workflow_steps, assertions = split_workflow_with_assertions(steps)
+    if not assertions:
+        assertions = ensure_fallback_assertions(workflow_steps, detected_url)
+    assertions = align_assertions_with_end_state_navigation(workflow_steps, assertions)
+    assertions = clamp_assertion_positions(assertions, len(workflow_steps))
+    workflow_steps, variables = apply_variables_to_steps(workflow_steps)
 
     return {
-        "story_id": story_id,
+        "story_id": resolved_story_id,
         "story_name": final_name,
         "url": detected_url,
         "mode": mode,
-        "tags": ", ".join(tags),
         "review_markdown": build_review_markdown(
-            story_id,
+            resolved_story_id,
             final_name,
             detected_url,
-            steps,
+            workflow_steps,
+            assertions,
             mode=mode,
-            tags=tags,
             variables=variables or None,
         ),
-        "yaml": build_yaml(story_id, final_name, detected_url, steps, mode=mode, tags=tags, variables=variables or None),
+        "yaml": build_yaml(
+            resolved_story_id,
+            final_name,
+            detected_url,
+            workflow_steps,
+            assertions,
+            mode=mode,
+            variables=variables or None,
+        ),
     }
 
 
@@ -542,6 +601,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Convert a Playwright codegen recording into Bowser-style review artifacts.")
     parser.add_argument("recording", help="Path to the Playwright recording (.spec.ts or .spec.js)")
     parser.add_argument("--name", help="Override the generated story name")
+    parser.add_argument("--story-id", help="Reuse an existing library story id (record again)")
     parser.add_argument("--url", help="Override the detected URL")
     parser.add_argument("--mode", default="recorded", help="Story authoring mode to include in the YAML")
     parser.add_argument("--markdown-output", help="Path for the generated Markdown review file")
@@ -554,6 +614,7 @@ def main() -> int:
         story_name=args.name,
         source_url=args.url,
         mode=args.mode,
+        story_id=args.story_id,
     )
 
     markdown_output = Path(args.markdown_output).resolve() if args.markdown_output else recording_path.with_name("draft.story.md")

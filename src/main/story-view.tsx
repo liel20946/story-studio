@@ -17,7 +17,6 @@ import {
   ToolbarTitle,
   ToolbarActions,
   Button,
-  Badge,
   Text,
   EmptyState,
   Tooltip,
@@ -32,11 +31,11 @@ import {
   runStart,
 } from "../lib/ipc";
 import { cn } from "@/lib/utils";
+import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type { StoryDetail } from "../lib/contract-types";
 import { InlineCode, stripCode } from "../components/inline-code";
+import { RailAssertionLine } from "../components/rail-assertion-line";
 import { useActiveRunForStory, useRegisterRun } from "../lib/run-store";
-import { ContentCard } from "../components/content-card";
-
 // ---------- per-variable colors ----------
 // Each variable name gets a stable color from the design-system support palette
 // (cycled by definition order) so it reads the same in the Variables list and
@@ -63,25 +62,20 @@ function buildVarColors(story: StoryDetail) {
   return { text, chip };
 }
 
-// ---------- section (Variables / Steps / Assertions) ----------
+// ---------- section (Steps on the left; Variables / Assertions on the rail) ----------
 function Section({
   title,
   children,
-  variant = "card",
 }: {
   title: React.ReactNode;
   children: React.ReactNode;
-  variant?: "card" | "plain";
 }) {
-  if (variant === "plain") {
-    return (
-      <div className="codex-section">
-        <span className="section-label">{title}</span>
-        {children}
-      </div>
-    );
-  }
-  return <ContentCard title={title}>{children}</ContentCard>;
+  return (
+    <div className="codex-section">
+      <span className="section-label">{title}</span>
+      {children}
+    </div>
+  );
 }
 
 // ---------- copy-to-clipboard button (with transient "copied" check) ----------
@@ -103,7 +97,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1200);
     } catch (err) {
-      console.error("[StoryView] clipboard:writeText failed", err);
+      reportAppErrorFromUnknown("Failed to copy variable", err);
     }
   }
 
@@ -123,11 +117,8 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-// ---------- read-only variables ----------
-// ---------- read-only variables ----------
 // Variables are edited through the "Edit" toolbar action (site YAML), so they
-// render read-only here: key on the LEFT, value beside it, and a copy button
-// that fades in on row hover. Secrets stay masked.
+// render read-only here: key on the left, value beside it, and a copy button
 // that fades in on row hover. Secrets stay masked.
 function ReadOnlyVariables({
   story,
@@ -137,7 +128,7 @@ function ReadOnlyVariables({
   nameColors: Record<string, string>;
 }) {
   return (
-    <div className="flex flex-col px-1 py-1">
+    <div className="flex flex-col">
       {story.variables.map((v) => {
         const key = stripCode(v.key);
         const value = stripCode(v.value);
@@ -145,25 +136,24 @@ function ReadOnlyVariables({
         return (
           <div
             key={v.key}
-            className="group/var flex items-center gap-1.5 rounded-control px-0.5 py-0.5 transition-colors hover:bg-surface-hover"
+            className="group/var flex items-center gap-1.5 py-0.5 min-w-0 rounded-control transition-colors hover:bg-surface-hover"
           >
-            <Text
-              variant="micro-mono"
+            <span
               className={cn(
-                "w-[4rem] shrink-0 truncate",
+                "w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px]",
                 nameColors[key] ?? "text-tertiary",
               )}
             >
               {key}
-            </Text>
-            <Text
-              variant="micro-mono"
-              color={value ? "secondary" : "quaternary"}
-              className="min-w-0 flex-1 truncate"
+            </span>
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px]",
+                value ? "text-secondary" : "text-quaternary",
+              )}
             >
               {value ? (show ? value : "••••••") : "empty"}
-            </Text>
-            {/* Copy reveals on row hover to keep the table clean at rest. */}
+            </span>
             <span className="shrink-0 opacity-0 transition-opacity group-hover/var:opacity-100">
               <CopyButton value={value} label={`Copy ${key}`} />
             </span>
@@ -178,7 +168,6 @@ export function StoryView() {
   const { name } = useParams({ from: "/story/$name" });
   const navigate = useNavigate();
   const registerRun = useRegisterRun();
-  const activeRun = useActiveRunForStory(name);
   const [isStarting, setIsStarting] = React.useState(false);
 
   const storyQuery = useQuery({
@@ -205,6 +194,7 @@ export function StoryView() {
   }, [storiesListQuery.data, name, navigate]);
 
   const story = storyQuery.isError ? undefined : storyQuery.data;
+  const activeRun = useActiveRunForStory(name, story?.title);
 
   // Stable color per variable name, reused across the Variables list and the
   // inline chips in Steps/Assertions.
@@ -222,11 +212,11 @@ export function StoryView() {
     }
     setIsStarting(true);
     try {
-      const { runId } = await runStart(story.name);
-      registerRun(runId, story.name, story.title);
+      const { runId, agentProvider, agentModel } = await runStart(story.name);
+      registerRun(runId, story.name, story.title, { agentProvider, agentModel });
       navigate({ to: "/run/$runId", params: { runId } });
     } catch (err) {
-      console.error("[StoryView] run:start failed", err);
+      reportAppErrorFromUnknown("Failed to start run", err);
     } finally {
       setIsStarting(false);
     }
@@ -237,17 +227,19 @@ export function StoryView() {
     try {
       await storiesOpenFile(story.name);
     } catch (err) {
-      console.error("[StoryView] stories:openFile failed", err);
+      reportAppErrorFromUnknown("Failed to open story file", err);
     }
   }
 
   function handleRecordAgain() {
-    if (!story) return;
-    // Prefill the recorder with this story's id + start URL so re-recording
-    // overwrites the same .story.md.
+    // Use the route param for the story id — query data can lag behind
+    // (keepPreviousData) when switching stories in the sidebar.
+    const baseUrl =
+      story?.name === name ? (story.baseUrl ?? "") : "";
+    const title = story?.name === name ? story.title : undefined;
     navigate({
       to: "/record",
-      search: { name: story.name, url: story.baseUrl ?? "" },
+      search: { storyKey: name, title, url: baseUrl },
     });
   }
 
@@ -289,20 +281,10 @@ export function StoryView() {
     <ScrollArea
       toolbar={
         <Toolbar titlebar surface="main" seamless>
-          <ToolbarRow inset="main" className="detail-view-toolbar">
+          <ToolbarRow inset="main" className="main-titlebar-row detail-view-toolbar">
             <ToolbarContent className="detail-view-toolbar-content">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <ToolbarTitle className="shrink-0">{story.title}</ToolbarTitle>
-                {(story.tags ?? []).map((tag) => (
-                  <Badge key={tag} color="secondary" size="xs">
-                    {tag}
-                  </Badge>
-                ))}
-                {story.mode && (
-                  <Badge color="secondary" size="xs">
-                    {story.mode}
-                  </Badge>
-                )}
+                <ToolbarTitle>{story.title}</ToolbarTitle>
               </div>
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
@@ -312,10 +294,10 @@ export function StoryView() {
                 <TooltipTrigger asChild>
                   <Button
                     variant="transparent"
-                    size="small"
+                    size="titlebar"
                     iconOnly
                     onClick={handleEdit}
-                    aria-label="Edit story file"
+                    aria-label="Edit YAML file"
                   >
                     <PencilIcon className="size-4" />
                   </Button>
@@ -326,7 +308,7 @@ export function StoryView() {
                 <TooltipTrigger asChild>
                   <Button
                     variant="transparent"
-                    size="small"
+                    size="titlebar"
                     iconOnly
                     onClick={handleRecordAgain}
                     aria-label="Record again"
@@ -337,8 +319,8 @@ export function StoryView() {
                 <TooltipContent>Record again</TooltipContent>
               </Tooltip>
               <Button
-                variant="accent"
-                size="small"
+                variant={activeRun ? "filled" : "accent"}
+                size="titlebar"
                 radius="full"
                 onClick={handleRun}
                 disabled={isStarting}
@@ -348,19 +330,19 @@ export function StoryView() {
                 ) : (
                   <PlayIcon className="size-4" />
                 )}
-                Run
+                {activeRun ? "View run" : "Run"}
               </Button>
             </ToolbarActions>
           </ToolbarRow>
         </Toolbar>
       }
     >
-      {/* Two-column detail: the main flow (Steps + Assertions) on the left,
-          status + Variables on the right so wide pages don't read sparse. */}
+      {/* Two-column detail: steps on the left; variables + assertions on the
+          right rail card (matches run view layout and typography). */}
       <div className="detail-view">
         <div className="detail-view-main story-sections">
           {story.steps.length > 0 && (
-            <Section title="Steps" variant="plain">
+            <Section title="Steps">
               <ol className="flex flex-col">
                 {story.steps.map((step, i) => (
                   <li key={i} className="story-step-row">
@@ -374,62 +356,31 @@ export function StoryView() {
             </Section>
           )}
 
-          {story.assertions.length > 0 && (
-            <Section title="Assertions" variant="plain">
-              <ul className="flex flex-col">
-                {story.assertions.map((assertion, i) => (
-                  <li key={i} className="story-step-row">
-                    <span
-                      aria-hidden
-                      className="story-step-num !rounded-full !text-[8px]"
-                    >
-                      •
-                    </span>
-                    <Text variant="small" color="secondary">
-                      <InlineCode text={assertion} colorMap={varColors.chip} />
-                    </Text>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
-
-          {story.steps.length === 0 && story.assertions.length === 0 && (
-            <EmptyState
-              placement="inline"
-              title="No steps yet"
-              description="This story has no steps or assertions. Record again or edit the file to add them."
-            />
+          {story.steps.length === 0 && (
+            <EmptyState placement="inline" title="No steps yet." />
           )}
         </div>
 
-        {/* Right: variables in a floating card (matches run view rail). */}
-        {(activeRun || story.variables.length > 0) && (
+        {(story.variables.length > 0 ||
+          story.assertions.length > 0) && (
           <div className="detail-rail detail-rail--card">
-            {activeRun && (
-              <button
-                type="button"
-                onClick={() =>
-                  navigate({
-                    to: "/run/$runId",
-                    params: { runId: activeRun.runId },
-                  })
-                }
-                className="flex items-center gap-2 self-start rounded-control px-2 py-1.5 hover:bg-control transition-colors"
-              >
-                <Loader2Icon className="size-3 text-support-blue shrink-0 animate-spin" />
-                <Badge color="blue" size="xs">
-                  Running
-                </Badge>
-                <Text variant="mini" color="tertiary">
-                  View live timeline
-                </Text>
-              </button>
+            {story.variables.length > 0 && (
+              <Section title="Variables">
+                <ReadOnlyVariables story={story} nameColors={varColors.text} />
+              </Section>
             )}
 
-            {story.variables.length > 0 && (
-              <Section title="Variables" variant="plain">
-                <ReadOnlyVariables story={story} nameColors={varColors.text} />
+            {story.assertions.length > 0 && (
+              <Section title="Assertions">
+                <div className="flex flex-col">
+                  {story.assertions.map((assertion, i) => (
+                    <RailAssertionLine
+                      key={i}
+                      text={assertion}
+                      colorMap={varColors.chip}
+                    />
+                  ))}
+                </div>
               </Section>
             )}
           </div>

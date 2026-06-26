@@ -10,6 +10,7 @@ import {
   net,
   Menu,
   nativeImage,
+  screen,
 } from "electron";
 
 export {
@@ -24,4 +25,5 @@ export {
   net,
   Menu,
   nativeImage,
+  screen,
 };

@@ -5,7 +5,6 @@ import { app } from "../electron-api.js";
 let _storiesDir: string | null = null;
 let _runsDir: string | null = null;
 let _draftsDir: string | null = null;
-let _generateDir: string | null = null;
 
 export function getStoriesDir(): string {
   if (!_storiesDir) throw new Error("paths not initialized — call initPaths() first");
@@ -22,11 +21,6 @@ export function getDraftsDir(): string {
   return _draftsDir;
 }
 
-export function getGenerateDir(): string {
-  if (!_generateDir) throw new Error("paths not initialized — call initPaths() first");
-  return _generateDir;
-}
-
 export async function initPaths(overrides?: {
   storiesDir?: string | null;
   runsDir?: string | null;
@@ -35,11 +29,9 @@ export async function initPaths(overrides?: {
   _storiesDir = overrides?.storiesDir ?? path.join(userData, "stories");
   _runsDir = overrides?.runsDir ?? path.join(userData, "runs");
   _draftsDir = path.join(userData, "drafts");
-  _generateDir = path.join(userData, "generate-sessions");
   await fs.mkdir(_storiesDir, { recursive: true });
   await fs.mkdir(_runsDir, { recursive: true });
   await fs.mkdir(_draftsDir, { recursive: true });
-  await fs.mkdir(_generateDir, { recursive: true });
 }
 
 export function overridePaths(opts: { storiesDir?: string; runsDir?: string }): void {

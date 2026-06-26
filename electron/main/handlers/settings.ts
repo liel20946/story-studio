@@ -7,7 +7,23 @@ import {
   DEFAULT_AGENT_PROVIDER,
   parseAgentProvider,
 } from "../services/agent-provider.js";
+import {
+  defaultAgentModelSettings,
+  parseAgentModelSettings,
+} from "../services/agent-config.js";
+import {
+  warmAgentCapabilitiesCache,
+  normalizeAgentModelSettings,
+  isModelAllowed,
+  isEffortAllowed,
+} from "../services/agent-capabilities.js";
 import { getStoriesDir, getRunsDir, overridePaths } from "../services/paths.js";
+import { parseColorThemeId } from "../../../src/lib/color-themes.js";
+import {
+  DEFAULT_COLOR_THEME_CONTRAST,
+  parseColorThemeContrast,
+  parseColorThemePalette,
+} from "../../../src/lib/color-theme-config.js";
 
 function parseTheme(
   value: unknown,
@@ -21,6 +37,7 @@ function parseTheme(
 
 // Defaults for the user-facing settings (kept in one place so load + set agree).
 const DEFAULT_THEME: AppSettings["theme"] = "dark";
+const DEFAULT_COLOR_THEME = parseColorThemeId(undefined);
 const DEFAULT_STARTING_URL = "https://example.com";
 
 const SETTINGS_FILE = () =>
@@ -28,45 +45,115 @@ const SETTINGS_FILE = () =>
 
 let _settings: AppSettings | null = null;
 
+function parseColorThemeFields(
+  parsed: Partial<AppSettings> & { colorTheme?: unknown },
+  defaults: AppSettings,
+): Pick<AppSettings, "colorThemeLight" | "colorThemeDark"> {
+  const legacy =
+    typeof parsed.colorTheme === "string" ? parsed.colorTheme : undefined;
+  return {
+    colorThemeLight: parseColorThemeId(
+      parsed.colorThemeLight ?? legacy,
+      defaults.colorThemeLight,
+    ),
+    colorThemeDark: parseColorThemeId(
+      parsed.colorThemeDark ?? legacy,
+      defaults.colorThemeDark,
+    ),
+  };
+}
+
 function toAppSettings(
-  parsed: Partial<AppSettings>,
+  parsed: Partial<AppSettings> & { colorTheme?: unknown },
   defaults: AppSettings,
 ): AppSettings {
+  const modelDefaults = normalizeAgentModelSettings(
+    parseAgentModelSettings(parsed, defaults),
+  );
+  const colorThemes = parseColorThemeFields(parsed, defaults);
   return {
     agentProvider: parseAgentProvider(parsed.agentProvider ?? defaults.agentProvider),
     codexBinaryPath: parsed.codexBinaryPath ?? defaults.codexBinaryPath,
     claudeBinaryPath: parsed.claudeBinaryPath ?? defaults.claudeBinaryPath,
+    codexModel: modelDefaults.codexModel,
+    codexEffort: modelDefaults.codexEffort,
+    claudeModel: modelDefaults.claudeModel,
+    claudeEffort: modelDefaults.claudeEffort,
     storiesDir: parsed.storiesDir ?? defaults.storiesDir,
     runsDir: parsed.runsDir ?? defaults.runsDir,
     theme: parseTheme(parsed.theme, defaults.theme),
+    colorThemeLight: colorThemes.colorThemeLight,
+    colorThemeDark: colorThemes.colorThemeDark,
+    colorThemePaletteLight:
+      parseColorThemePalette(parsed.colorThemePaletteLight) ??
+      defaults.colorThemePaletteLight,
+    colorThemePaletteDark:
+      parseColorThemePalette(parsed.colorThemePaletteDark) ??
+      defaults.colorThemePaletteDark,
+    colorThemeContrastLight: parseColorThemeContrast(
+      parsed.colorThemeContrastLight,
+      defaults.colorThemeContrastLight,
+    ),
+    colorThemeContrastDark: parseColorThemeContrast(
+      parsed.colorThemeContrastDark,
+      defaults.colorThemeContrastDark,
+    ),
+    usePointerCursors:
+      typeof parsed.usePointerCursors === "boolean"
+        ? parsed.usePointerCursors
+        : defaults.usePointerCursors,
     startingUrl: parsed.startingUrl ?? defaults.startingUrl,
     runHook: parsed.runHook ?? defaults.runHook,
   };
 }
 
 async function loadSettings(): Promise<AppSettings> {
-  if (_settings) return _settings;
   const storiesDir = getStoriesDir();
   const runsDir = getRunsDir();
+  const modelDefaults = defaultAgentModelSettings();
   const defaults: AppSettings = {
     agentProvider: DEFAULT_AGENT_PROVIDER,
     codexBinaryPath: null,
     claudeBinaryPath: null,
+    codexModel: modelDefaults.codexModel,
+    codexEffort: modelDefaults.codexEffort,
+    claudeModel: modelDefaults.claudeModel,
+    claudeEffort: modelDefaults.claudeEffort,
     storiesDir,
     runsDir,
     theme: DEFAULT_THEME,
+    colorThemeLight: DEFAULT_COLOR_THEME,
+    colorThemeDark: DEFAULT_COLOR_THEME,
+    colorThemePaletteLight: null,
+    colorThemePaletteDark: null,
+    colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
+    colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
+    usePointerCursors: false,
     startingUrl: DEFAULT_STARTING_URL,
     runHook: "",
   };
+
+  if (_settings) {
+    _settings = toAppSettings(_settings, defaults);
+    return _settings;
+  }
+
   try {
     const data = await fs.readFile(SETTINGS_FILE(), "utf-8");
     const parsed = JSON.parse(data) as Partial<AppSettings> & {
       appearance?: unknown;
+      colorTheme?: unknown;
     };
     _settings = toAppSettings(parsed, defaults);
 
-    // Drop legacy appearance keys from disk on next read if they were present.
-    if ("appearance" in parsed) {
+    const needsMigration =
+      "appearance" in parsed ||
+      "colorTheme" in parsed ||
+      !("colorThemeLight" in parsed) ||
+      !("colorThemeDark" in parsed) ||
+      !("colorThemeContrastLight" in parsed) ||
+      !("colorThemeContrastDark" in parsed);
+    if (needsMigration) {
       await persistSettings(_settings);
     }
   } catch {
@@ -82,14 +169,26 @@ async function persistSettings(s: AppSettings): Promise<void> {
 /** Synchronous accessor for other modules (after loadSettings has been called). */
 export function getSettingsValue(): AppSettings {
   if (!_settings) {
+    const modelDefaults = defaultAgentModelSettings();
     // Return safe defaults before first async load completes
     return {
       agentProvider: DEFAULT_AGENT_PROVIDER,
       codexBinaryPath: null,
       claudeBinaryPath: null,
+      codexModel: modelDefaults.codexModel,
+      codexEffort: modelDefaults.codexEffort,
+      claudeModel: modelDefaults.claudeModel,
+      claudeEffort: modelDefaults.claudeEffort,
       storiesDir: getStoriesDir(),
       runsDir: getRunsDir(),
       theme: DEFAULT_THEME,
+      colorThemeLight: DEFAULT_COLOR_THEME,
+      colorThemeDark: DEFAULT_COLOR_THEME,
+      colorThemePaletteLight: null,
+      colorThemePaletteDark: null,
+      colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
+      colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
+      usePointerCursors: false,
       startingUrl: DEFAULT_STARTING_URL,
       runHook: "",
     };
@@ -99,7 +198,19 @@ export function getSettingsValue(): AppSettings {
 
 export function registerSettingsHandlers(): void {
   ipcMain.handle("settings:get", async () => {
-    return loadSettings();
+    const s = await loadSettings();
+    const normalized = normalizeAgentModelSettings(s);
+    const next = { ...s, ...normalized };
+    if (
+      normalized.codexModel !== s.codexModel ||
+      normalized.codexEffort !== s.codexEffort ||
+      normalized.claudeModel !== s.claudeModel ||
+      normalized.claudeEffort !== s.claudeEffort
+    ) {
+      _settings = next;
+      await persistSettings(next);
+    }
+    return { ...next };
   });
 
   ipcMain.handle("settings:set", async (_event, params: unknown) => {
@@ -134,6 +245,38 @@ export function registerSettingsHandlers(): void {
       current.claudeBinaryPath = val as string | null;
     }
 
+    if ("codexModel" in p) {
+      const val = p["codexModel"];
+      if (!isModelAllowed("codex", val)) {
+        throw new Error("settings:set codexModel is invalid");
+      }
+      current.codexModel = val;
+    }
+
+    if ("codexEffort" in p) {
+      const val = p["codexEffort"];
+      if (!isEffortAllowed("codex", current.codexModel, val)) {
+        throw new Error("settings:set codexEffort is invalid for the selected model");
+      }
+      current.codexEffort = val;
+    }
+
+    if ("claudeModel" in p) {
+      const val = p["claudeModel"];
+      if (!isModelAllowed("claude-code", val)) {
+        throw new Error("settings:set claudeModel is invalid");
+      }
+      current.claudeModel = val;
+    }
+
+    if ("claudeEffort" in p) {
+      const val = p["claudeEffort"];
+      if (!isEffortAllowed("claude-code", current.claudeModel, val)) {
+        throw new Error("settings:set claudeEffort is invalid for the selected model");
+      }
+      current.claudeEffort = val;
+    }
+
     if ("theme" in p) {
       const val = p["theme"];
       const theme = parseTheme(val, current.theme);
@@ -143,6 +286,56 @@ export function registerSettingsHandlers(): void {
       current.theme = theme;
       // Apply immediately so all open windows update without a restart.
       nativeTheme.themeSource = theme;
+    }
+
+    if ("colorThemeLight" in p) {
+      const val = p["colorThemeLight"];
+      const colorThemeLight = parseColorThemeId(val, current.colorThemeLight);
+      if (val !== colorThemeLight) {
+        throw new Error("settings:set colorThemeLight is invalid");
+      }
+      current.colorThemeLight = colorThemeLight;
+    }
+
+    if ("colorThemeDark" in p) {
+      const val = p["colorThemeDark"];
+      const colorThemeDark = parseColorThemeId(val, current.colorThemeDark);
+      if (val !== colorThemeDark) {
+        throw new Error("settings:set colorThemeDark is invalid");
+      }
+      current.colorThemeDark = colorThemeDark;
+    }
+
+    if ("colorThemePaletteLight" in p) {
+      const val = p["colorThemePaletteLight"];
+      if (val !== null && parseColorThemePalette(val) === null) {
+        throw new Error("settings:set colorThemePaletteLight is invalid");
+      }
+      current.colorThemePaletteLight = parseColorThemePalette(val);
+    }
+
+    if ("colorThemePaletteDark" in p) {
+      const val = p["colorThemePaletteDark"];
+      if (val !== null && parseColorThemePalette(val) === null) {
+        throw new Error("settings:set colorThemePaletteDark is invalid");
+      }
+      current.colorThemePaletteDark = parseColorThemePalette(val);
+    }
+
+    if ("colorThemeContrastLight" in p) {
+      const val = p["colorThemeContrastLight"];
+      if (typeof val !== "number" || Number.isNaN(val)) {
+        throw new Error("settings:set colorThemeContrastLight must be a number");
+      }
+      current.colorThemeContrastLight = parseColorThemeContrast(val);
+    }
+
+    if ("colorThemeContrastDark" in p) {
+      const val = p["colorThemeContrastDark"];
+      if (typeof val !== "number" || Number.isNaN(val)) {
+        throw new Error("settings:set colorThemeContrastDark must be a number");
+      }
+      current.colorThemeContrastDark = parseColorThemeContrast(val);
     }
 
     if ("startingUrl" in p) {
@@ -161,14 +354,45 @@ export function registerSettingsHandlers(): void {
       current.runHook = val;
     }
 
+    if ("usePointerCursors" in p) {
+      const val = p["usePointerCursors"];
+      if (typeof val !== "boolean") {
+        throw new Error("settings:set usePointerCursors must be boolean");
+      }
+      current.usePointerCursors = val;
+    }
+
     _settings = current;
     await persistSettings(current);
     broadcast("settings:codexBinaryPath-changed", { value: current.codexBinaryPath });
     if ("theme" in p) {
       broadcast("settings:theme-changed", { theme: current.theme });
     }
+    if (
+      "colorThemeLight" in p ||
+      "colorThemeDark" in p ||
+      "colorThemePaletteLight" in p ||
+      "colorThemePaletteDark" in p ||
+      "colorThemeContrastLight" in p ||
+      "colorThemeContrastDark" in p
+    ) {
+      broadcast("settings:color-theme-changed", {
+        colorThemeLight: current.colorThemeLight,
+        colorThemeDark: current.colorThemeDark,
+        colorThemePaletteLight: current.colorThemePaletteLight,
+        colorThemePaletteDark: current.colorThemePaletteDark,
+        colorThemeContrastLight: current.colorThemeContrastLight,
+        colorThemeContrastDark: current.colorThemeContrastDark,
+      });
+    }
+    if ("usePointerCursors" in p) {
+      broadcast("settings:appearance-changed", {
+        usePointerCursors: current.usePointerCursors,
+      });
+    }
     console.log("[settings] saved", current);
-    return current;
+    // Shallow copy so renderer setState always sees a new reference.
+    return { ...current };
   });
 }
 
@@ -202,10 +426,24 @@ export async function initSettings(): Promise<AppSettings> {
   overridePaths({ storiesDir, runsDir });
   nativeTheme.themeSource = s.theme;
 
-  if (storiesDir !== loadedStories || runsDir !== loadedRuns) {
+  warmAgentCapabilitiesCache(s.codexBinaryPath, s.claudeBinaryPath);
+
+  const normalized = normalizeAgentModelSettings(s);
+  const settingsChanged =
+    normalized.codexModel !== s.codexModel ||
+    normalized.codexEffort !== s.codexEffort ||
+    normalized.claudeModel !== s.claudeModel ||
+    normalized.claudeEffort !== s.claudeEffort;
+
+  if (settingsChanged) {
+    Object.assign(s, normalized);
+  }
+
+  if (storiesDir !== loadedStories || runsDir !== loadedRuns || settingsChanged) {
     await persistSettings(s);
   }
 
+  _settings = s;
   return s;
 }
 

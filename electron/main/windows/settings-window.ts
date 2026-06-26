@@ -1,8 +1,9 @@
 import { BrowserWindow } from "../electron-api.js";
 import { getAppIcon } from "../app-icon.js";
 import { getPreloadPath, getSettingsWindowLoadOptions } from "./window-paths.js";
-import { getMacWindowChromeOptions } from "./window-chrome.js";
+import { getMacWindowChromeOptions, applyMacWindowChrome } from "./window-chrome.js";
 import { disableReloadShortcut } from "./disable-reload-shortcut.js";
+import { applyDefaultZoom } from "./window-zoom.js";
 import { logger } from "../logger.js";
 
 let settingsWindow: BrowserWindow | null = null;
@@ -26,8 +27,6 @@ export async function openSettingsWindow(): Promise<void> {
     show: false,
     center: true,
     backgroundColor: "#141416",
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 12, y: 12 },
     ...getMacWindowChromeOptions(),
     webPreferences: {
       preload: getPreloadPath(),
@@ -36,6 +35,8 @@ export async function openSettingsWindow(): Promise<void> {
       sandbox: false,
     },
   });
+
+  applyMacWindowChrome(settingsWindow);
 
   settingsWindow.once("ready-to-show", () => {
     settingsWindow?.show();
@@ -46,6 +47,7 @@ export async function openSettingsWindow(): Promise<void> {
   });
 
   disableReloadShortcut(settingsWindow.webContents);
+  applyDefaultZoom(settingsWindow.webContents);
 
   const load = getSettingsWindowLoadOptions();
   logger.info("settings", "Loading settings window", load);

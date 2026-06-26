@@ -4,13 +4,18 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
+import { reportAppError } from "@/lib/app-error";
 import { Button } from "./button";
+import { Field } from "./forms";
 import { KeyboardShortcut, type ShortcutKey } from "./keyboard-shortcut";
 
 export function Dialog({
   open,
   onOpenChange,
   title,
+  description,
+  fieldLabel,
+  size,
   confirmLabel,
   confirmDisabled,
   onConfirm,
@@ -19,22 +24,37 @@ export function Dialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   title?: string;
+  description?: string;
+  fieldLabel?: string;
+  size?: "small" | "medium";
   confirmLabel?: string;
   confirmDisabled?: boolean;
   onConfirm?: () => void;
   children?: React.ReactNode;
 }) {
   if (title && onConfirm) {
+    const dialogSize = size ?? (description || fieldLabel ? "medium" : "small");
     return (
       <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-        <DialogContent size="small">
+        <DialogContent size={dialogSize}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
+            {description ? (
+              <DialogDescription>{description}</DialogDescription>
+            ) : null}
           </DialogHeader>
-          <DialogBody>{children}</DialogBody>
+          <DialogBody>
+            {fieldLabel ? (
+              <Field label={fieldLabel} orientation="vertical">
+                {children}
+              </Field>
+            ) : (
+              children
+            )}
+          </DialogBody>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="transparent">Cancel</Button>
+              <Button variant="filled">Cancel</Button>
             </DialogClose>
             <Button variant="accent" disabled={confirmDisabled} onClick={onConfirm}>
               {confirmLabel}
@@ -70,7 +90,7 @@ export function DialogContent({
       <DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50" />
       <DialogPrimitive.Content
         className={cn(
-          "dialog-surface fixed left-1/2 top-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 rounded-card border border-separator bg-popover p-0",
+          "dialog-surface fixed left-1/2 top-1/2 z-50 flex w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4",
           sizeClass,
           className,
         )}
@@ -83,7 +103,7 @@ export function DialogContent({
 }
 
 export function DialogHeader({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-3">{children}</div>;
+  return <div className="flex flex-col gap-1">{children}</div>;
 }
 
 export function DialogTitle({ children }: { children: React.ReactNode }) {
@@ -96,20 +116,18 @@ export function DialogTitle({ children }: { children: React.ReactNode }) {
 
 export function DialogDescription({ children }: { children: React.ReactNode }) {
   return (
-    <DialogPrimitive.Description className="text-small text-secondary mt-1">
+    <DialogPrimitive.Description className="text-small text-secondary">
       {children}
     </DialogPrimitive.Description>
   );
 }
 
 export function DialogBody({ children }: { children: React.ReactNode }) {
-  return <div className="px-4 py-4">{children}</div>;
+  return <div className="flex flex-col gap-3">{children}</div>;
 }
 
 export function DialogFooter({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex justify-end gap-2 px-4 py-3">{children}</div>
-  );
+  return <div className="flex justify-end gap-2">{children}</div>;
 }
 
 export const DialogClose = DialogPrimitive.Close;
@@ -230,11 +248,32 @@ export function ContextMenuItem({
 }
 
 export function TooltipProvider({ children }: { children: React.ReactNode }) {
-  return <TooltipPrimitive.Provider delayDuration={300}>{children}</TooltipPrimitive.Provider>;
+  return (
+    <TooltipPrimitive.Provider delayDuration={300} disableHoverableContent>
+      {children}
+    </TooltipPrimitive.Provider>
+  );
 }
 
 export const Tooltip = TooltipPrimitive.Root;
-export const TooltipTrigger = TooltipPrimitive.Trigger;
+
+export const TooltipTrigger = React.forwardRef<
+  React.ComponentRef<typeof TooltipPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>
+>(function TooltipTrigger({ onPointerLeave, ...props }, ref) {
+  return (
+    <TooltipPrimitive.Trigger
+      ref={ref}
+      onPointerLeave={(event) => {
+        onPointerLeave?.(event);
+        // Electron often keeps toolbar buttons focused after hover; blur so a
+        // focus-opened tooltip cannot outlive the pointer leaving the trigger.
+        event.currentTarget.blur();
+      }}
+      {...props}
+    />
+  );
+});
 
 export function TooltipContent({
   children,
@@ -263,6 +302,15 @@ export function TooltipContent({
 }
 
 export function ErrorBoundaryView({ error }: { error: Error }) {
+  const reportedRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    const key = `${error.message}\n${error.stack ?? ""}`;
+    if (reportedRef.current === key) return;
+    reportedRef.current = key;
+    reportAppError("Something went wrong", error.message, error.stack);
+  }, [error]);
+
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
       <p className="text-strong text-support-red">Something went wrong</p>

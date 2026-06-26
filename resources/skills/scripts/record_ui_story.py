@@ -77,7 +77,8 @@ def main() -> int:
     ]
 
     print("Starting Playwright codegen recording.")
-    print("Perform one focused flow, then close the browser/recorder window when done.")
+    print("Perform one focused flow, navigate to the screen you want as the final screenshot,")
+    print("then close the browser/recorder window when done.")
     print(f"Artifacts will be saved under: {output_dir}")
     if args.yaml_destination:
         print(f"Shared YAML destination: {Path(args.yaml_destination).resolve()}")

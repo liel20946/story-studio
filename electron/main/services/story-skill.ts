@@ -14,24 +14,28 @@ stories:
   - id: site-area-purpose
     name: Short human-readable title
     url: https://example.com/path
-    tags: [area, intent]
     mode: recorded | generated
     variables:
       login_email: user@example.com
       login_password: secret
     workflow: |
       Navigate to https://example.com/path
-      Verify the page loads successfully
       Click the "Login" link
       Fill the "Email" field with "{{login_email}}"
-      Verify the dashboard is visible
+      Fill the "Password" field with "{{login_password}}"
+      Click the "Log In" button
+    assertions: |
+      @1 Verify the page loads successfully
+      @5 Verify the dashboard is visible
 \`\`\`
 
 Rules:
-- Use imperative workflow steps: Navigate, Click, Fill, Verify, Select, Press.
+- \`workflow\` = action steps only: Navigate, Click, Fill, Select, Press.
+- \`assertions\` = checks only, one per line. Prefix with \`@N\` where N is how many workflow steps complete before the check (0 before the first step; with 5 workflow steps the last check is \`@5\`, not \`@6\`).
+- The final assertion should match the last screen the user reached. If the recording ends with a trailing Click/Navigate (e.g. opening a detail row after a create/update), keep that step in workflow and put the final assertion at \`@<workflow step count>\` (same as the number of workflow lines) describing the destination — not the intermediate list or toast.
 - Prefer human-facing language over DOM selectors.
-- Keep at least one Verify step per story.
-- For dynamic values (dates, counts, prices, IDs), Verify format/pattern not exact literals.
+- Keep at least one assertion per story.
+- For dynamic values (dates, counts, prices, IDs), verify format/pattern not exact literals.
 - Store typed inputs in a \`variables:\` map and reference them in Fill steps as \`{{variable_name}}\` (e.g. login_email, login_password).`;
 
 // Legacy alias for recording conversion prompts
@@ -45,7 +49,8 @@ export const RUN_STORY_PLAYBOOK = `You are running a saved web UI "story" — an
 - Do not use any MCP server other than "playwright".
 
 ## How to run the story
-- Treat each workflow step as intent, not an exact script. Adapt to minor UI changes while preserving the goal.
+- Follow **Execution order** — the numbered list that interleaves steps and assertions. Run every line through the last one.
+- Treat each line as intent, not an exact script. Adapt to minor UI changes while preserving the goal.
 - Prefer accessible role/name, labels, visible text, and URL context over coordinates or brittle element refs.
 - Use variables defined in the story, including test-account credentials.
 - If the story includes login steps, start from the logged-out login page and perform the login.
@@ -63,66 +68,62 @@ Locate inputs by name / type / placeholder / aria-label. Verify values before su
 
 ## Screenshots and steps.json (required)
 - Create a \`screenshots/\` directory in the run output directory before executing steps.
-- After each workflow step that changes visible UI, save \`screenshots/step-{index}-{slug}.png\` and record the path in steps.json.
-- Always capture a screenshot on failure before stopping.
-- Write \`steps.json\` as a non-empty array. Each entry must include: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
-- Set structured output screenshotPath to the most relevant image (failure screenshot if failed, else last step screenshot).
+- Screenshots are expensive — do NOT capture one after every workflow line. Most steps should have \`screenshot: null\` in steps.json.
+- Capture checkpoint screenshots only at meaningful moments:
+  1. **Navigate** — after the new page has loaded.
+  2. **Verify** — after each assertion in Execution order passes (evidence for the report).
+  3. **Form groups** — after filling all fields in a form/dialog/section, **immediately before** clicking Submit / Save / Continue / Log In / Issue / Confirm (one screenshot per form, not per field). This is **not** the hero screenshot.
+  4. **Major UI change** — modal opened, wizard step advanced (optional checkpoint only).
+  5. **Failure** — always, immediately before stopping.
+- Skip screenshots for intermediate Fill / Click / Press / Select steps inside a form group, focus changes, scrolling, and waiting.
+- Aim for roughly **3–8 checkpoint screenshots** on a typical story, not one per workflow line.
+- Save checkpoint images as \`screenshots/step-{index}-{slug}.png\` and attach the path only on that steps.json entry.
+
+## Hero screenshot (critical — read carefully)
+- The hero screenshot is **separate** from form-group / pre-submit checkpoints.
+- Capture it **only after the last line in Execution order** completes successfully (usually the final Verify).
+- After the last submit/navigation action, **wait for the UI to settle** (e.g. browser_wait_for 2–3s, or wait until the element the final Verify checks is visible) **before** the final Verify and hero capture.
+- The hero must show the **post-condition** the story ends on — e.g. the new row in a table, success toast visible, landed page after the last click — **not** a dialog about to be submitted and not an earlier page.
+- Take a **fresh** browser screenshot and save it to the hero path. Do **not** copy or reuse an earlier checkpoint file (especially not a pre-submit form screenshot).
+- Attach the hero path only on the **last** steps.json entry and in structured output \`screenshotPath\`.
+
+## steps.json
+- Write \`steps.json\` as a non-empty array covering every line in Execution order (actions and Verify steps). Each entry: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
 
 ## Report
 - Report pass/fail with concise evidence for each Verify step.
-- Do not create real customer-facing side effects unless the story explicitly requires them.`;
+- Do not create real customer-facing side effects unless the story explicitly requires them.
+- Work silently during execution — do not narrate your plan in chat.`;
 
-export const BULK_RUN_ORCHESTRATOR_PLAYBOOK = `You are orchestrating a bulk run of multiple saved web UI "stories".
+export interface RunPromptPaths {
+  runOutputDir: string;
+  screenshotsDir: string;
+  stepsPath: string;
+  heroScreenshotPath: string;
+  storyContents: string;
+  runHook?: string;
+}
 
-## Your job
-- Use spawn_agent to delegate EVERY story to its own subagent. Do NOT run any story yourself.
-- Spawn ALL story subagents in parallel (one spawn_agent call per story in the same round).
-- After spawning, use wait_agent to wait for each subagent to finish.
-- Call close_agent on each subagent after it completes and you have confirmed its result file was written.
-- Do NOT use the Playwright MCP yourself — only your subagents run browser tests.
-
-## Subagent constraints (run-ui-story worker profile)
-- Fresh worker context — no parent history assumptions.
-- Headless Playwright MCP only unless headed flag is set.
-- Write job.json, result.json, summary.md, steps.json, and screenshots/ under the assigned output_dir.
-- Do NOT modify shared story YAML files.
-
-## Subagent message format
-Each spawn_agent message must include:
-1. The full story-run playbook (provided below).
-2. The story markdown/YAML for that assignment.
-3. The runId, output_dir, screenshot dir, result JSON path, and schema path.
-4. Instructions to write structured JSON result and steps.json.
-
-## Aggregation
-- Write run-plan.json listing selected stories and options at the bulk run root.
-- After all workers finish, write results.json aggregating each subagent's result.json.
-- Write summary.md with pass/fail counts and links to failure evidence.
-
-## Story-run playbook for subagents
-${RUN_STORY_PLAYBOOK}`;
-
-export const GENERATE_STORY_PLAYBOOK = `You are helping the user author a UI story through multi-turn conversation.
-
-## Your job
-- Explore the target site with browser MCP tools (Chrome DevTools MCP if available, otherwise Playwright headed).
-- Draft one focused user flow at a time as Bowser YAML v2.
-- After each revision, update draft.story.yaml and draft.story.md in the session artifact directory.
-- Do NOT append to shared site YAML until the user explicitly saves from the app UI.
-
-## Exploration rules
-- Prefer take_snapshot for DOM structure; take_screenshot when visual confirmation matters.
-- Save exploration screenshots under the session screenshots/ directory.
-- Keep workflow steps human-readable: Navigate, Click, Fill, Verify, Select, Press.
-- Include at least one Verify step.
-
-## Multi-turn refinement
-- When the user asks to adjust wording, add steps, or rename — edit the draft in place when possible.
-- Re-explore the browser only when the user changes the flow path materially.
-- Confirm ambiguity before assuming behavior.
-
-## Output on each turn
-- Brief chat summary of what you did or changed.
-- Always write/update draft.story.yaml in the artifact directory provided in the session context.
-
-${BOWSER_STORY_FORMAT}`;
+/** Shared "This run" prompt suffix for Codex and Claude Code single-story runs. */
+export function buildRunPromptSuffix(paths: RunPromptPaths): string {
+  const { runOutputDir, screenshotsDir, stepsPath, heroScreenshotPath, storyContents, runHook } =
+    paths;
+  return (
+    `\n\n## This run\n` +
+    `Run output directory: ${runOutputDir}\n` +
+    `Screenshots directory: ${screenshotsDir}\n` +
+    `Steps JSON path: ${stepsPath}\n` +
+    `Hero screenshot path: ${heroScreenshotPath}\n\n` +
+    `The full story to run is included below. Do not read story files from disk.\n\n` +
+    "```markdown\n" +
+    storyContents +
+    "\n```\n\n" +
+    `Write steps.json to ${stepsPath} (log every step in Execution order; attach screenshots only at checkpoints — see playbook). ` +
+    `Save checkpoint screenshots under ${screenshotsDir}. ` +
+    `The hero screenshot MUST be a fresh capture taken after the last Execution order step succeeds — ` +
+    `wait for the UI to update after the final submit/navigation, then save it to exactly ${heroScreenshotPath}. ` +
+    `Do not reuse a pre-submit or earlier checkpoint as the hero. ` +
+    `Set screenshotPath in the output schema to ${heroScreenshotPath}.` +
+    (runHook?.trim() ? `\n\n## Additional instructions\n${runHook.trim()}` : "")
+  );
+}

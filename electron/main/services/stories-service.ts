@@ -13,8 +13,11 @@ import {
   legacyMdToBowserEntry,
   compositeStoryName,
   parseCompositeName,
+  loadSiteFile,
   watchBowserFiles,
+  findStoryById,
   resolveCreatedAt,
+  normalizeBowserEntryForStorage,
   type BowserStoryEntry,
 } from "./bowser-stories-service.js";
 import { parse as parseYaml } from "yaml";
@@ -137,54 +140,49 @@ export async function importStories(
 ): Promise<StorySummary[]> {
   const results: StorySummary[] = [];
   for (const srcPath of filePaths) {
-    if (srcPath.endsWith(".yaml")) {
-      const basename = path.basename(srcPath);
-      const siteSlug = basename.replace(/\.yaml$/, "");
-      const destPath = path.join(getStoriesDir(), basename);
-      await fs.copyFile(srcPath, destPath);
-      const file = parseYaml(await fs.readFile(destPath, "utf-8")) as BowserSiteFile;
-      for (const story of file.stories ?? []) {
-        const name = compositeStoryName(siteSlug, story.id);
-        results.push({
-          name,
-          title: story.name,
-          baseUrl: story.url,
-          createdAt: resolveCreatedAt(story.created_at, Date.now()),
-          lastRun: lastRunMap.get(name) ?? null,
-          siteSlug,
-          storyId: story.id,
-          tags: story.tags ?? [],
-          mode: story.mode ?? "recorded",
-        });
-      }
-    } else if (srcPath.endsWith(".story.md")) {
-      const basename = path.basename(srcPath);
-      const name = basename.replace(/\.story\.md$/, "");
-      const raw = await fs.readFile(srcPath, "utf-8");
-      const { siteSlug, entry } = legacyMdToBowserEntry(
-        name,
-        raw,
-        parseFrontmatter,
-        parseSteps,
-        parseAssertions,
-        parseVariables,
-      );
-      await appendStoryToSite(siteSlug, entry);
-      const composite = compositeStoryName(siteSlug, entry.id);
+    if (!srcPath.endsWith(".yaml") && !srcPath.endsWith(".yml")) continue;
+
+    const basename = path.basename(srcPath);
+    const siteSlug = basename.replace(/\.(yaml|yml)$/, "");
+    const destPath = path.join(getStoriesDir(), `${siteSlug}.yaml`);
+    await fs.copyFile(srcPath, destPath);
+    const file = parseYaml(await fs.readFile(destPath, "utf-8")) as BowserSiteFile;
+    for (const story of file.stories ?? []) {
+      const name = compositeStoryName(siteSlug, story.id);
       results.push({
-        name: composite,
-        title: entry.name,
-        baseUrl: entry.url,
-        createdAt: resolveCreatedAt(entry.created_at, Date.now()),
-        lastRun: lastRunMap.get(composite) ?? null,
+        name,
+        title: story.name,
+        baseUrl: story.url,
+        createdAt: resolveCreatedAt(story.created_at, Date.now()),
+        lastRun: lastRunMap.get(name) ?? null,
         siteSlug,
-        storyId: entry.id,
-        tags: entry.tags ?? [],
-        mode: entry.mode ?? "recorded",
+        storyId: story.id,
+        mode: story.mode ?? "recorded",
       });
     }
   }
   return results;
+}
+
+export async function exportStories(destDir: string): Promise<{ fileCount: number }> {
+  const storiesDir = getStoriesDir();
+  let entries: string[];
+  try {
+    entries = await fs.readdir(storiesDir);
+  } catch {
+    return { fileCount: 0 };
+  }
+
+  const yamlFiles = entries.filter((entry) => entry.endsWith(".yaml"));
+  if (yamlFiles.length === 0) {
+    return { fileCount: 0 };
+  }
+
+  await fs.mkdir(destDir, { recursive: true });
+  for (const entry of yamlFiles) {
+    await fs.copyFile(path.join(storiesDir, entry), path.join(destDir, entry));
+  }
+  return { fileCount: yamlFiles.length };
 }
 
 export async function updateStoryVariables(
@@ -194,17 +192,13 @@ export async function updateStoryVariables(
 ): Promise<StoryDetail> {
   const parsed = parseCompositeName(name);
   if (!parsed) throw new Error(`Invalid story name: ${name}`);
-  const detail = await getBowserStory(name, new Map());
-  const entry: BowserStoryEntry = {
-    id: detail.storyId!,
-    name: detail.title,
-    url: detail.baseUrl ?? "",
-    tags: detail.tags,
-    mode: detail.mode,
-    workflow: detail.workflow.join("\n"),
+  const file = await loadSiteFile(parsed.siteSlug);
+  const existing = file.stories.find((s) => s.id === parsed.storyId);
+  if (!existing) throw new Error(`Story not found: ${name}`);
+  const entry = normalizeBowserEntryForStorage({
+    ...existing,
     variables: Object.fromEntries(variables.map((v) => [v.key, v.value])),
-    created_at: detail.createdAt,
-  };
+  });
   await updateStoryInSite(parsed.siteSlug, parsed.storyId, entry);
   return getBowserStory(name, lastRun ? new Map([[name, lastRun]]) : new Map());
 }
@@ -216,19 +210,13 @@ export async function renameStory(
 ): Promise<StoryDetail> {
   const parsed = parseCompositeName(name);
   if (!parsed) throw new Error(`Invalid story name: ${name}`);
-  const detail = await getBowserStory(name, new Map());
-  const entry: BowserStoryEntry = {
-    id: detail.storyId!,
+  const file = await loadSiteFile(parsed.siteSlug);
+  const existing = file.stories.find((s) => s.id === parsed.storyId);
+  if (!existing) throw new Error(`Story not found: ${name}`);
+  const entry = normalizeBowserEntryForStorage({
+    ...existing,
     name: newTitle,
-    url: detail.baseUrl ?? "",
-    tags: detail.tags,
-    mode: detail.mode,
-    workflow: detail.workflow.join("\n"),
-    variables: detail.variables.length
-      ? Object.fromEntries(detail.variables.map((v) => [v.key, v.value]))
-      : undefined,
-    created_at: detail.createdAt,
-  };
+  });
   await updateStoryInSite(parsed.siteSlug, parsed.storyId, entry);
   return getBowserStory(name, lastRun ? new Map([[name, lastRun]]) : new Map());
 }
@@ -308,4 +296,32 @@ export function parseDraftYamlSnippet(yamlSnippet: string): BowserStoryEntry {
     return parsed as BowserStoryEntry;
   }
   throw new Error("Invalid draft YAML snippet");
+}
+
+/** Persist draft artifacts into the story library (new story or overwrite). */
+export async function saveDraftToLibrary(
+  draftDir: string,
+  siteSlug: string,
+  overwriteStoryId?: string,
+): Promise<string> {
+  const draftYaml = await fs.readFile(path.join(draftDir, "draft.story.yaml"), "utf-8");
+  const entry = parseDraftYamlSnippet(draftYaml);
+
+  const lookupId = overwriteStoryId ?? entry.id;
+  const located = await findStoryById(lookupId);
+  const targetSiteSlug = located?.siteSlug ?? siteSlug;
+  const existing =
+    located?.entry ?? (await loadSiteFile(targetSiteSlug)).stories.find((s) => s.id === entry.id);
+
+  if (existing) {
+    await updateStoryInSite(targetSiteSlug, entry.id, {
+      ...entry,
+      created_at: existing.created_at ?? entry.created_at,
+    });
+  } else {
+    await appendStoryToSite(targetSiteSlug, entry);
+  }
+  const storyName = compositeStoryName(targetSiteSlug, entry.id);
+  await discardDraftDir(draftDir);
+  return storyName;
 }

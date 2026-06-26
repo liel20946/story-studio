@@ -57,9 +57,9 @@
   --fg-5: rgb(from var(--fg) r g b / 5%);
   --fg-8: rgb(from var(--fg) r g b / 8%);
   --fg-12: rgb(from var(--fg) r g b / 12%);
-  --fg-20: rgb(from var(--fg) r g b / 20%);
-  --fg-40: rgb(from var(--fg) r g b / 40%);
-  --fg-55: rgb(from var(--fg) r g b / 55%);
+  --fg-20: rgb(from var(--fg) r g b / 28%);
+  --fg-40: rgb(from var(--fg) r g b / 50%);
+  --fg-55: rgb(from var(--fg) r g b / 65%);
   --support-blue-10: rgb(from var(--blue) r g b / 10%);
   --support-green-10: rgb(from var(--green) r g b / 10%);
   --support-orange-10: rgb(from var(--orange) r g b / 10%);
@@ -75,7 +75,7 @@
   --color-surface-control-subtle: var(--fg-5);
   --color-surface-hover: var(--fg-8);
   --color-surface-well: var(--fg-5);
-  --color-surface-sidebar: var(--bg-secondary);
+  --color-surface-sidebar: #ebebeb;
   --color-surface-popover: var(--bg-elevated);
   --color-border-separator: var(--fg-12);
   --color-border-field: var(--fg-20);
@@ -92,11 +92,29 @@
   --radius-window: 12px;
   --color-window-outline: rgb(0 0 0 / 10%);
   --spacing: 0.25rem;
-  --titlebar-inset-left: 78px;
+
+  /* macOS traffic lights — tweak these to match native/Codex sizing */
+  --mac-traffic-light-size: 12px;
+  --mac-traffic-light-gap: 8px;
+  --mac-traffic-light-icon-size: 8px;
+  --mac-traffic-light-inset-left: 12px;
+  --titlebar-inset-left: calc(
+    var(--mac-traffic-light-inset-left) + 3 * var(--mac-traffic-light-size) +
+      2 * var(--mac-traffic-light-gap) + 11px
+  );
+  /* Shared height for sidebar traffic lights + main-pane title rows */
+  --titlebar-row-height: 35px;
+  --titlebar-text-line-height: 18px;
+  /* Toolbar title corner inset — matches vertical centering in the titlebar row */
+  --titlebar-content-inset: calc(
+    (var(--titlebar-row-height) - var(--titlebar-text-line-height)) / 2
+  );
+  /* Detail view body horizontal padding */
+  --detail-view-inset-x: 1.25rem;
 }
 
 .dark {
-  --bg: #0a0a0a;
+  --bg: #000000;
   --bg-secondary: #111111;
   --bg-elevated: #171717;
   --fg: #ededed;
@@ -107,16 +125,16 @@
   --yellow: #facc15;
   --green: #4ade80;
   --blue: #60a5fa;
-  --purple: #a78bfa;
+  --purple: #c084fc;
   --magenta: #f472b6;
-  --color-text-secondary: #a1a1a1;
-  --color-text-tertiary: #737373;
-  --color-text-quaternary: #525252;
+  --color-text-secondary: #b3b3b3;
+  --color-text-tertiary: #8a8a8a;
+  --color-text-quaternary: #636363;
   --color-surface-control: #1a1a1a;
   --color-surface-control-subtle: #141414;
   --color-surface-hover: #1a1a1a;
   --color-surface-well: #141414;
-  --color-surface-sidebar: #111111;
+  --color-surface-sidebar: #0c0c0c;
   --color-surface-popover: #171717;
   --color-border-separator: #262626;
   --color-border-field: #333333;
@@ -171,7 +189,7 @@ body {
 }
 
 .titlebar-toolbar {
-  padding-top: calc(var(--spacing) * 1.5);
+  padding-top: 0;
 }
 
 .titlebar-toolbar-content {
@@ -188,10 +206,92 @@ body {
   padding-left: var(--titlebar-inset-left) !important;
 }
 
-/* Sidebar — clearance for traffic lights, then action icons sit lower */
+/* Sidebar — custom traffic lights + drag region, then action icons sit lower */
 .sidebar-titlebar-spacer {
-  height: 32px;
+  height: var(--titlebar-row-height);
   flex-shrink: 0;
+}
+
+.sidebar-titlebar-row {
+  box-sizing: border-box;
+  height: var(--titlebar-row-height);
+  padding: 14px var(--mac-traffic-light-inset-left) 9px;
+  gap: 8px;
+}
+
+/* Main-pane titlebar row — same height band as sidebar traffic lights */
+.main-titlebar-row {
+  box-sizing: border-box;
+  height: var(--titlebar-row-height) !important;
+  min-height: var(--titlebar-row-height) !important;
+  align-items: center;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.mac-traffic-lights {
+  display: flex;
+  align-items: center;
+  gap: var(--mac-traffic-light-gap);
+  flex-shrink: 0;
+  height: var(--mac-traffic-light-size);
+}
+
+.mac-traffic-light {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--mac-traffic-light-size);
+  height: var(--mac-traffic-light-size);
+  border: 0.5px solid rgb(0 0 0 / 14%);
+  border-radius: 50%;
+  padding: 0;
+  cursor: default;
+  color: rgb(0 0 0 / 50%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 20%);
+  transition: filter 120ms ease;
+}
+
+.mac-traffic-light:active {
+  filter: brightness(0.92);
+}
+
+.mac-traffic-light--close {
+  background: linear-gradient(180deg, #ff6159 0%, #ff5f52 100%);
+}
+
+.mac-traffic-light--minimize {
+  background: linear-gradient(180deg, #ffbd2e 0%, #ffad00 100%);
+}
+
+.mac-traffic-light--maximize {
+  background: linear-gradient(180deg, #29c941 0%, #28c840 100%);
+}
+
+.mac-traffic-light-icon {
+  display: block;
+  width: var(--mac-traffic-light-icon-size);
+  height: var(--mac-traffic-light-icon-size);
+  opacity: 0;
+  transform: scale(0.92);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.mac-traffic-lights:hover .mac-traffic-light-icon {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.dark .mac-traffic-light {
+  border-color: rgb(0 0 0 / 32%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  color: rgb(0 0 0 / 58%);
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
 }
 
 .sidebar-actions-row {
@@ -214,9 +314,12 @@ body {
 .liquid-glass,
 .liquid-glass-elevated,
 .bg-glass,
-.bg-surface-sidebar,
 .bg-popover {
   background: var(--glass-bg);
+}
+
+.bg-surface-sidebar {
+  background-color: var(--color-surface-sidebar);
 }
 
 .liquid-glass-edge {
@@ -284,6 +387,7 @@ button:focus-visible,
 .text-secondary { color: var(--color-text-secondary); }
 .text-tertiary { color: var(--color-text-tertiary); }
 .text-quaternary { color: var(--color-text-quaternary); }
+.text-accent { color: var(--accent); }
 .text-accent-contrast { color: var(--accent-contrast); }
 
 /* Accent buttons — contrast text; unlayered so it wins over Tailwind preflight inherit */

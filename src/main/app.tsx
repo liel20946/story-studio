@@ -4,9 +4,27 @@ import { RouterProvider } from "@tanstack/react-router";
 import { TooltipProvider, Toaster } from "@/components/ui";
 import { router, queryClient } from "./router";
 import { RunStoreProvider } from "../lib/run-store";
+import { onSchedulesFired } from "../lib/ipc";
 import { SectionsProvider } from "../lib/sections-store";
 import { RecordingProvider } from "../lib/recording-store";
 import { BulkRunProvider } from "../lib/bulk-run-store";
+import { AgentCapabilitiesProvider } from "../lib/agent-capabilities-store";
+import { useRegisterRun } from "../lib/run-store";
+
+function ScheduleRunListener() {
+  const registerRun = useRegisterRun();
+  useEffect(() => {
+    return onSchedulesFired(({ items, agentProvider, agentModel }) => {
+      for (const item of items) {
+        registerRun(item.runId, item.storyName, item.storyTitle, {
+          agentProvider,
+          agentModel,
+        });
+      }
+    });
+  }, [registerRun]);
+  return null;
+}
 
 export function MainApp() {
   useEffect(() => {
@@ -18,7 +36,14 @@ export function MainApp() {
         typeof (payload as { path: unknown }).path === "string"
           ? (payload as { path: string }).path
           : "/settings";
-      void router.navigate({ to: path });
+      if (path === "/settings" || path.startsWith("/settings")) {
+        void router.navigate({
+          to: "/settings",
+          search: { section: "appearance" },
+        });
+      } else {
+        void router.navigate({ to: path });
+      }
     });
   }, []);
 
@@ -26,8 +51,10 @@ export function MainApp() {
     <div className="flex h-full min-h-0 flex-col">
       <QueryClientProvider client={queryClient}>
         <RunStoreProvider>
+          <ScheduleRunListener />
           <BulkRunProvider>
-            <SectionsProvider>
+            <AgentCapabilitiesProvider>
+              <SectionsProvider>
               <RecordingProvider>
                 <TooltipProvider>
                   <RouterProvider router={router} />
@@ -35,6 +62,7 @@ export function MainApp() {
                 <Toaster />
               </RecordingProvider>
             </SectionsProvider>
+            </AgentCapabilitiesProvider>
           </BulkRunProvider>
         </RunStoreProvider>
       </QueryClientProvider>

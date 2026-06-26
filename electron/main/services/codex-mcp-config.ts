@@ -3,9 +3,9 @@ import * as path from "path";
 
 /** Codex `-c` overrides that fully define the headless Playwright MCP server for runs. */
 export function buildCodexMcpConfigArgs(): string[] {
+  // Do NOT set mcp_servers.node_repl here — a partial MCP table without
+  // command/url causes "invalid transport" when combined with --ignore-user-config.
   return [
-    "-c",
-    "mcp_servers.node_repl.enabled=false",
     "-c",
     "mcp_servers.playwright.enabled=true",
     "-c",
@@ -14,6 +14,8 @@ export function buildCodexMcpConfigArgs(): string[] {
     'mcp_servers.playwright.args=["-y","@playwright/mcp@latest","--headless","--isolated"]',
     "-c",
     "mcp_servers.playwright.startup_timeout_sec=60",
+    "-c",
+    "features.js_repl=false",
   ];
 }
 
@@ -23,9 +25,16 @@ args = ["-y", "@playwright/mcp@latest", "--headless", "--isolated"]
 enabled = true
 startup_timeout_sec = 60
 
-[mcp_servers.node_repl]
-enabled = false
+[features]
+js_repl = false
 `;
+
+/** Codex `-c` overrides for recording conversion — text only, no MCP. */
+export function buildCodexConversionConfigArgs(): string[] {
+  // Do NOT set mcp_servers.* here — partial MCP tables without command/url cause
+  // "invalid transport" errors. Conversion uses --ignore-user-config instead.
+  return ["-c", 'model_reasoning_effort="low"'];
+}
 
 /** Write a project-scoped Codex config so runs work even without ~/.codex MCP setup. */
 export async function ensureCodexProjectConfig(cwd: string): Promise<void> {
