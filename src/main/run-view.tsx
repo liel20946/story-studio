@@ -52,6 +52,7 @@ import { formatAgentModelLabel, formatAgentProviderLabel } from "../lib/agent-co
 import { useRun } from "../lib/run-store";
 import { formatRunLogs } from "../lib/format-run-logs";
 import { filterTimelineEvents } from "../lib/run-events";
+import { useRunScreenshotIndex } from "../lib/use-run-screenshot-index";
 import { ScreenshotImage, ScreenshotLightbox } from "../components/screenshot-image";
 import { RailAssertionLine } from "../components/rail-assertion-line";
 
@@ -324,15 +325,22 @@ function AgentPills({
 
 // ---------- screenshot gallery (shared by live + finished runs) ----------
 function ScreenshotsGallery({
+  runId,
   paths,
   selected,
   onSelectedChange,
 }: {
+  runId: string;
   paths: string[];
   selected: number;
   onSelectedChange: (index: number) => void;
 }) {
   const [lightboxOpen, setLightboxOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    setLightboxOpen(false);
+  }, [runId]);
+
   const previewPath = paths[selected];
 
   if (paths.length === 0) return null;
@@ -411,9 +419,15 @@ function useLiveRunScreenshotPaths(runId: string, enabled: boolean) {
 function LiveScreenshotsSection({ runId }: { runId: string }) {
   const { data } = useLiveRunScreenshotPaths(runId, true);
   const paths = data?.paths ?? [];
-  const [selected, setSelected] = React.useState(0);
+  const [selected, setSelected] = useRunScreenshotIndex(runId, paths.length, {
+    defaultToLatest: false,
+  });
   const [revealing, setRevealing] = React.useState(false);
   const prevLatestRef = React.useRef<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    prevLatestRef.current = undefined;
+  }, [runId]);
 
   React.useEffect(() => {
     if (paths.length === 0) return;
@@ -425,16 +439,14 @@ function LiveScreenshotsSection({ runId }: { runId: string }) {
       const timer = setTimeout(() => setRevealing(false), 480);
       return () => clearTimeout(timer);
     }
-    if (selected >= paths.length) {
-      setSelected(paths.length - 1);
-    }
-  }, [paths, selected]);
+  }, [paths, setSelected]);
 
   return (
     <Section title="Screenshots">
       {paths.length > 0 ? (
         <div className={cn("screenshot-reveal", revealing && "screenshot-reveal--active")}>
           <ScreenshotsGallery
+            runId={runId}
             paths={paths}
             selected={selected}
             onSelectedChange={setSelected}
@@ -446,7 +458,7 @@ function LiveScreenshotsSection({ runId }: { runId: string }) {
 }
 
 // ---------- result panel: Assertions + step-linked screenshots ----------
-function ResultPanel({ result }: { result: RunResult }) {
+function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
   const cancelled = result.status === "cancelled";
   const stepShots =
     result.steps?.filter((s) => s.screenshot).map((s) => s.screenshot as string) ?? [];
@@ -464,9 +476,9 @@ function ResultPanel({ result }: { result: RunResult }) {
       : result.screenshotPath
         ? [result.screenshotPath]
         : [];
-  const [selected, setSelected] = React.useState(() =>
-    Math.max(0, displayPaths.length - 1),
-  );
+  const viewingReady = result.runId === runId;
+  const galleryPathsForView = viewingReady ? displayPaths : [];
+  const [selected, setSelected] = useRunScreenshotIndex(runId, galleryPathsForView.length);
 
   return (
     <>
@@ -478,10 +490,11 @@ function ResultPanel({ result }: { result: RunResult }) {
         </div>
       </Section>
 
-      {!cancelled && (
+      {!cancelled && viewingReady && (
         <Section title="Screenshots">
           <ScreenshotsGallery
-            paths={displayPaths}
+            runId={runId}
+            paths={galleryPathsForView}
             selected={selected}
             onSelectedChange={setSelected}
           />
@@ -662,7 +675,7 @@ function LiveRunView({ runId }: { runId: string }) {
             agentModel={agentModel}
           />
           {!isFinished && <LiveScreenshotsSection runId={runId} />}
-          {isFinished && result && <ResultPanel result={result} />}
+          {isFinished && result && <ResultPanel runId={runId} result={result} />}
         </div>
       </div>
     </ScrollArea>
@@ -670,7 +683,13 @@ function LiveRunView({ runId }: { runId: string }) {
 }
 
 // ---------- read-only historical run view ----------
-function HistoricalRunView({ record }: { record: RunRecord }) {
+function HistoricalRunView({
+  runId,
+  record,
+}: {
+  runId: string;
+  record: RunRecord;
+}) {
   return (
     <ScrollArea
       toolbar={
@@ -717,7 +736,7 @@ function HistoricalRunView({ record }: { record: RunRecord }) {
             agentProvider={record.agentProvider}
             agentModel={record.agentModel}
           />
-          <ResultPanel result={record} />
+          <ResultPanel runId={runId} result={record} />
         </div>
       </div>
     </ScrollArea>
@@ -767,7 +786,7 @@ export function HistoryRunDetailView() {
     );
   }
 
-  return <HistoricalRunView record={recordQuery.data} />;
+  return <HistoricalRunView runId={runId} record={recordQuery.data} />;
 }
 
 // Export LiveRunView for potential re-use
