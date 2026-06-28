@@ -55,7 +55,7 @@ export function DraftApprovalQuestion({
               className="generate-question-option-badge generate-question-option-badge--icon"
               aria-hidden
             >
-              <PencilIcon className="size-2.5" strokeWidth={2} />
+              <PencilIcon className="size-2.5 lucide-icon-strong" />
             </span>
             <textarea
               ref={textareaRef}
@@ -78,7 +78,7 @@ export function DraftApprovalQuestion({
               }}
               aria-label={submitting ? "Sending" : "Submit changes"}
             >
-              <ArrowUpIcon className="generate-send-btn-icon" strokeWidth={2.5} absoluteStrokeWidth />
+              <ArrowUpIcon className="generate-send-btn-icon lucide-icon-strong" absoluteStrokeWidth />
             </button>
           </div>
         </div>

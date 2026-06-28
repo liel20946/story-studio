@@ -363,11 +363,6 @@
   margin-top: auto;
 }
 
-.generate-composer-box--prompt .generate-composer-input-row {
-  font-size: 0.875rem;
-  line-height: 1.5rem;
-}
-
 .generate-composer-inline {
   display: flex;
   align-items: center;

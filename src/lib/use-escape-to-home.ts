@@ -10,8 +10,8 @@ export function useEscapeToHome() {
   const pathname = useRouterState({
     select: (s) => s.location.pathname,
   });
-  const isGenerateHome = pathname === "/" || pathname === "/generate";
-  const isStoriesHome = pathname === "/stories";
+  const isGenerateHome = pathname === "/generate";
+  const isStoriesHome = pathname === "/" || pathname === "/stories";
   const isScheduledHome = pathname === "/scheduled";
   const isSettings = pathname === "/settings";
 
@@ -31,10 +31,10 @@ export function useEscapeToHome() {
         return;
       }
       if (pathname.startsWith("/generate/")) {
-        navigate({ to: "/" });
+        navigate({ to: "/generate" });
         return;
       }
-      navigate({ to: "/stories" });
+      navigate({ to: "/" });
     };
 
     window.addEventListener("keydown", handleKeyDown);

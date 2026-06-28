@@ -34,6 +34,7 @@ import {
   Text,
   Toolbar,
   ToolbarRow,
+  ToolbarActions,
   Dialog,
   Input,
   AlertDialog,
@@ -730,7 +731,7 @@ function SegmentControl({
             data-active={active}
             onClick={() => onChange(opt.value)}
           >
-            <Icon className="size-3.5" strokeWidth={1.75} />
+            <Icon className="size-3.5" />
           </button>
         );
       })}
@@ -762,9 +763,8 @@ export function AppSidebar() {
             : undefined,
         onScheduledRoute:
           routeId === "/scheduled" || routeId === "/scheduled/$id",
-        onStoriesHomeRoute: routeId === "/stories",
+        onStoriesHomeRoute: routeId === "/" || routeId === "/stories",
         onGenerateRoute:
-          routeId === "/" ||
           routeId === "/generate" ||
           routeId === "/generate/$conversationId",
         generateConversationId:
@@ -821,7 +821,7 @@ export function AppSidebar() {
   function handleTabChange(next: "stories" | "runs" | "scheduled" | "generate") {
     setTab(next);
     if (next === "generate") {
-      navigate({ to: "/" });
+      navigate({ to: "/generate" });
     } else if (next === "scheduled") {
       navigate({ to: "/scheduled" });
     } else if (
@@ -1020,7 +1020,7 @@ export function AppSidebar() {
   );
 
   function handleNewGeneration() {
-    navigate({ to: "/" });
+    navigate({ to: "/generate" });
   }
 
   async function handleArchiveGeneration(conversationId: string) {
@@ -1033,7 +1033,7 @@ export function AppSidebar() {
     queryClient.removeQueries({ queryKey: ["generate:get", conversationId] });
     queryClient.invalidateQueries({ queryKey: ["generate:list"] });
     if (activeSelection.generateConversationId === conversationId) {
-      navigate({ to: "/" });
+      navigate({ to: "/generate" });
     }
   }
 
@@ -1200,7 +1200,7 @@ export function AppSidebar() {
         if (tab === "scheduled") {
           navigate({ to: "/scheduled/$id", params: { id: "new" } });
         } else if (tab === "generate") {
-          navigate({ to: "/" });
+          navigate({ to: "/generate" });
         } else {
           navigate({ to: "/record" });
         }
@@ -1249,7 +1249,7 @@ export function AppSidebar() {
           <MacTitlebarRow />
           <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-1.5">
             <SegmentControl value={tab} onChange={handleTabChange} />
-            <div className="ml-auto flex items-center gap-0.5">
+            <ToolbarActions className="sidebar-action-buttons ml-auto">
               <SidebarActionSlot
                 visible={sidebarActionVisible("bulk-run", tab, hasStories)}
               >
@@ -1257,14 +1257,15 @@ export function AppSidebar() {
                   <TooltipTrigger asChild>
                     <Button
                       variant="transparent"
-                      size="toolbar"
+                      size="titlebar"
+                      iconOnly
                       onClick={(e) => {
                         e.currentTarget.blur();
                         navigate({ to: "/bulk-run" });
                       }}
                       aria-label="Run stories"
                     >
-                      <ListChecksIcon className="size-4" />
+                      <ListChecksIcon className="size-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent shortcut={["shift", "mod", "R"]} />
@@ -1277,7 +1278,8 @@ export function AppSidebar() {
                   <TooltipTrigger asChild>
                     <Button
                       variant="transparent"
-                      size="toolbar"
+                      size="titlebar"
+                      iconOnly
                       onClick={(e) => {
                         e.currentTarget.blur();
                         setDialog({
@@ -1288,7 +1290,7 @@ export function AppSidebar() {
                       }}
                       aria-label="New section"
                     >
-                      <FolderPlusIcon className="size-4" />
+                      <FolderPlusIcon className="size-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent shortcut={["shift", "mod", "N"]} />
@@ -1301,20 +1303,21 @@ export function AppSidebar() {
                   <TooltipTrigger asChild>
                     <Button
                       variant="transparent"
-                      size="toolbar"
+                      size="titlebar"
+                      iconOnly
                       onClick={(e) => {
                         e.currentTarget.blur();
                         handlePrimaryCreate();
                       }}
                       aria-label={primaryCreateLabel}
                     >
-                      <PlusIcon className="size-4" />
+                      <PlusIcon className="size-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent shortcut={["mod", "N"]} />
                 </Tooltip>
               </SidebarActionSlot>
-            </div>
+            </ToolbarActions>
           </ToolbarRow>
           <ToolbarRow className="h-auto px-2 pb-2">
             <label className="sidebar-search w-full">

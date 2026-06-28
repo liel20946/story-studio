@@ -32,7 +32,7 @@ function ComposerActionButton({
       {stopping ? (
         <span className="generate-send-btn-stop-mark" aria-hidden />
       ) : (
-        <ArrowUpIcon className="generate-send-btn-icon" strokeWidth={2.5} absoluteStrokeWidth />
+        <ArrowUpIcon className="generate-send-btn-icon lucide-icon-strong" absoluteStrokeWidth />
       )}
     </button>
   );

@@ -32,15 +32,15 @@ const rootRoute = createRootRouteWithContext<{
   },
 });
 
-// "/" — generate home (composer before a conversation exists)
+// "/" — stories home (default landing)
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: GenerateHomeView,
-  staticData: { title: "Generate" },
+  component: HomeView,
+  staticData: { title: "Home" },
 });
 
-// "/stories" — stories home (quick actions and recent runs)
+// "/stories" — alias for stories home
 const storiesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/stories",
@@ -121,7 +121,7 @@ const scheduledDetailRoute = createRoute({
   staticData: { title: "Schedule" },
 });
 
-// "/generate" — legacy path; same as generate home
+// "/generate" — generate home (composer before a conversation exists)
 const generateRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/generate",

@@ -44,7 +44,6 @@ export function SettingsSidebar() {
                 <SidebarListItemContent>
                   <ChevronLeftIcon
                     className="size-3.5 shrink-0 text-tertiary"
-                    strokeWidth={1.75}
                   />
                   <SidebarListItemTitle>Back to app</SidebarListItemTitle>
                 </SidebarListItemContent>
@@ -75,7 +74,6 @@ export function SettingsSidebar() {
                     <SidebarListItemContent>
                       <Icon
                         className="size-3.5 shrink-0 text-tertiary"
-                        strokeWidth={1.75}
                       />
                       <SidebarListItemTitle>{item.label}</SidebarListItemTitle>
                     </SidebarListItemContent>

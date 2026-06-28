@@ -303,6 +303,27 @@ body {
   padding-right: calc(var(--spacing) * 2) !important;
 }
 
+.sidebar-action-buttons {
+  gap: 0;
+  padding-right: 0 !important;
+}
+
+.sidebar-action-buttons button {
+  width: 1.75rem;
+  height: 1.75rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+}
+
+.sidebar-action-buttons .sidebar-action-slot {
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-action-buttons .lucide {
+  display: block;
+}
+
 .sidebar-footer-settings {
   display: flex;
   align-items: center;
@@ -432,3 +453,16 @@ button.bg-accent:disabled {
 
 .font-body { font-family: var(--font-family-body); }
 .font-mono { font-family: var(--font-family-mono); }
+
+/* Thin monoline stroke for toolbar & sidebar action buttons (not timeline rows). */
+.detail-view-toolbar-actions .lucide,
+.sidebar-action-buttons .lucide,
+.home-actions .lucide,
+.segment-control .lucide {
+  stroke-width: 1.75;
+}
+
+/* Heavier stroke for tiny controls (checkbox ticks, send buttons, ⌘ key caps). */
+.lucide-icon-strong {
+  stroke-width: 2.25;
+}

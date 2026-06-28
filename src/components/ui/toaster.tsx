@@ -27,10 +27,7 @@ export function Toaster() {
       offset={{ bottom: "1.5rem" }}
       icons={{
         close: (
-          <XIcon
-            className="size-3.5 shrink-0 text-primary"
-            strokeWidth={2}
-          />
+          <XIcon className="size-3.5 shrink-0 text-primary lucide-icon-strong" />
         ),
       }}
       toastOptions={{

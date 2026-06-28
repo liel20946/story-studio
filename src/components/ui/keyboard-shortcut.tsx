@@ -36,7 +36,7 @@ function ShortcutKeyCap({ keyName }: { keyName: ShortcutKey }) {
     case "mod":
       return (
         <Kbd>
-          <CommandIcon className="size-3" strokeWidth={2.25} />
+          <CommandIcon className="size-3 lucide-icon-strong" />
         </Kbd>
       );
     case "shift":

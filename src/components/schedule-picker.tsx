@@ -256,7 +256,7 @@ export function SchedulePicker({
         )}
       >
         <span className="schedule-picker-trigger-icon" aria-hidden>
-          <CalendarIcon className="size-3.5" strokeWidth={1.75} />
+          <CalendarIcon className="size-3.5" />
         </span>
         <span className="schedule-picker-trigger-text truncate">
           {formatScheduleSummary(value)}
@@ -266,7 +266,6 @@ export function SchedulePicker({
             "schedule-picker-trigger-chevron size-3.5 shrink-0",
             open && "schedule-picker-trigger-chevron--open",
           )}
-          strokeWidth={1.75}
         />
       </button>
       {open && !disabled ? (
