@@ -12,6 +12,9 @@ import type {
   DraftDetail,
   BulkRunOptions,
   ScheduledRun,
+  GenerateConversation,
+  GenerateConversationSummary,
+  GenerateConversationDetail,
 } from "./contract-types";
 
 export function ipcInvoke<Res>(channel: string, req?: unknown): Promise<Res> {
@@ -37,8 +40,12 @@ export const storiesExport = (
 
 export const storiesUpdate = (
   name: string,
-  variables: { key: string; value: string }[],
-): Promise<StoryDetail> => ipcInvoke("stories:update", { name, variables });
+  content: {
+    steps: string[];
+    variables: { key: string; value: string }[];
+    assertions: string[];
+  },
+): Promise<StoryDetail> => ipcInvoke("stories:update", { name, ...content });
 
 export const storiesRename = (
   name: string,
@@ -202,9 +209,6 @@ export const draftsApprove = (draftId: string) =>
 export const draftsDiscard = (draftId: string) =>
   ipcInvoke<{ ok: true }>("drafts:discard", { draftId });
 
-export const storiesMigrateLegacy = () =>
-  ipcInvoke<{ migrated: number; errors: string[] }>("stories:migrateLegacy");
-
 export const schedulesList = (): Promise<ScheduledRun[]> =>
   ipcInvoke("schedules:list");
 
@@ -268,5 +272,58 @@ export function onSchedulesFired(
         agentModel: string;
       },
     ),
+  );
+}
+
+export const generateList = (): Promise<GenerateConversationSummary[]> =>
+  ipcInvoke("generate:list");
+
+export const generateCreate = (): Promise<GenerateConversation> =>
+  ipcInvoke("generate:create");
+
+export const generateGet = (
+  conversationId: string,
+): Promise<GenerateConversationDetail> =>
+  ipcInvoke("generate:get", { conversationId });
+
+export const generateSend = (
+  conversationId: string,
+  text: string,
+): Promise<{ ok: true; conversation: GenerateConversation }> =>
+  ipcInvoke("generate:send", { conversationId, text });
+
+export const generateApprove = (
+  conversationId: string,
+): Promise<{ ok: true; storyName: string; conversation: GenerateConversation }> =>
+  ipcInvoke("generate:approve", { conversationId });
+
+export const generateCancel = (
+  conversationId: string,
+): Promise<{ ok: true; cancelled: boolean }> =>
+  ipcInvoke("generate:cancel", { conversationId });
+
+export const generateDelete = (
+  conversationId: string,
+): Promise<{ ok: true }> => ipcInvoke("generate:delete", { conversationId });
+
+export const generateRename = (
+  conversationId: string,
+  title: string,
+): Promise<{ ok: true; conversation: GenerateConversation }> =>
+  ipcInvoke("generate:rename", { conversationId, title });
+
+export function onGenerateChanged(
+  cb: (summaries: GenerateConversationSummary[]) => void,
+): () => void {
+  return window.electronAPI.on("generate:changed", (payload: unknown) =>
+    cb(payload as GenerateConversationSummary[]),
+  );
+}
+
+export function onGenerateProgress(
+  cb: (progress: import("./contract-types").GenerateProgress) => void,
+): () => void {
+  return window.electronAPI.on("generate:progress", (payload: unknown) =>
+    cb(payload as import("./contract-types").GenerateProgress),
   );
 }

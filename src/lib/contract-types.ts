@@ -202,3 +202,44 @@ export interface ScheduledRun {
 }
 
 export type ScheduleRepeat = "once" | "daily" | "weekly";
+
+export type GenerateConversationStatus = "active" | "complete";
+
+export type GenerateMessage =
+  | { kind: "user"; text: string; at: number }
+  | { kind: "assistant"; text: string; at: number }
+  | { kind: "status"; text: string; at: number }
+  | { kind: "draft"; at: number; storyTitle: string; summary: string }
+  | { kind: "error"; text: string; at: number };
+
+export interface GenerateConversation {
+  id: string;
+  title: string;
+  status: GenerateConversationStatus;
+  draftId: string;
+  storyName?: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: GenerateMessage[];
+  generating?: boolean;
+}
+
+export interface GenerateConversationSummary {
+  id: string;
+  title: string;
+  status: GenerateConversationStatus;
+  storyName?: string;
+  createdAt: number;
+  updatedAt: number;
+  generating: boolean;
+}
+
+export interface GenerateConversationDetail extends GenerateConversation {
+  draftMd?: string;
+  draftYaml?: string;
+}
+
+export interface GenerateProgress {
+  conversationId: string;
+  message: string;
+}

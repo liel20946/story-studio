@@ -10,12 +10,13 @@ export function useEscapeToHome() {
   const pathname = useRouterState({
     select: (s) => s.location.pathname,
   });
-  const isHome = pathname === "/";
+  const isGenerateHome = pathname === "/" || pathname === "/generate";
+  const isStoriesHome = pathname === "/stories";
   const isScheduledHome = pathname === "/scheduled";
   const isSettings = pathname === "/settings";
 
   useEffect(() => {
-    if (isHome || isScheduledHome) return;
+    if (isGenerateHome || isStoriesHome || isScheduledHome) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (shouldIgnoreEscapeKey(event)) return;
@@ -29,10 +30,14 @@ export function useEscapeToHome() {
         navigate({ to: "/scheduled" });
         return;
       }
-      navigate({ to: "/" });
+      if (pathname.startsWith("/generate/")) {
+        navigate({ to: "/" });
+        return;
+      }
+      navigate({ to: "/stories" });
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isHome, isScheduledHome, isSettings, navigate, pathname, router]);
+  }, [isGenerateHome, isStoriesHome, isScheduledHome, isSettings, navigate, pathname, router]);
 }

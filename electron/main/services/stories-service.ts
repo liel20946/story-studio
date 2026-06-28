@@ -2,7 +2,7 @@ import * as fs from "fs/promises";
 import * as fsSync from "fs";
 import * as path from "path";
 import { broadcast } from "../broadcast.js";
-import type { StorySummary, StoryDetail, StoryVariable } from "./contract-types.js";
+import type { StorySummary, StoryDetail } from "./contract-types.js";
 import { getStoriesDir, getDraftsDir } from "./paths.js";
 import {
   listBowserSummaries,
@@ -10,7 +10,6 @@ import {
   appendStoryToSite,
   updateStoryInSite,
   deleteStoryFromSite,
-  legacyMdToBowserEntry,
   compositeStoryName,
   parseCompositeName,
   loadSiteFile,
@@ -18,99 +17,14 @@ import {
   findStoryById,
   resolveCreatedAt,
   normalizeBowserEntryForStorage,
+  resolveStoryParts,
+  formatAssertionsBlock,
+  normalizeAssertionText,
+  isBlankAssertion,
   type BowserStoryEntry,
 } from "./bowser-stories-service.js";
 import { parse as parseYaml } from "yaml";
 import type { BowserSiteFile } from "./bowser-stories-service.js";
-
-// Re-export legacy parsers for migration
-function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
-  const lines = raw.split("\n");
-  if (lines[0]?.trim() !== "---") return { meta: {}, body: raw };
-  let endIdx = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i]?.trim() === "---") {
-      endIdx = i;
-      break;
-    }
-  }
-  if (endIdx === -1) return { meta: {}, body: raw };
-  const meta: Record<string, string> = {};
-  for (let i = 1; i < endIdx; i++) {
-    const m = lines[i]?.match(/^(\w+):\s*(.*)$/);
-    if (m) meta[m[1]] = m[2]?.trim() ?? "";
-  }
-  return { meta, body: lines.slice(endIdx + 1).join("\n") };
-}
-
-function parseVariables(body: string): StoryVariable[] {
-  const section = body.match(/## Variables\s*\n([\s\S]*?)(?=\n##|$)/i);
-  if (!section) return [];
-  return section[1]
-    .split("\n")
-    .map((l) => l.replace(/^[-*]\s*/, "").trim())
-    .filter((l) => l.includes(":"))
-    .map((l) => {
-      const colonIdx = l.indexOf(":");
-      const key = l.slice(0, colonIdx).trim().replace(/^`|`$/g, "");
-      const value = l.slice(colonIdx + 1).trim().replace(/^`|`$/g, "");
-      return { key, value, secret: /password|secret|token/i.test(key) };
-    });
-}
-
-function parseSteps(body: string): string[] {
-  const section = body.match(/## Steps\s*\n([\s\S]*?)(?=\n##|$)/i);
-  if (!section) return [];
-  return section[1]
-    .split("\n")
-    .map((l) => l.replace(/^\d+\.\s*|^[-*]\s*/, "").trim())
-    .filter((l) => l.length > 0);
-}
-
-function parseAssertions(body: string): string[] {
-  const section = body.match(/## Assertions\s*\n([\s\S]*?)(?=\n##|$)/i);
-  if (!section) return [];
-  return section[1]
-    .split("\n")
-    .map((l) => l.replace(/^[-*]\s*|\d+\.\s*/, "").trim())
-    .filter((l) => l.length > 0);
-}
-
-export async function migrateLegacyStories(): Promise<{ migrated: number; errors: string[] }> {
-  const storiesDir = getStoriesDir();
-  let entries: string[];
-  try {
-    entries = await fs.readdir(storiesDir);
-  } catch {
-    return { migrated: 0, errors: [] };
-  }
-
-  let migrated = 0;
-  const errors: string[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".story.md")) continue;
-    const name = entry.replace(/\.story\.md$/, "");
-    const filePath = path.join(storiesDir, entry);
-    try {
-      const raw = await fs.readFile(filePath, "utf-8");
-      const { siteSlug, entry: bowserEntry } = legacyMdToBowserEntry(
-        name,
-        raw,
-        parseFrontmatter,
-        parseSteps,
-        parseAssertions,
-        parseVariables,
-      );
-      await appendStoryToSite(siteSlug, bowserEntry);
-      await fs.unlink(filePath);
-      migrated++;
-      console.log("[stories] migrated legacy", name, "->", compositeStoryName(siteSlug, bowserEntry.id));
-    } catch (err) {
-      errors.push(`${name}: ${String(err)}`);
-    }
-  }
-  return { migrated, errors };
-}
 
 export async function listStories(
   lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
@@ -183,6 +97,52 @@ export async function exportStories(destDir: string): Promise<{ fileCount: numbe
     await fs.copyFile(path.join(storiesDir, entry), path.join(destDir, entry));
   }
   return { fileCount: yamlFiles.length };
+}
+
+export async function updateStoryContent(
+  name: string,
+  content: {
+    steps: string[];
+    variables: { key: string; value: string }[];
+    assertions: string[];
+  },
+  lastRun?: StorySummary["lastRun"],
+): Promise<StoryDetail> {
+  const parsed = parseCompositeName(name);
+  if (!parsed) throw new Error(`Invalid story name: ${name}`);
+  const file = await loadSiteFile(parsed.siteSlug);
+  const existing = file.stories.find((s) => s.id === parsed.storyId);
+  if (!existing) throw new Error(`Story not found: ${name}`);
+
+  const steps = content.steps.map((s) => s.trim()).filter((s) => s.length > 0);
+  const { assertions: originalAssertions } = resolveStoryParts(existing);
+
+  const assertions = content.assertions
+    .map((text, i) => {
+      if (isBlankAssertion(text)) return null;
+      return {
+        after:
+          i < originalAssertions.length ? originalAssertions[i].after : steps.length,
+        text: normalizeAssertionText(text),
+      };
+    })
+    .filter((a): a is { after: number; text: string } => a !== null);
+
+  const variables = Object.fromEntries(
+    content.variables
+      .map((v) => [v.key.trim(), v.value] as const)
+      .filter(([key]) => key.length > 0),
+  );
+
+  const entry = normalizeBowserEntryForStorage({
+    ...existing,
+    workflow: steps.join("\n"),
+    assertions: formatAssertionsBlock(assertions),
+    variables,
+  });
+
+  await updateStoryInSite(parsed.siteSlug, parsed.storyId, entry);
+  return getBowserStory(name, lastRun ? new Map([[name, lastRun]]) : new Map());
 }
 
 export async function updateStoryVariables(

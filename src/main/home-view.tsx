@@ -6,9 +6,13 @@ import {
   ListChecksIcon,
   ChevronRightIcon,
   FolderPlusIcon,
+  SparklesIcon,
+  Loader2Icon,
 } from "lucide-react";
 import { Button, Dialog, Input, Badge } from "@/components/ui";
 import { storiesList, runsList } from "../lib/ipc";
+import { startNewGeneration } from "../lib/start-generation";
+import { reportAppErrorFromUnknown } from "../lib/app-error";
 import { useSections } from "../lib/sections-store";
 import type { RunStatus } from "../lib/contract-types";
 
@@ -68,6 +72,19 @@ export function HomeView() {
   const stories = storiesQuery.data ?? [];
   const recentRuns = (runsQuery.data ?? []).slice(0, 3);
   const hasStories = stories.length > 0;
+  const [startingGenerate, setStartingGenerate] = useState(false);
+
+  async function handleGenerateNew() {
+    setStartingGenerate(true);
+    try {
+      const id = await startNewGeneration();
+      navigate({ to: "/generate/$conversationId", params: { conversationId: id } });
+    } catch (err) {
+      reportAppErrorFromUnknown("Failed to start generation", err);
+    } finally {
+      setStartingGenerate(false);
+    }
+  }
 
   if (!hasStories && !storiesQuery.isLoading) {
     return (
@@ -87,6 +104,19 @@ export function HomeView() {
               >
                 <CircleDotIcon className="size-4" />
                 Record story
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleGenerateNew()}
+                disabled={startingGenerate}
+                className="accent-cta accent-cta--secondary"
+              >
+                {startingGenerate ? (
+                  <Loader2Icon className="size-4 animate-spin" />
+                ) : (
+                  <SparklesIcon className="size-4" />
+                )}
+                Generate story
               </button>
             </div>
           </div>
@@ -115,6 +145,20 @@ export function HomeView() {
               >
                 <CircleDotIcon className="size-4" />
                 Record
+              </Button>
+              <Button
+                variant="filled"
+                size="medium"
+                radius="full"
+                disabled={startingGenerate}
+                onClick={() => void handleGenerateNew()}
+              >
+                {startingGenerate ? (
+                  <Loader2Icon className="size-4 animate-spin" />
+                ) : (
+                  <SparklesIcon className="size-4" />
+                )}
+                Generate story
               </Button>
               <Button
                 variant="filled"

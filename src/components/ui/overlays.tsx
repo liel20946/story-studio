@@ -85,12 +85,15 @@ export function DialogContent({
 }) {
   const sizeClass =
     size === "small" ? "max-w-sm" : size === "large" ? "max-w-2xl" : "max-w-md";
+  const dialogCenterClass =
+    "left-[calc(var(--sidebar-width,0px)+(100vw-var(--sidebar-width,0px))/2)]";
   return (
-    <DialogPrimitive.Portal>
+    <DialogPrimitive.Portal container={document.body}>
       <DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50" />
       <DialogPrimitive.Content
         className={cn(
-          "dialog-surface fixed left-1/2 top-1/2 z-50 flex w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4",
+          "dialog-surface fixed top-1/2 z-50 flex w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4",
+          dialogCenterClass,
           sizeClass,
           className,
         )}
@@ -141,7 +144,7 @@ export function AlertDialog({
   onConfirm,
 }: {
   trigger: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   description: string;
   confirmLabel?: string;
   confirmVariant?: "accent" | "destructive";
@@ -150,16 +153,30 @@ export function AlertDialog({
   return (
     <AlertDialogPrimitive.Root>
       <AlertDialogPrimitive.Trigger asChild>{trigger}</AlertDialogPrimitive.Trigger>
-      <AlertDialogPrimitive.Portal>
-        <AlertDialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50" />
-        <AlertDialogPrimitive.Content className="dialog-surface fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-card border border-separator bg-popover p-4">
-          <AlertDialogPrimitive.Title className="font-display text-regular tracking-tight">
-            {title}
-          </AlertDialogPrimitive.Title>
-          <AlertDialogPrimitive.Description className="text-small text-secondary mt-2">
-            {description}
-          </AlertDialogPrimitive.Description>
-          <div className="flex justify-end gap-2 mt-4">
+      <AlertDialogPrimitive.Portal container={document.body}>
+        <AlertDialogPrimitive.Overlay
+          className="dialog-overlay fixed inset-0 z-50"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+        <AlertDialogPrimitive.Content
+          className={cn(
+            "dialog-surface fixed top-1/2 z-50 flex w-full max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4",
+            "left-[calc(var(--sidebar-width,0px)+(100vw-var(--sidebar-width,0px))/2)]",
+          )}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          <div className="flex flex-col gap-1">
+            <AlertDialogPrimitive.Title className="font-display text-regular tracking-tight">
+              {title}
+            </AlertDialogPrimitive.Title>
+            <AlertDialogPrimitive.Description className="text-small text-secondary">
+              {description}
+            </AlertDialogPrimitive.Description>
+          </div>
+          <div className="flex justify-end gap-2">
             <AlertDialogPrimitive.Cancel asChild>
               <Button variant="transparent">Cancel</Button>
             </AlertDialogPrimitive.Cancel>

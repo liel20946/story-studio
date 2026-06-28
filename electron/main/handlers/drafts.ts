@@ -96,14 +96,3 @@ export function registerDraftHandlers(): void {
     return { ok: true as const };
   });
 }
-
-export function registerMigrationHandlers(): void {
-  ipcMain.handle("stories:migrateLegacy", async () => {
-    const { migrateLegacyStories } = await import("../services/stories-service.js");
-    const result = await migrateLegacyStories();
-    const runs = await listRuns();
-    const summaries = await listStories(buildLastRunMap(runs));
-    broadcast("stories:changed", summaries);
-    return result;
-  });
-}

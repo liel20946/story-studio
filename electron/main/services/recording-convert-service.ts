@@ -58,7 +58,7 @@ export function extractYamlFromAgentMessage(text: string): string {
   return trimmed;
 }
 
-function parseAgentMessageFromCodexStdout(stdout: string): string {
+export function parseAgentMessageFromCodexStdout(stdout: string): string {
   let lastAgentMessage = "";
   let buffer = "";
   for (const line of stdout.split("\n")) {

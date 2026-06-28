@@ -7,6 +7,7 @@ import {
   importStories,
   exportStories,
   updateStoryVariables,
+  updateStoryContent,
   renameStory,
 } from "../services/stories-service.js";
 import {
@@ -50,23 +51,55 @@ export function registerStoriesHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle("stories:update", async (_event, params: unknown) => {
+  async function handleStoryUpdate(params: unknown): Promise<StoryDetail> {
     if (
       typeof params !== "object" ||
       params === null ||
-      typeof (params as Record<string, unknown>)["name"] !== "string" ||
-      !Array.isArray((params as Record<string, unknown>)["variables"])
+      typeof (params as Record<string, unknown>)["name"] !== "string"
     ) {
+      throw new Error("stories:update requires { name: string, ... }");
+    }
+    const p = params as Record<string, unknown>;
+    const { name } = p as { name: string };
+    const lastRunMap = await getLastRunMap();
+    const lastRun = lastRunMap.get(name) ?? null;
+
+    if (Array.isArray(p["steps"]) && Array.isArray(p["assertions"])) {
+      if (!Array.isArray(p["variables"])) {
+        throw new Error(
+          "stories:update requires { name, steps, variables, assertions } for full save",
+        );
+      }
+      return updateStoryContent(
+        name,
+        {
+          steps: p["steps"] as string[],
+          variables: p["variables"] as { key: string; value: string }[],
+          assertions: p["assertions"] as string[],
+        },
+        lastRun,
+      );
+    }
+
+    if (!Array.isArray(p["variables"])) {
       throw new Error(
         "stories:update requires { name: string, variables: {key,value}[] }",
       );
     }
-    const { name, variables } = params as {
-      name: string;
-      variables: { key: string; value: string }[];
-    };
-    const lastRunMap = await getLastRunMap();
-    return updateStoryVariables(name, variables, lastRunMap.get(name) ?? null);
+    return updateStoryVariables(
+      name,
+      p["variables"] as { key: string; value: string }[],
+      lastRun,
+    );
+  }
+
+  ipcMain.handle("stories:update", async (_event, params: unknown) => {
+    return handleStoryUpdate(params);
+  });
+
+  // Alias kept for renderer builds that call saveContent before main restarts.
+  ipcMain.handle("stories:saveContent", async (_event, params: unknown) => {
+    return handleStoryUpdate(params);
   });
 
   ipcMain.handle("stories:rename", async (_event, params: unknown) => {

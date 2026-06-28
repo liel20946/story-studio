@@ -19,8 +19,9 @@ import { registerRecordingHandlers } from "./recording.js";
 import { registerRunsHandlers } from "./runs.js";
 import { registerSettingsHandlers } from "./settings.js";
 import { registerAgentHandlers } from "./agent.js";
-import { registerDraftHandlers, registerMigrationHandlers } from "./drafts.js";
+import { registerDraftHandlers } from "./drafts.js";
 import { registerSchedulesHandlers } from "./schedules.js";
+import { registerGenerateHandlers } from "./generate.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -89,8 +90,8 @@ export function registerHandlers(): void {
   registerSettingsHandlers();
   registerAgentHandlers();
   registerDraftHandlers();
-  registerMigrationHandlers();
   registerSchedulesHandlers();
+  registerGenerateHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 }

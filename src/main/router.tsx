@@ -13,6 +13,7 @@ import { RecordView } from "./record-view";
 import { BulkRunView } from "./bulk-run-view";
 import { ScheduledOverviewView, ScheduledEditorView } from "./scheduled-view";
 import { HomeView } from "./home-view";
+import { GenerateHomeView, GenerateConversationRouteView } from "./generate-view";
 import { SettingsView } from "./settings-view";
 import { parseSettingsSection } from "../components/settings-sections";
 
@@ -31,10 +32,18 @@ const rootRoute = createRootRouteWithContext<{
   },
 });
 
-// "/" — welcome home with quick actions and recent runs
+// "/" — generate home (composer before a conversation exists)
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  component: GenerateHomeView,
+  staticData: { title: "Generate" },
+});
+
+// "/stories" — stories home (quick actions and recent runs)
+const storiesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/stories",
   component: HomeView,
   staticData: { title: "Home" },
 });
@@ -112,6 +121,22 @@ const scheduledDetailRoute = createRoute({
   staticData: { title: "Schedule" },
 });
 
+// "/generate" — legacy path; same as generate home
+const generateRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/generate",
+  component: GenerateHomeView,
+  staticData: { title: "Generate" },
+});
+
+// "/generate/$conversationId" — generate chat
+const generateConversationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/generate/$conversationId",
+  component: GenerateConversationRouteView,
+  staticData: { title: "Generate" },
+});
+
 // "/settings" — in-app settings (Codex-style sidebar + main pane)
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -125,6 +150,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
+  storiesRoute,
   storyRoute,
   runRoute,
   historyRunRoute,
@@ -132,6 +158,8 @@ const routeTree = rootRoute.addChildren([
   bulkRunRoute,
   scheduledRoute,
   scheduledDetailRoute,
+  generateRoute,
+  generateConversationRoute,
   settingsRoute,
 ]);
 

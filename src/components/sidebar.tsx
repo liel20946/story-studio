@@ -14,6 +14,7 @@ import {
   BookOpenIcon,
   HistoryIcon,
   ClockIcon,
+  BotIcon,
 } from "lucide-react";
 import {
   Sidebar,
@@ -48,7 +49,7 @@ import {
 import { MacTitlebarRow } from "./mac-traffic-lights";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
-import type { RunStatus, StorySummary, RunResult } from "../lib/contract-types";
+import type { RunStatus, StorySummary, RunResult, GenerateConversationSummary } from "../lib/contract-types";
 import {
   storiesList,
   onStoriesChanged,
@@ -60,6 +61,11 @@ import {
   onSchedulesChanged,
   schedulesDelete,
   schedulesUpdate,
+  generateList,
+  generateGet,
+  generateDelete,
+  generateRename,
+  onGenerateChanged,
 } from "../lib/ipc";
 import type { ScheduledRun } from "../lib/contract-types";
 import { useActiveRunMap, useAllRuns } from "../lib/run-store";
@@ -215,6 +221,15 @@ function useRelativeTimeTick(intervalMs = 30_000): void {
   }, [intervalMs]);
 }
 
+// Remove confirmation title with the item name in accent color.
+function removeConfirmTitle(itemName: string) {
+  return (
+    <>
+      Remove <span className="text-accent">{itemName}</span>?
+    </>
+  );
+}
+
 // Shared trailing accessory: fixed-width slot; time and archive occupy the same
 // space (opacity swap) so rows never shift on hover.
 function RowAccessory({
@@ -229,7 +244,7 @@ function RowAccessory({
   time?: string;
   isRunning?: boolean;
   archiveTitle: string;
-  confirmTitle: string;
+  confirmTitle: React.ReactNode;
   confirmDescription: string;
   confirmLabel: string;
   onConfirm: () => void;
@@ -392,7 +407,7 @@ function StoryRow({
                 !isRunning ? formatRelative(story.createdAt) : undefined
               }
               archiveTitle="Remove story"
-              confirmTitle={`Remove "${story.title}"?`}
+              confirmTitle={removeConfirmTitle(story.title)}
               confirmDescription="This story will be removed from your library. This cannot be undone."
               confirmLabel="Remove"
               onConfirm={onDelete}
@@ -550,7 +565,8 @@ type DialogKind =
   | "section-create"
   | "section-rename"
   | "story-rename"
-  | "schedule-rename";
+  | "schedule-rename"
+  | "generate-rename";
 
 const DIALOG_META: Record<
   DialogKind,
@@ -590,26 +606,112 @@ const DIALOG_META: Record<
     description: "Change how this schedule appears in the sidebar.",
     fieldLabel: "Schedule name",
   },
+  "generate-rename": {
+    title: "Rename Generation",
+    confirmLabel: "Rename",
+    placeholder: "Generation name",
+    description: "Change how this generation appears in the sidebar.",
+    fieldLabel: "Generation name",
+  },
 };
+
+type SidebarActionId = "bulk-run" | "new-section" | "primary-create";
+
+function sidebarActionVisible(
+  id: SidebarActionId,
+  tab: "stories" | "runs" | "scheduled" | "generate",
+  hasStories: boolean,
+): boolean {
+  switch (id) {
+    case "bulk-run":
+      return tab === "stories" && hasStories;
+    case "new-section":
+      return tab === "stories";
+    case "primary-create":
+      return tab !== "runs";
+  }
+}
+
+function sidebarListAnimKey(
+  tab: "stories" | "runs" | "scheduled" | "generate",
+): string {
+  if (tab === "stories" || tab === "runs") return "library";
+  return tab;
+}
+
+// Animates individual toolbar actions in/out. Actions that stay visible
+// (e.g. the shared Plus) are left untouched when tabs change.
+function SidebarActionSlot({
+  visible,
+  children,
+}: {
+  visible: boolean;
+  children: React.ReactNode;
+}) {
+  const skipAnimRef = React.useRef(true);
+  const visibleRef = React.useRef(visible);
+  const [phase, setPhase] = React.useState<"hidden" | "shown" | "entering" | "exiting">(
+    () => (visible ? "shown" : "hidden"),
+  );
+
+  React.useLayoutEffect(() => {
+    if (visible === visibleRef.current) return;
+    visibleRef.current = visible;
+
+    if (skipAnimRef.current) {
+      skipAnimRef.current = false;
+      setPhase(visible ? "shown" : "hidden");
+      return;
+    }
+
+    setPhase(visible ? "entering" : "exiting");
+  }, [visible]);
+
+  if (phase === "hidden") return null;
+
+  return (
+    <div
+      className={cn(
+        "sidebar-action-slot flex shrink-0 items-center",
+        phase === "entering" && "sidebar-action-slot--in",
+        phase === "exiting" && "sidebar-action-slot--out",
+      )}
+      onAnimationEnd={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (phase === "exiting") setPhase("hidden");
+        if (phase === "entering") setPhase("shown");
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 // ---------- Stories | Runs segment control (pill toggle, icon segments) ----------
 function SegmentControl({
   value,
   onChange,
 }: {
-  value: "stories" | "runs" | "scheduled";
-  onChange: (value: "stories" | "runs" | "scheduled") => void;
+  value: "stories" | "runs" | "scheduled" | "generate";
+  onChange: (value: "stories" | "runs" | "scheduled" | "generate") => void;
 }) {
   const options = [
     { value: "stories" as const, label: "Stories", icon: BookOpenIcon },
     { value: "runs" as const, label: "Runs", icon: HistoryIcon },
     { value: "scheduled" as const, label: "Scheduled", icon: ClockIcon },
+    { value: "generate" as const, label: "Generate", icon: BotIcon },
   ];
   const activeIndex =
-    value === "stories" ? 0 : value === "runs" ? 1 : 2;
+    value === "stories"
+      ? 0
+      : value === "runs"
+        ? 1
+        : value === "scheduled"
+          ? 2
+          : 3;
   return (
     <div
-      className="segment-control segment-control--three"
+      className="segment-control segment-control--four"
       role="tablist"
       aria-label="Sidebar view"
       data-active-index={activeIndex}
@@ -660,6 +762,13 @@ export function AppSidebar() {
             : undefined,
         onScheduledRoute:
           routeId === "/scheduled" || routeId === "/scheduled/$id",
+        onStoriesHomeRoute: routeId === "/stories",
+        onGenerateRoute:
+          routeId === "/" ||
+          routeId === "/generate" ||
+          routeId === "/generate/$conversationId",
+        generateConversationId:
+          routeId === "/generate/$conversationId" ? params.conversationId : undefined,
       };
     },
   });
@@ -679,19 +788,23 @@ export function AppSidebar() {
 
   // Sidebar tab: reusable Stories vs past Runs. Follows the main-pane route —
   // story detail → Stories, live/history run → Runs.
-  const [tab, setTab] = React.useState<"stories" | "runs" | "scheduled">(
-    activeSelection.onScheduledRoute
-      ? "scheduled"
-      : activeSelection.historyRunId || activeSelection.liveRunId
-        ? "runs"
-        : "stories",
+  const [tab, setTab] = React.useState<"stories" | "runs" | "scheduled" | "generate">(
+    activeSelection.onGenerateRoute
+      ? "generate"
+      : activeSelection.onScheduledRoute
+        ? "scheduled"
+        : activeSelection.historyRunId || activeSelection.liveRunId
+          ? "runs"
+          : "stories",
   );
   const [searchQuery, setSearchQuery] = React.useState("");
 
   React.useEffect(() => {
-    if (activeSelection.onScheduledRoute) {
+    if (activeSelection.onGenerateRoute) {
+      setTab("generate");
+    } else if (activeSelection.onScheduledRoute) {
       setTab("scheduled");
-    } else if (activeSelection.storyName) {
+    } else if (activeSelection.onStoriesHomeRoute || activeSelection.storyName) {
       setTab("stories");
     } else if (activeSelection.historyRunId || activeSelection.liveRunId) {
       setTab("runs");
@@ -700,17 +813,31 @@ export function AppSidebar() {
     activeSelection.storyName,
     activeSelection.historyRunId,
     activeSelection.liveRunId,
+    activeSelection.onStoriesHomeRoute,
     activeSelection.onScheduledRoute,
+    activeSelection.onGenerateRoute,
   ]);
 
-  function handleTabChange(next: "stories" | "runs" | "scheduled") {
+  function handleTabChange(next: "stories" | "runs" | "scheduled" | "generate") {
     setTab(next);
-    if (next === "scheduled") {
+    if (next === "generate") {
+      navigate({ to: "/" });
+    } else if (next === "scheduled") {
       navigate({ to: "/scheduled" });
-    } else if (next === "stories" && activeSelection.onScheduledRoute) {
-      navigate({ to: "/" });
-    } else if (next === "runs" && activeSelection.onScheduledRoute) {
-      navigate({ to: "/" });
+    } else if (
+      next === "stories" &&
+      (activeSelection.onScheduledRoute || activeSelection.onGenerateRoute)
+    ) {
+      if (stories.length > 0) {
+        navigate({ to: "/story/$name", params: { name: stories[0].name } });
+      } else {
+        navigate({ to: "/stories" });
+      }
+    } else if (next === "runs" && (activeSelection.onScheduledRoute || activeSelection.onGenerateRoute)) {
+      const runs = runsQuery.data ?? [];
+      if (runs.length > 0) {
+        navigate({ to: "/history/$runId", params: { runId: runs[0].runId } });
+      }
     }
   }
 
@@ -722,6 +849,7 @@ export function AppSidebar() {
     sectionId?: string;
     storyName?: string;
     scheduleId?: string;
+    conversationId?: string;
     pendingStory?: string;
   }>({ open: false, kind: "section-create", initialName: "" });
 
@@ -739,6 +867,29 @@ export function AppSidebar() {
     queryKey: ["schedules:list"],
     queryFn: schedulesList,
   });
+
+  const generateQuery = useQuery({
+    queryKey: ["generate:list"],
+    queryFn: generateList,
+  });
+
+  const prefetchGeneration = React.useCallback(
+    (conversationId: string) => {
+      void queryClient.prefetchQuery({
+        queryKey: ["generate:get", conversationId],
+        queryFn: () => generateGet(conversationId),
+        staleTime: 30_000,
+      });
+    },
+    [queryClient],
+  );
+
+  React.useEffect(() => {
+    const unsub = onGenerateChanged((updated) => {
+      queryClient.setQueryData(["generate:list"], updated);
+    });
+    return unsub;
+  }, [queryClient]);
 
   React.useEffect(() => {
     const unsub = onSchedulesChanged((updated) => {
@@ -858,6 +1009,34 @@ export function AppSidebar() {
     [schedules, matchesSearch],
   );
 
+  const generations = React.useMemo(
+    () => generateQuery.data ?? [],
+    [generateQuery.data],
+  );
+
+  const filteredGenerations = React.useMemo(
+    () => generations.filter((g) => matchesSearch(g.title)),
+    [generations, matchesSearch],
+  );
+
+  function handleNewGeneration() {
+    navigate({ to: "/" });
+  }
+
+  async function handleArchiveGeneration(conversationId: string) {
+    try {
+      await generateDelete(conversationId);
+    } catch (err) {
+      reportAppErrorFromUnknown("Failed to archive generation", err);
+      return;
+    }
+    queryClient.removeQueries({ queryKey: ["generate:get", conversationId] });
+    queryClient.invalidateQueries({ queryKey: ["generate:list"] });
+    if (activeSelection.generateConversationId === conversationId) {
+      navigate({ to: "/" });
+    }
+  }
+
   async function handleDeleteSchedule(id: string) {
     await schedulesDelete(id);
     queryClient.invalidateQueries({ queryKey: ["schedules:list"] });
@@ -898,6 +1077,18 @@ export function AppSidebar() {
         .catch((err) =>
           reportAppErrorFromUnknown("Failed to rename schedule", err),
         );
+    } else if (dialog.kind === "generate-rename" && dialog.conversationId) {
+      const conversationId = dialog.conversationId;
+      void generateRename(conversationId, name)
+        .then(({ conversation }) => {
+          queryClient.setQueryData(["generate:get", conversationId], (prev) =>
+            prev ? { ...prev, title: conversation.title } : prev,
+          );
+          queryClient.invalidateQueries({ queryKey: ["generate:list"] });
+        })
+        .catch((err) =>
+          reportAppErrorFromUnknown("Failed to rename generation", err),
+        );
     }
     setDialog((d) => ({ ...d, open: false }));
   }
@@ -930,7 +1121,7 @@ export function AppSidebar() {
         activeSelection.liveRunId,
     );
     if (viewingDeletedStory || (remaining.length === 0 && onStoryDetailRoute)) {
-      navigate({ to: "/" });
+      navigate({ to: "/stories" });
     }
   }
 
@@ -980,6 +1171,23 @@ export function AppSidebar() {
   const hasStories = stories.length > 0;
   const dialogMeta = DIALOG_META[dialog.kind];
 
+  const primaryCreateLabel =
+    tab === "scheduled"
+      ? "New schedule"
+      : tab === "generate"
+        ? "New generation"
+        : "Record story";
+
+  function handlePrimaryCreate() {
+    if (tab === "scheduled") {
+      navigate({ to: "/scheduled/$id", params: { id: "new" } });
+    } else if (tab === "generate") {
+      void handleNewGeneration();
+    } else {
+      navigate({ to: "/record" });
+    }
+  }
+
   // Window keyboard shortcuts for the toolbar actions: mod+N records a story
   // (or creates a schedule on the Scheduled tab), shift+mod+N creates a section,
   // shift+mod+R opens bulk run. Keyed off e.code so they're
@@ -987,17 +1195,21 @@ export function AppSidebar() {
     function onKeyDown(e: KeyboardEvent) {
       if (!e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.code === "KeyN" && !e.shiftKey) {
+        if (!sidebarActionVisible("primary-create", tab, hasStories)) return;
         e.preventDefault();
         if (tab === "scheduled") {
           navigate({ to: "/scheduled/$id", params: { id: "new" } });
+        } else if (tab === "generate") {
+          navigate({ to: "/" });
         } else {
           navigate({ to: "/record" });
         }
       } else if (e.code === "KeyN" && e.shiftKey) {
+        if (!sidebarActionVisible("new-section", tab, hasStories)) return;
         e.preventDefault();
         setDialog({ open: true, kind: "section-create", initialName: "" });
       } else if (e.code === "KeyR" && e.shiftKey) {
-        if (!hasStories) return;
+        if (!sidebarActionVisible("bulk-run", tab, hasStories)) return;
         e.preventDefault();
         navigate({ to: "/bulk-run" });
       }
@@ -1038,34 +1250,15 @@ export function AppSidebar() {
           <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-1.5">
             <SegmentControl value={tab} onChange={handleTabChange} />
             <div className="ml-auto flex items-center gap-0.5">
-              {tab === "scheduled" ? (
+              <SidebarActionSlot
+                visible={sidebarActionVisible("bulk-run", tab, hasStories)}
+              >
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       variant="transparent"
                       size="toolbar"
                       onClick={(e) => {
-                        e.currentTarget.blur();
-                        navigate({ to: "/scheduled/$id", params: { id: "new" } });
-                      }}
-                      aria-label="New schedule"
-                    >
-                      <PlusIcon className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent shortcut={["mod", "N"]} />
-                </Tooltip>
-              ) : (
-                <>
-              {hasStories && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="transparent"
-                      size="toolbar"
-                      onClick={(e) => {
-                        // Blur so the focus-triggered tooltip doesn't stay stuck
-                        // open after navigating (the sidebar stays mounted).
                         e.currentTarget.blur();
                         navigate({ to: "/bulk-run" });
                       }}
@@ -1076,45 +1269,51 @@ export function AppSidebar() {
                   </TooltipTrigger>
                   <TooltipContent shortcut={["shift", "mod", "R"]} />
                 </Tooltip>
-              )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="transparent"
-                    size="toolbar"
-                    onClick={(e) => {
-                      e.currentTarget.blur();
-                      setDialog({
-                        open: true,
-                        kind: "section-create",
-                        initialName: "",
-                      });
-                    }}
-                    aria-label="New section"
-                  >
-                    <FolderPlusIcon className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent shortcut={["shift", "mod", "N"]} />
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="transparent"
-                    size="toolbar"
-                    onClick={(e) => {
-                      e.currentTarget.blur();
-                      navigate({ to: "/record" });
-                    }}
-                    aria-label="Record story"
-                  >
-                    <PlusIcon className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent shortcut={["mod", "N"]} />
-              </Tooltip>
-                </>
-              )}
+              </SidebarActionSlot>
+              <SidebarActionSlot
+                visible={sidebarActionVisible("new-section", tab, hasStories)}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="transparent"
+                      size="toolbar"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        setDialog({
+                          open: true,
+                          kind: "section-create",
+                          initialName: "",
+                        });
+                      }}
+                      aria-label="New section"
+                    >
+                      <FolderPlusIcon className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent shortcut={["shift", "mod", "N"]} />
+                </Tooltip>
+              </SidebarActionSlot>
+              <SidebarActionSlot
+                visible={sidebarActionVisible("primary-create", tab, hasStories)}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="transparent"
+                      size="toolbar"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        handlePrimaryCreate();
+                      }}
+                      aria-label={primaryCreateLabel}
+                    >
+                      <PlusIcon className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent shortcut={["mod", "N"]} />
+                </Tooltip>
+              </SidebarActionSlot>
             </div>
           </ToolbarRow>
           <ToolbarRow className="h-auto px-2 pb-2">
@@ -1129,14 +1328,18 @@ export function AppSidebar() {
                     ? "Filter stories…"
                     : tab === "runs"
                       ? "Filter runs…"
-                      : "Filter schedules…"
+                      : tab === "generate"
+                        ? "Filter generations…"
+                        : "Filter schedules…"
                 }
                 aria-label={
                   tab === "stories"
                     ? "Filter stories"
                     : tab === "runs"
                       ? "Filter runs"
-                      : "Filter schedules"
+                      : tab === "generate"
+                        ? "Filter generations"
+                        : "Filter schedules"
                 }
               />
               {searchQuery ? (
@@ -1155,9 +1358,9 @@ export function AppSidebar() {
       }
     >
       <SidebarList className="pt-2">
-        {/* Keyed by `tab` so the panel re-mounts and replays the crossfade/slide
-            animation on every Stories ↔ Runs toggle. */}
-        <div key={tab} className="tab-panel-in">
+        {/* Keyed by list group so Stories ↔ Runs swap in place (no flash).
+            Other tab changes replay the slide-in, timed with the toggle. */}
+        <div key={sidebarListAnimKey(tab)} className="tab-panel-in">
           {tab === "stories" ? (
             <StoriesTab
               hasStories={hasStories}
@@ -1193,6 +1396,26 @@ export function AppSidebar() {
                 )
               }
               onDelete={handleDeleteRun}
+            />
+          ) : tab === "generate" ? (
+            <GenerateTab
+              conversations={filteredGenerations}
+              searchActive={!!normalizedSearch}
+              activeConversationId={activeSelection.generateConversationId}
+              onPrefetch={prefetchGeneration}
+              onOpen={(id) => {
+                prefetchGeneration(id);
+                navigate({ to: "/generate/$conversationId", params: { conversationId: id } });
+              }}
+              onRename={(conversation) =>
+                setDialog({
+                  open: true,
+                  kind: "generate-rename",
+                  initialName: conversation.title,
+                  conversationId: conversation.id,
+                })
+              }
+              onArchive={handleArchiveGeneration}
             />
           ) : (
             <ScheduledTab
@@ -1402,7 +1625,7 @@ function ScheduledRow({
             <RowAccessory
               time={timeLabel}
               archiveTitle="Remove schedule"
-              confirmTitle={`Remove "${schedule.name}"?`}
+              confirmTitle={removeConfirmTitle(schedule.name)}
               confirmDescription="This scheduled run will be removed. This cannot be undone."
               confirmLabel="Remove"
               onConfirm={onDelete}
@@ -1455,6 +1678,103 @@ function ScheduledTab({
             onOpen={() => onOpen(schedule.id)}
             onRename={() => onRename(schedule)}
             onDelete={() => onDelete(schedule.id)}
+          />
+        )}
+      />
+    </div>
+  );
+}
+
+// ---------- one generate conversation row ----------
+function GenerateConversationRow({
+  conversation,
+  selected,
+  onPrefetch,
+  onOpen,
+  onRename,
+  onArchive,
+}: {
+  conversation: GenerateConversationSummary;
+  selected: boolean;
+  onPrefetch: () => void;
+  onOpen: () => void;
+  onRename: () => void;
+  onArchive: () => void;
+}) {
+  const complete = conversation.status === "complete";
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="group/row w-full" onMouseEnter={onPrefetch}>
+          <SidebarListItem
+            selected={selected}
+            onClick={onOpen}
+            className={cn(!selected && "hover:bg-surface-hover")}
+          >
+            <SidebarListItemContent>
+              <SidebarListItemTitle className={cn(complete && "text-tertiary")}>
+                {conversation.title}
+              </SidebarListItemTitle>
+            </SidebarListItemContent>
+            <RowAccessory
+              time={formatRelative(conversation.updatedAt)}
+              isRunning={conversation.generating}
+              archiveTitle="Remove generation"
+              confirmTitle={removeConfirmTitle(conversation.title)}
+              confirmDescription="This generation will be removed from the sidebar. This cannot be undone."
+              confirmLabel="Remove"
+              onConfirm={onArchive}
+            />
+          </SidebarListItem>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+// ---------- Generate tab ----------
+function GenerateTab({
+  conversations,
+  searchActive,
+  activeConversationId,
+  onPrefetch,
+  onOpen,
+  onRename,
+  onArchive,
+}: {
+  conversations: GenerateConversationSummary[];
+  searchActive?: boolean;
+  activeConversationId?: string;
+  onPrefetch: (id: string) => void;
+  onOpen: (id: string) => void;
+  onRename: (conversation: GenerateConversationSummary) => void;
+  onArchive: (id: string) => void;
+}) {
+  if (conversations.length === 0) {
+    return (
+      <div className="px-3 py-6 text-center">
+        <Text variant="small" color="tertiary">
+          {searchActive ? "No generations match your search." : "No generations yet."}
+        </Text>
+      </div>
+    );
+  }
+  return (
+    <div className="pt-1">
+      <ExpandableRows
+        items={conversations}
+        renderItem={(conversation) => (
+          <GenerateConversationRow
+            key={conversation.id}
+            conversation={conversation}
+            selected={activeConversationId === conversation.id}
+            onPrefetch={() => onPrefetch(conversation.id)}
+            onOpen={() => onOpen(conversation.id)}
+            onRename={() => onRename(conversation)}
+            onArchive={() => onArchive(conversation.id)}
           />
         )}
       />

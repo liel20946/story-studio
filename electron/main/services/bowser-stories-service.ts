@@ -156,8 +156,13 @@ export function cleanRecordedSteps(steps: string[]): string[] {
 
 export function normalizeAssertionText(text: string): string {
   const trimmed = text.trim();
+  if (!trimmed || /^verify\s*$/i.test(trimmed)) return "";
   if (/^verify\b/i.test(trimmed)) return trimmed;
   return `Verify ${trimmed}`;
+}
+
+export function isBlankAssertion(text: string): boolean {
+  return normalizeAssertionText(text).length === 0;
 }
 
 /** Split interleaved legacy workflows into action steps and positioned assertions. */
@@ -473,7 +478,9 @@ function entryToDetail(
     mode: normalized.mode ?? "recorded",
     variables: parseVariablesFromEntry(normalized, steps),
     steps,
-    assertions: assertions.map((a) => a.text),
+    assertions: assertions
+      .map((a) => a.text)
+      .filter((text) => !isBlankAssertion(text)),
     workflow: workflowLines,
     raw: rawYaml,
   };
@@ -666,44 +673,6 @@ export function storyEntryToMarkdown(entry: BowserStoryEntry): string {
     `## Steps\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\n` +
     `## Assertions\n${assertions.map((a) => `- ${a.text}`).join("\n")}\n`
   );
-}
-
-/** Convert legacy .story.md content to a BowserStoryEntry. */
-export function legacyMdToBowserEntry(
-  name: string,
-  raw: string,
-  parseFrontmatter: (raw: string) => { meta: Record<string, string>; body: string },
-  parseSteps: (body: string) => string[],
-  parseAssertions: (body: string) => string[],
-  parseVariables: (body: string) => StoryVariable[],
-): { siteSlug: string; entry: BowserStoryEntry } {
-  const { meta, body } = parseFrontmatter(raw);
-  const steps = parseSteps(body);
-  const assertionTexts = parseAssertions(body);
-  const variables = parseVariables(body);
-  const baseUrl = meta["base_url"] ?? "";
-  const title = meta["title"] ?? name;
-  const siteSlug = baseUrl ? siteSlugFromUrl(baseUrl) : slugify(name);
-  const storyId = slugify(name);
-  const assertions: BowserAssertion[] = assertionTexts.map((text) => ({
-    after: steps.length,
-    text: text.startsWith("Verify") ? text : `Verify ${text}`,
-  }));
-  const entry: BowserStoryEntry = {
-    id: storyId,
-    name: title,
-    url: baseUrl || "https://example.com",
-    mode: "recorded",
-    workflow: steps.join("\n"),
-    assertions: formatAssertionsBlock(assertions),
-    created_at: meta["created_at"]
-      ? resolveCreatedAt(meta["created_at"], Date.now())
-      : Date.now(),
-  };
-  if (variables.length > 0) {
-    entry.variables = Object.fromEntries(variables.map((v) => [v.key, v.value]));
-  }
-  return { siteSlug, entry };
 }
 
 /** Format a story for agent run prompts (inline markdown). */

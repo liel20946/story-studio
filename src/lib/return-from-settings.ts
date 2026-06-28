@@ -24,7 +24,7 @@ export function navigateBackFromSettings(router: AnyRouter) {
     return;
   }
 
-  void router.navigate({ to: "/" });
+  void router.navigate({ to: "/stories" });
 }
 
 export function useReturnFromSettings() {

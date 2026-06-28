@@ -204,18 +204,40 @@ export async function updateSchedule(
   if (idx < 0) throw new Error(`Schedule not found: ${id}`);
 
   const current = normalizeSchedule(_schedules[idx]);
-  const repeat = patch.repeat ?? current.repeat ?? "once";
-  const d = new Date(patch.scheduledAt ?? current.scheduledAt);
-  const hour = patch.hour ?? current.hour ?? d.getHours();
-  const minute = patch.minute ?? current.minute ?? d.getMinutes();
-  const dayOfWeek = patch.dayOfWeek ?? current.dayOfWeek ?? d.getDay();
-  const scheduledAt = computeNextRunAt(
-    repeat,
-    patch.scheduledAt ?? current.scheduledAt,
-    hour,
-    minute,
-    dayOfWeek,
-  );
+  const timingPatch =
+    patch.scheduledAt !== undefined ||
+    patch.repeat !== undefined ||
+    patch.hour !== undefined ||
+    patch.minute !== undefined ||
+    patch.dayOfWeek !== undefined;
+
+  let repeat: ScheduleRepeat;
+  let hour: number;
+  let minute: number;
+  let dayOfWeek: number | undefined;
+  let scheduledAt: number;
+
+  if (timingPatch) {
+    repeat = patch.repeat ?? current.repeat ?? "once";
+    const d = new Date(patch.scheduledAt ?? current.scheduledAt);
+    hour = patch.hour ?? current.hour ?? d.getHours();
+    minute = patch.minute ?? current.minute ?? d.getMinutes();
+    dayOfWeek = patch.dayOfWeek ?? current.dayOfWeek ?? d.getDay();
+    scheduledAt = computeNextRunAt(
+      repeat,
+      patch.scheduledAt ?? current.scheduledAt,
+      hour,
+      minute,
+      dayOfWeek,
+    );
+  } else {
+    repeat = current.repeat ?? "once";
+    const d = new Date(current.scheduledAt);
+    hour = current.hour ?? d.getHours();
+    minute = current.minute ?? d.getMinutes();
+    dayOfWeek = current.dayOfWeek;
+    scheduledAt = current.scheduledAt;
+  }
 
   const next: ScheduledRun = {
     ...current,
@@ -231,7 +253,7 @@ export async function updateSchedule(
 
   if (!next.name) throw new Error("Schedule name is required");
   if (next.storyNames.length === 0) throw new Error("Select at least one story");
-  if (repeat === "once" && scheduledAt <= Date.now()) {
+  if (timingPatch && repeat === "once" && scheduledAt <= Date.now()) {
     throw new Error("Scheduled time must be in the future");
   }
 

@@ -41,7 +41,7 @@ After the first install, updates are automatic:
 ## Getting started
 
 1. Open **Settings** and set your **Recording start URL** (default: `https://example.com`)
-2. **Record** a new story from the sidebar, or **import** existing `.story.md` files
+2. **Record** a new story from the sidebar, or **import** existing Bowser YAML story files
 3. **Run** a story to watch the agent work through your steps in the browser
 
 ### Where data is stored

@@ -104,6 +104,67 @@ export interface RunPromptPaths {
   runHook?: string;
 }
 
+export const GENERATE_STORY_PLAYBOOK = `You are generating a Bowser YAML v2 UI story by exploring a website with Playwright MCP.
+
+## Browser tool
+- Use ONLY the Playwright MCP server named "playwright". It runs headless.
+- Do NOT use the Codex Browser plugin, the in-app browser, computer use, or any other browser-driving tool.
+- Do not use any MCP server other than "playwright".
+
+## Your task
+1. Use the target URL from the user's request (required).
+2. Explore ONE focused user flow matching the user's intent.
+3. Prefer stable, user-facing flows: navigation, search/filter, forms, article/detail pages.
+4. Capture meaningful actions only — prefer user-facing descriptions over brittle selectors.
+
+${BOWSER_STORY_FORMAT}
+
+## Output requirements
+- Return a YAML document with a top-level \`stories:\` array containing exactly one story entry.
+- Set mode: generated
+- Choose a stable kebab-case story id and a short human-readable name from the flow.
+- workflow = action steps only; assertions = checks with \`@N\` prefixes (not in workflow).
+- Include at least one assertion. For dynamic values, verify format/pattern not exact literals.
+- Do NOT write files or append to any story library.
+- Never ask clarifying questions in prose — if login or other inputs are unknown, add them to \`variables:\` with sensible placeholder values (e.g. login_email: user@example.com) and reference them in Fill steps.
+- Return ONLY the YAML document — no markdown fences, no explanation.`;
+
+export const DRAFT_REVISION_PLAYBOOK = `IMPORTANT: This is a TEXT-ONLY revision. Do NOT open a browser, run shell commands, install packages, or use any MCP/tools.
+
+${BOWSER_STORY_FORMAT}
+
+## Your task
+Revise the current draft story based on the full conversation and the user's latest feedback.
+- Preserve story id and url unless the user explicitly asks to change them.
+- Set mode: generated
+- workflow = action steps only; assertions = checks with \`@N\` prefixes.
+- Return ONLY the updated YAML document — no markdown fences, no explanation. Do not write any file.`;
+
+export interface GeneratePromptContext {
+  userMessage: string;
+  transcript: string;
+  currentDraftYaml?: string;
+  isFirstTurn: boolean;
+}
+
+/** Build the full prompt for a generate conversation turn. */
+export function buildGeneratePrompt(ctx: GeneratePromptContext): string {
+  const base = ctx.isFirstTurn ? GENERATE_STORY_PLAYBOOK : DRAFT_REVISION_PLAYBOOK;
+  const parts = [base, "\n\n## User request\n", ctx.userMessage.trim()];
+  if (ctx.transcript.trim()) {
+    parts.push("\n\n## Conversation so far\n", ctx.transcript.trim());
+  }
+  if (ctx.currentDraftYaml?.trim()) {
+    parts.push("\n\n## Current draft YAML\n```yaml\n", ctx.currentDraftYaml.trim(), "\n```");
+  }
+  if (ctx.isFirstTurn) {
+    parts.push(
+      "\n\nThe user's message must include a target URL (https://…). If no URL is present, reply with a single line: ERROR: missing URL",
+    );
+  }
+  return parts.join("");
+}
+
 /** Shared "This run" prompt suffix for Codex and Claude Code single-story runs. */
 export function buildRunPromptSuffix(paths: RunPromptPaths): string {
   const { runOutputDir, screenshotsDir, stepsPath, heroScreenshotPath, storyContents, runHook } =

@@ -90,7 +90,10 @@ export function SplitView({
   const maxWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.round(window.innerWidth * 0.5));
 
   return (
-    <div className={cn("relative flex h-full min-h-0 gap-x-1.5 bg-surface-sidebar", className)}>
+    <div
+      className={cn("relative flex h-full min-h-0 gap-x-1.5 bg-surface-sidebar", className)}
+      style={{ "--sidebar-width": `${width + SPLIT_GAP_PX}px` } as React.CSSProperties}
+    >
       <div
         className="relative shrink-0 min-h-0 flex flex-col bg-surface-sidebar"
         style={{ width }}
@@ -351,10 +354,14 @@ export function ScrollArea({
   children: React.ReactNode;
 }) {
   const bottomRef = React.useRef<HTMLDivElement>(null);
+  const initialAutoScroll = React.useRef(true);
 
   React.useEffect(() => {
     if (autoScrollToBottom) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      bottomRef.current?.scrollIntoView({
+        behavior: initialAutoScroll.current ? "auto" : "smooth",
+      });
+      initialAutoScroll.current = false;
     }
   }, autoScrollDeps ?? (autoScrollToBottom ? [children] : []));
 

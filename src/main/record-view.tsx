@@ -245,7 +245,7 @@ export function RecordView() {
       }
       if (!isConverting) {
         setOpen(false);
-        navigate({ to: "/" });
+        navigate({ to: "/stories" });
       }
     }
   }

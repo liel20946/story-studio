@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   PlayIcon,
   Loader2Icon,
@@ -26,7 +26,7 @@ import {
 import {
   storiesGet,
   storiesList,
-  storiesOpenFile,
+  storiesUpdate,
   clipboardWriteText,
   runStart,
 } from "../lib/ipc";
@@ -117,8 +117,370 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-// Variables are edited through the "Edit" toolbar action (site YAML), so they
-// render read-only here: key on the left, value beside it, and a copy button
+type StoryEditDraft = {
+  steps: string[];
+  variables: { key: string; value: string }[];
+  assertions: string[];
+};
+
+function isBlankAssertion(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length === 0 || /^verify\s*$/i.test(trimmed);
+}
+
+function cleanDraftForSave(draft: StoryEditDraft): StoryEditDraft {
+  return {
+    ...draft,
+    steps: draft.steps.map((s) => s.trim()).filter((s) => s.length > 0),
+    variables: draft.variables.filter((v) => v.key.trim().length > 0),
+    assertions: draft.assertions.filter((a) => !isBlankAssertion(a)),
+  };
+}
+
+function storyToDraft(story: StoryDetail): StoryEditDraft {
+  return {
+    steps: story.steps.length > 0 ? [...story.steps] : [""],
+    variables:
+      story.variables.length > 0
+        ? story.variables.map((v) => ({
+            key: stripCode(v.key),
+            value: stripCode(v.value),
+          }))
+        : [{ key: "", value: "" }],
+    assertions: story.assertions.length > 0 ? [...story.assertions] : [""],
+  };
+}
+
+function cloneDraft(draft: StoryEditDraft): StoryEditDraft {
+  return {
+    steps: [...draft.steps],
+    variables: draft.variables.map((v) => ({ ...v })),
+    assertions: [...draft.assertions],
+  };
+}
+
+function draftsEqual(a: StoryEditDraft, b: StoryEditDraft): boolean {
+  return (
+    a.steps.length === b.steps.length &&
+    a.assertions.length === b.assertions.length &&
+    a.variables.length === b.variables.length &&
+    a.steps.every((step, i) => step === b.steps[i]) &&
+    a.assertions.every((assertion, i) => assertion === b.assertions[i]) &&
+    a.variables.every(
+      (variable, i) =>
+        variable.key === b.variables[i].key && variable.value === b.variables[i].value,
+    )
+  );
+}
+
+const DRAFT_UNDO_DEBOUNCE_MS = 400;
+const DRAFT_HISTORY_LIMIT = 50;
+
+function useEditableDraft() {
+  const [draft, setDraftState] = React.useState<StoryEditDraft | null>(null);
+  const undoStack = React.useRef<StoryEditDraft[]>([]);
+  const redoStack = React.useRef<StoryEditDraft[]>([]);
+  const pendingCheckpoint = React.useRef<StoryEditDraft | null>(null);
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applyingHistory = React.useRef(false);
+
+  const flushCheckpoint = React.useCallback(() => {
+    if (!pendingCheckpoint.current) return;
+    const snapshot = pendingCheckpoint.current;
+    pendingCheckpoint.current = null;
+    const stack = undoStack.current;
+    const last = stack[stack.length - 1];
+    if (!last || !draftsEqual(last, snapshot)) {
+      stack.push(snapshot);
+      if (stack.length > DRAFT_HISTORY_LIMIT) stack.shift();
+    }
+    redoStack.current = [];
+  }, []);
+
+  const clearTimers = React.useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, []);
+
+  const resetHistory = React.useCallback(() => {
+    undoStack.current = [];
+    redoStack.current = [];
+    pendingCheckpoint.current = null;
+    clearTimers();
+  }, [clearTimers]);
+
+  const beginEdit = React.useCallback((initial: StoryEditDraft) => {
+    resetHistory();
+    setDraftState(cloneDraft(initial));
+  }, [resetHistory]);
+
+  const clearEdit = React.useCallback(() => {
+    resetHistory();
+    setDraftState(null);
+  }, [resetHistory]);
+
+  const setDraft = React.useCallback(
+    (next: StoryEditDraft | ((prev: StoryEditDraft) => StoryEditDraft)) => {
+      setDraftState((prev) => {
+        if (!prev) return prev;
+        const resolved = typeof next === "function" ? next(prev) : next;
+        if (applyingHistory.current || draftsEqual(prev, resolved)) return resolved;
+
+        if (!pendingCheckpoint.current) {
+          pendingCheckpoint.current = cloneDraft(prev);
+        }
+        clearTimers();
+        debounceRef.current = setTimeout(flushCheckpoint, DRAFT_UNDO_DEBOUNCE_MS);
+        return resolved;
+      });
+    },
+    [clearTimers, flushCheckpoint],
+  );
+
+  const setDraftNow = React.useCallback(
+    (next: StoryEditDraft | ((prev: StoryEditDraft) => StoryEditDraft)) => {
+      setDraftState((prev) => {
+        if (!prev) return prev;
+        const resolved = typeof next === "function" ? next(prev) : next;
+        if (applyingHistory.current || draftsEqual(prev, resolved)) return resolved;
+
+        flushCheckpoint();
+        clearTimers();
+        pendingCheckpoint.current = null;
+        const stack = undoStack.current;
+        const last = stack[stack.length - 1];
+        if (!last || !draftsEqual(last, prev)) {
+          stack.push(cloneDraft(prev));
+          if (stack.length > DRAFT_HISTORY_LIMIT) stack.shift();
+        }
+        redoStack.current = [];
+        return resolved;
+      });
+    },
+    [clearTimers, flushCheckpoint],
+  );
+
+  const undo = React.useCallback(() => {
+    clearTimers();
+    setDraftState((current) => {
+      if (!current) return current;
+
+      if (
+        pendingCheckpoint.current &&
+        !draftsEqual(current, pendingCheckpoint.current)
+      ) {
+        applyingHistory.current = true;
+        redoStack.current.push(cloneDraft(current));
+        const restored = cloneDraft(pendingCheckpoint.current);
+        pendingCheckpoint.current = null;
+        queueMicrotask(() => {
+          applyingHistory.current = false;
+        });
+        return restored;
+      }
+
+      flushCheckpoint();
+      if (undoStack.current.length === 0) return current;
+
+      applyingHistory.current = true;
+      const previous = undoStack.current.pop()!;
+      redoStack.current.push(cloneDraft(current));
+      const restored = cloneDraft(previous);
+      queueMicrotask(() => {
+        applyingHistory.current = false;
+      });
+      return restored;
+    });
+  }, [clearTimers, flushCheckpoint]);
+
+  const redo = React.useCallback(() => {
+    flushCheckpoint();
+    clearTimers();
+    setDraftState((current) => {
+      if (!current || redoStack.current.length === 0) return current;
+      applyingHistory.current = true;
+      const next = redoStack.current.pop()!;
+      undoStack.current.push(cloneDraft(current));
+      const restored = cloneDraft(next);
+      queueMicrotask(() => {
+        applyingHistory.current = false;
+      });
+      return restored;
+    });
+  }, [clearTimers, flushCheckpoint]);
+
+  React.useEffect(() => () => clearTimers(), [clearTimers]);
+
+  return {
+    draft,
+    setDraft,
+    setDraftNow,
+    beginEdit,
+    clearEdit,
+    undo,
+    redo,
+    commitCheckpoint: flushCheckpoint,
+  };
+}
+
+function isUndoShortcut(e: KeyboardEvent) {
+  return (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !e.altKey;
+}
+
+const storyEditInputClass =
+  "min-w-0 w-full bg-transparent border-0 outline-none p-0 text-inherit font-inherit leading-inherit focus:ring-1 focus:ring-field/60 rounded-sm";
+
+function focusInputAt(refs: React.RefObject<(HTMLInputElement | null)[]>, index: number) {
+  requestAnimationFrame(() => {
+    refs.current[index]?.focus();
+  });
+}
+
+function insertRow<T>(rows: T[], index: number, item: T): T[] {
+  const next = [...rows];
+  next.splice(index + 1, 0, item);
+  return next;
+}
+
+function removeRow<T>(rows: T[], index: number): T[] {
+  if (rows.length <= 1) return rows;
+  return rows.filter((_, i) => i !== index);
+}
+
+function handleTextRowKeyDown(
+  e: React.KeyboardEvent<HTMLInputElement>,
+  index: number,
+  value: string,
+  rows: string[],
+  onRowsChange: (rows: string[], immediate?: boolean) => void,
+  inputRefs: React.RefObject<(HTMLInputElement | null)[]>,
+) {
+  if (isUndoShortcut(e.nativeEvent)) return;
+
+  if (e.key === "Enter") {
+    e.preventDefault();
+    onRowsChange(insertRow(rows, index, ""), true);
+    focusInputAt(inputRefs, index + 1);
+    return;
+  }
+  if (e.key === "Backspace" && value === "" && rows.length > 1) {
+    e.preventDefault();
+    onRowsChange(removeRow(rows, index), true);
+    focusInputAt(inputRefs, Math.max(0, index - 1));
+  }
+}
+
+function updateTextRow(
+  index: number,
+  value: string,
+  rows: string[],
+  onRowsChange: (rows: string[]) => void,
+) {
+  const next = [...rows];
+  next[index] = value;
+  onRowsChange(next);
+}
+
+function isBlankVariable(row: { key: string; value: string }) {
+  return row.key.trim() === "" && row.value.trim() === "";
+}
+
+function EditableVariables({
+  draft,
+  onChange,
+  onChangeNow,
+  onCommitCheckpoint,
+  nameColors,
+  keyInputRefs,
+  valueInputRefs,
+}: {
+  draft: StoryEditDraft;
+  onChange: (variables: StoryEditDraft["variables"]) => void;
+  onChangeNow: (variables: StoryEditDraft["variables"]) => void;
+  onCommitCheckpoint: () => void;
+  nameColors: Record<string, string>;
+  keyInputRefs: React.RefObject<(HTMLInputElement | null)[]>;
+  valueInputRefs: React.RefObject<(HTMLInputElement | null)[]>;
+}) {
+  function updateVariable(
+    index: number,
+    patch: Partial<{ key: string; value: string }>,
+  ) {
+    const next = [...draft.variables];
+    next[index] = { ...next[index], ...patch };
+    onChange(next);
+  }
+
+  function handleVariableKeyDown(
+    e: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+    field: "key" | "value",
+  ) {
+    if (isUndoShortcut(e.nativeEvent)) return;
+
+    const row = draft.variables[index];
+    const value = field === "key" ? row.key : row.value;
+    const refs = field === "key" ? keyInputRefs : valueInputRefs;
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onChangeNow(insertRow(draft.variables, index, { key: "", value: "" }));
+      focusInputAt(keyInputRefs, index + 1);
+      return;
+    }
+
+    if (e.key === "Backspace" && value === "" && isBlankVariable(row) && draft.variables.length > 1) {
+      e.preventDefault();
+      onChangeNow(removeRow(draft.variables, index));
+      focusInputAt(refs, Math.max(0, index - 1));
+    }
+  }
+
+  return (
+    <div className="flex flex-col">
+      {draft.variables.map((v, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-1.5 py-0.5 min-w-0 rounded-control"
+        >
+          <input
+            ref={(el) => {
+              keyInputRefs.current[i] = el;
+            }}
+            aria-label={`Variable name ${i + 1}`}
+            value={v.key}
+            onChange={(e) => updateVariable(i, { key: e.target.value })}
+            onKeyDown={(e) => handleVariableKeyDown(e, i, "key")}
+            onBlur={onCommitCheckpoint}
+            className={cn(
+              storyEditInputClass,
+              "w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px]",
+              nameColors[v.key] ?? "text-tertiary",
+            )}
+          />
+          <input
+            ref={(el) => {
+              valueInputRefs.current[i] = el;
+            }}
+            aria-label={`Variable value ${v.key || i + 1}`}
+            value={v.value}
+            onChange={(e) => updateVariable(i, { value: e.target.value })}
+            onKeyDown={(e) => handleVariableKeyDown(e, i, "value")}
+            onBlur={onCommitCheckpoint}
+            className={cn(
+              storyEditInputClass,
+              "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px] text-secondary",
+            )}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Read-only variables: key on the left, value beside it, and a copy button
 // that fades in on row hover. Secrets stay masked.
 function ReadOnlyVariables({
   story,
@@ -167,8 +529,25 @@ function ReadOnlyVariables({
 export function StoryView() {
   const { name } = useParams({ from: "/story/$name" });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const registerRun = useRegisterRun();
   const [isStarting, setIsStarting] = React.useState(false);
+  const [editingStoryName, setEditingStoryName] = React.useState<string | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const {
+    draft,
+    setDraft,
+    setDraftNow,
+    beginEdit,
+    clearEdit,
+    undo,
+    redo,
+    commitCheckpoint,
+  } = useEditableDraft();
+  const stepInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
+  const assertionInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
+  const variableKeyInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
+  const variableValueInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
 
   const storyQuery = useQuery({
     queryKey: ["stories:get", name],
@@ -189,19 +568,70 @@ export function StoryView() {
     const stories = storiesListQuery.data;
     if (!stories) return;
     if (!stories.some((s) => s.name === name)) {
-      navigate({ to: "/" });
+      navigate({ to: "/stories" });
     }
   }, [storiesListQuery.data, name, navigate]);
 
   const story = storyQuery.isError ? undefined : storyQuery.data;
   const activeRun = useActiveRunForStory(name, story?.title);
+  const isEditingThisStory = editingStoryName === name;
 
   // Stable color per variable name, reused across the Variables list and the
   // inline chips in Steps/Assertions.
-  const varColors = React.useMemo(
-    () => (story ? buildVarColors(story) : { text: {}, chip: {} }),
-    [story],
-  );
+  const varColors = React.useMemo(() => {
+    if (!story) return { text: {}, chip: {} };
+    if (isEditingThisStory && draft) {
+      const pseudo: StoryDetail = {
+        ...story,
+        variables: draft.variables.map((v) => ({
+          key: v.key,
+          value: v.value,
+          secret: /password|secret|token/i.test(v.key),
+        })),
+      };
+      return buildVarColors(pseudo);
+    }
+    return buildVarColors(story);
+  }, [story, isEditingThisStory, draft]);
+
+  React.useEffect(() => {
+    if (editingStoryName && editingStoryName !== name) {
+      setEditingStoryName(null);
+      clearEdit();
+    }
+  }, [name, editingStoryName, clearEdit]);
+
+  React.useEffect(() => {
+    if (!isEditingThisStory) return;
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (!isUndoShortcut(e)) return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    }
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isEditingThisStory, undo, redo]);
+
+  function updateDraftSteps(steps: string[], immediate = false) {
+    const apply = immediate ? setDraftNow : setDraft;
+    apply((prev) => ({ ...prev, steps }));
+  }
+
+  function updateDraftAssertions(assertions: string[], immediate = false) {
+    const apply = immediate ? setDraftNow : setDraft;
+    apply((prev) => ({ ...prev, assertions }));
+  }
+
+  function updateDraftVariables(
+    variables: StoryEditDraft["variables"],
+    immediate = false,
+  ) {
+    const apply = immediate ? setDraftNow : setDraft;
+    apply((prev) => ({ ...prev, variables }));
+  }
 
   async function handleRun() {
     if (!story || isStarting) return;
@@ -222,13 +652,31 @@ export function StoryView() {
     }
   }
 
-  async function handleEdit() {
+  function handleEdit() {
     if (!story) return;
+    beginEdit(storyToDraft(story));
+    setEditingStoryName(story.name);
+  }
+
+  async function handleSave() {
+    if (!story || !draft || isSaving) return;
+    setIsSaving(true);
     try {
-      await storiesOpenFile(story.name);
+      const updated = await storiesUpdate(story.name, cleanDraftForSave(draft));
+      queryClient.setQueryData(["stories:get", name], updated);
+      void queryClient.invalidateQueries({ queryKey: ["stories:list"] });
+      setEditingStoryName(null);
+      clearEdit();
     } catch (err) {
-      reportAppErrorFromUnknown("Failed to open story file", err);
+      reportAppErrorFromUnknown("Failed to save story", err);
+    } finally {
+      setIsSaving(false);
     }
+  }
+
+  function handleCancel() {
+    setEditingStoryName(null);
+    clearEdit();
   }
 
   function handleRecordAgain() {
@@ -268,7 +716,7 @@ export function StoryView() {
           title="Story not found"
           description="This story may have been deleted."
           actions={
-            <Button variant="filled" onClick={() => navigate({ to: "/" })}>
+            <Button variant="filled" onClick={() => navigate({ to: "/stories" })}>
               Go back
             </Button>
           }
@@ -288,50 +736,78 @@ export function StoryView() {
               </div>
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
-              {/* Primary action grouped with nearby context (Edit, Record
-                  again) so the run button isn't visually isolated. */}
-              <Tooltip>
-                <TooltipTrigger asChild>
+              {isEditingThisStory ? (
+                <>
                   <Button
                     variant="transparent"
                     size="titlebar"
-                    iconOnly
-                    onClick={handleEdit}
-                    aria-label="Edit YAML file"
+                    radius="full"
+                    onClick={handleCancel}
+                    disabled={isSaving}
                   >
-                    <PencilIcon className="size-4" />
+                    Cancel
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent>Edit site YAML</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
                   <Button
-                    variant="transparent"
+                    variant="filled"
                     size="titlebar"
-                    iconOnly
-                    onClick={handleRecordAgain}
-                    aria-label="Record again"
+                    radius="full"
+                    onClick={handleSave}
+                    disabled={isSaving}
                   >
-                    <CircleDotIcon className="size-4" />
+                    {isSaving ? (
+                      <Loader2Icon className="size-4 animate-spin" />
+                    ) : (
+                      <CheckIcon className="size-4" />
+                    )}
+                    Save
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent>Record again</TooltipContent>
-              </Tooltip>
-              <Button
-                variant={activeRun ? "filled" : "accent"}
-                size="titlebar"
-                radius="full"
-                onClick={handleRun}
-                disabled={isStarting}
-              >
-                {activeRun || isStarting ? (
-                  <Loader2Icon className="size-4 animate-spin" />
-                ) : (
-                  <PlayIcon className="size-4" />
-                )}
-                {activeRun ? "View run" : "Run"}
-              </Button>
+                </>
+              ) : (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="transparent"
+                        size="titlebar"
+                        iconOnly
+                        onClick={handleEdit}
+                        aria-label="Edit story"
+                      >
+                        <PencilIcon className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Edit story</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="transparent"
+                        size="titlebar"
+                        iconOnly
+                        onClick={handleRecordAgain}
+                        aria-label="Record again"
+                      >
+                        <CircleDotIcon className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Record again</TooltipContent>
+                  </Tooltip>
+                  <Button
+                    variant={activeRun ? "filled" : "accent"}
+                    size="titlebar"
+                    radius="full"
+                    onClick={handleRun}
+                    disabled={isStarting}
+                  >
+                    {activeRun || isStarting ? (
+                      <Loader2Icon className="size-4 animate-spin" />
+                    ) : (
+                      <PlayIcon className="size-4" />
+                    )}
+                    {activeRun ? "View run" : "Run"}
+                  </Button>
+                </>
+              )}
             </ToolbarActions>
           </ToolbarRow>
         </Toolbar>
@@ -341,48 +817,126 @@ export function StoryView() {
           right rail card (matches run view layout and typography). */}
       <div className="detail-view">
         <div className="detail-view-main story-sections">
-          {story.steps.length > 0 && (
+          {(isEditingThisStory && draft) || story.steps.length > 0 ? (
             <Section title="Steps">
               <ol className="flex flex-col">
-                {story.steps.map((step, i) => (
+                {(isEditingThisStory && draft ? draft.steps : story.steps).map((step, i) => (
                   <li key={i} className="story-step-row">
                     <span className="story-step-num">{i + 1}</span>
-                    <Text variant="small" color="secondary">
-                      <InlineCode text={step} colorMap={varColors.chip} />
-                    </Text>
+                    {isEditingThisStory && draft ? (
+                      <input
+                        ref={(el) => {
+                          stepInputRefs.current[i] = el;
+                        }}
+                        aria-label={`Step ${i + 1}`}
+                        value={step}
+                        onChange={(e) =>
+                          updateTextRow(
+                            i,
+                            e.target.value,
+                            draft.steps,
+                            (steps) => updateDraftSteps(steps),
+                          )
+                        }
+                        onBlur={commitCheckpoint}
+                        onKeyDown={(e) =>
+                          handleTextRowKeyDown(
+                            e,
+                            i,
+                            step,
+                            draft.steps,
+                            (steps, immediate) => updateDraftSteps(steps, immediate),
+                            stepInputRefs,
+                          )
+                        }
+                        className={cn(storyEditInputClass, "text-[12px] leading-[16px] text-secondary")}
+                      />
+                    ) : (
+                      <Text variant="small" color="secondary">
+                        <InlineCode text={step} colorMap={varColors.chip} />
+                      </Text>
+                    )}
                   </li>
                 ))}
               </ol>
             </Section>
-          )}
-
-          {story.steps.length === 0 && (
+          ) : (
             <EmptyState placement="inline" title="No steps yet." />
           )}
         </div>
 
-        {(story.variables.length > 0 ||
+        {((isEditingThisStory && draft) ||
+          story.variables.length > 0 ||
           story.assertions.length > 0) && (
           <div className="detail-rail detail-rail--card">
-            {story.variables.length > 0 && (
+            {(isEditingThisStory && draft) || story.variables.length > 0 ? (
               <Section title="Variables">
-                <ReadOnlyVariables story={story} nameColors={varColors.text} />
+                {isEditingThisStory && draft ? (
+                  <EditableVariables
+                    draft={draft}
+                    nameColors={varColors.text}
+                    keyInputRefs={variableKeyInputRefs}
+                    valueInputRefs={variableValueInputRefs}
+                    onChange={(variables) => updateDraftVariables(variables)}
+                    onChangeNow={(variables) => updateDraftVariables(variables, true)}
+                    onCommitCheckpoint={commitCheckpoint}
+                  />
+                ) : (
+                  <ReadOnlyVariables story={story} nameColors={varColors.text} />
+                )}
               </Section>
-            )}
+            ) : null}
 
-            {story.assertions.length > 0 && (
+            {(isEditingThisStory && draft) || story.assertions.length > 0 ? (
               <Section title="Assertions">
                 <div className="flex flex-col">
-                  {story.assertions.map((assertion, i) => (
-                    <RailAssertionLine
-                      key={i}
-                      text={assertion}
-                      colorMap={varColors.chip}
-                    />
-                  ))}
+                  {(isEditingThisStory && draft ? draft.assertions : story.assertions).map(
+                    (assertion, i) =>
+                      isEditingThisStory && draft ? (
+                        <div key={i} className="flex items-center gap-1.5 py-0.5 min-w-0">
+                          <input
+                            ref={(el) => {
+                              assertionInputRefs.current[i] = el;
+                            }}
+                            aria-label={`Assertion ${i + 1}`}
+                            value={assertion}
+                            onChange={(e) =>
+                              updateTextRow(
+                                i,
+                                e.target.value,
+                                draft.assertions,
+                                (assertions) => updateDraftAssertions(assertions),
+                              )
+                            }
+                            onBlur={commitCheckpoint}
+                            onKeyDown={(e) =>
+                              handleTextRowKeyDown(
+                                e,
+                                i,
+                                assertion,
+                                draft.assertions,
+                                (assertions, immediate) =>
+                                  updateDraftAssertions(assertions, immediate),
+                                assertionInputRefs,
+                              )
+                            }
+                            className={cn(
+                              storyEditInputClass,
+                              "text-[11px] leading-[15px] text-secondary",
+                            )}
+                          />
+                        </div>
+                      ) : (
+                        <RailAssertionLine
+                          key={i}
+                          text={assertion}
+                          colorMap={varColors.chip}
+                        />
+                      ),
+                  )}
                 </div>
               </Section>
-            )}
+            ) : null}
           </div>
         )}
       </div>
