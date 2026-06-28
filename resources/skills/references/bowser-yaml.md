@@ -4,20 +4,16 @@ Bowser user stories are stored as:
 
 ```yaml
 stories:
-  - id: "site-area-purpose"
-    name: "Short human-readable story title"
-    url: "https://example.com/path"
+  - id: "example-homepage"
+    name: "Example Domain homepage"
+    url: "https://example.com"
     mode: "recorded"
-    variables:
-      search_query: "Jerusalem"
     workflow: |
-      Navigate to https://example.com/path
-      Click the "Alerts" link
-      Fill the "Search" field with "{{search_query}}"
+      Navigate to https://example.com
+      Click the "Learn more" link
     assertions: |
-      @1 Verify the page loads successfully
-      @2 Verify the alerts page is visible
-      @3 Verify current alerts are displayed
+      @1 Verify the Example Domain page is visible
+      @2 Verify the IANA documentation page opens
 ```
 
 ## Rules
@@ -34,15 +30,14 @@ stories:
 
 ## Good workflow steps
 
-- `Navigate to https://www.oref.org.il/eng`
-- `Click the "Alerts" link`
-- `Fill the "Search" field with "{{search_query}}"`
+- `Navigate to https://example.com`
+- `Click the "Learn more" link`
+- `Fill the "Email" field with "{{login_email}}"`
 
 ## Good assertions
 
-- `@1 Verify the page loads successfully`
-- `@2 Verify the alerts page is visible`
-- `@4 Verify current alerts are displayed`
+- `@1 Verify the Example Domain page is visible`
+- `@2 Verify the IANA documentation page opens`
 
 ## Bad steps
 

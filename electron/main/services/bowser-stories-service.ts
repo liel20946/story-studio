@@ -216,7 +216,7 @@ export function hasOnlyEndStateNavigationTail(steps: string[], fromIndex: number
 
 /**
  * Move the latest assertion(s) past trailing navigation clicks captured after the
- * main action — e.g. opening a wallet row so the hero screenshot is the detail page.
+ * main action — e.g. opening a detail row so the hero screenshot is the detail page.
  */
 export function alignAssertionsWithEndStateNavigation(
   steps: string[],

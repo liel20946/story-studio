@@ -38,7 +38,7 @@ export function buildRecordingConversionPrompt(
     `- Write workflow steps as intent, not raw selectors. Use Navigate, Click, Fill, Select, Press.\n` +
     `- Put checks in a separate \`assertions:\` block (not in workflow). One assertion per line, prefixed with \`@N\` where N is how many workflow steps have completed before the check (0 before the first step; with 14 workflow steps the last check is \`@14\`, never \`@15\`).\n` +
     `- End-state rule (critical): recordings often end with the user clicking a row, link, or tab AFTER the main action to land on the screen they want as the final screenshot. Keep every such trailing Click/Navigate in workflow. Place the final assertion at \`@<workflow step count>\` (equal to the number of workflow lines) and describe that destination page — not an intermediate list, table, or toast they immediately clicked past.\n` +
-    `- Example: after issuing store credit the user may click the customer wallet row to open its detail page. Workflow must include that click; the final assertion at \`@N\` (after all steps) should verify the wallet detail page, while an earlier assertion may verify the success toast or updated list.\n` +
+    `- Example: after submitting a form the user may click a result row to open its detail page. Workflow must include that click; the final assertion at \`@N\` (after all steps) should verify the detail page, while an earlier assertion may verify the success message or updated list.\n` +
     `- Include at least one assertion. For dynamic values (dates, times, counts, totals, prices, IDs, confirmation numbers), verify format/pattern/relative condition — never hardcode literals that change between runs.\n` +
     `- Set mode: recorded\n` +
     `- Set url: ${url}\n` +

@@ -9,5 +9,6 @@ dist/
 .env.*
 *.tsbuildinfo
 .screenshots/
+screenshots/
 app-*.css
 __pycache__/
