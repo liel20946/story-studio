@@ -311,7 +311,7 @@ function CollapsibleSection({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contextMenu?: React.ReactNode;
-  /** First section in the list — skip header top padding; search row owns that gap. */
+  /** First section in the list — top gap comes from the tab panel pt-4. */
   leading?: boolean;
   children: React.ReactNode;
 }) {
@@ -338,7 +338,7 @@ function CollapsibleSection({
     <CollapsibleRoot
       open={open}
       onOpenChange={onOpenChange}
-      className="mt-2.5 first:mt-0"
+      className="mt-2 first:mt-0"
     >
       {contextMenu ? (
         <ContextMenu>
@@ -1385,7 +1385,7 @@ export function AppSidebar() {
       <SidebarList className="pt-0 pb-1">
         {/* Keyed by list group so Stories ↔ Runs swap in place (no flash).
             Other tab changes replay the slide-in, timed with the toggle. */}
-        <div key={sidebarListAnimKey(tab)} className="tab-panel-in">
+        <div key={sidebarListAnimKey(tab)} className="tab-panel-in pt-4">
           {tab === "stories" ? (
             <StoriesTab
               hasStories={hasStories}

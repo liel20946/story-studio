@@ -2312,7 +2312,7 @@
 /* Story steps */
 .story-step-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.5rem;
   padding: 0.3rem 0;
   font-size: 12px;
