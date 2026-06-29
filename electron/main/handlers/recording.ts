@@ -11,7 +11,7 @@ import { getSettingsValue } from "./settings.js";
 export function registerRecordingHandlers(): void {
   ipcMain.handle("recording:check", async () => {
     const settings = getSettingsValue();
-    return checkRecordingAvailability(settings.codexBinaryPath);
+    return checkRecordingAvailability(settings);
   });
 
   ipcMain.handle("recording:installBrowser", async () => {
@@ -35,7 +35,7 @@ export function registerRecordingHandlers(): void {
       overwriteStoryKey?: string;
     };
     const settings = getSettingsValue();
-    return startRecording(name, url, settings.codexBinaryPath, overwriteStoryKey);
+    return startRecording(name, url, settings, overwriteStoryKey);
   });
 
   ipcMain.handle("recording:cancel", async () => {

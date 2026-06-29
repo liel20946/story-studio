@@ -74,4 +74,6 @@ For maintainers shipping a new version:
 1. Bump `version` in `package.json`
 2. Run `npm run dist:publish` (requires `gh auth login` or `GH_TOKEN` with `repo` scope)
 
-Installed apps will pick up the new release automatically.
+`dist:publish` builds, publishes artifacts to GitHub Releases, and uploads `latest-mac.yml`, which `electron-updater` needs to deliver updates. Do not upload release files manually in the GitHub UI — that skips the metadata file and breaks auto-update for existing installs.
+
+If a release is already published without `latest-mac.yml`, place the built artifacts in `release/` and run `npm run upload-update-metadata` to upload the missing metadata.

@@ -10,6 +10,7 @@ import {
   type AppearanceSettings,
   resolveEffectiveContrast,
   resolveEffectivePalette,
+  resolveEffectiveOpacity,
 } from "./color-theme-config";
 import { applyColorThemePalette, clearColorThemeOverrides } from "./color-theme-apply";
 import { normalizeAppSettings } from "./app-settings";
@@ -42,6 +43,37 @@ const LEGACY_APPEARANCE_PROPS = [
   "--accent-glow",
 ] as const;
 
+const WINDOW_OPACITY_PROPS = [
+  "--window-bg-opacity",
+  "--window-bg-blur",
+  "--window-bg-saturate",
+] as const;
+
+function clearWindowOpacityOverrides(): void {
+  const root = document.documentElement;
+  for (const prop of WINDOW_OPACITY_PROPS) {
+    root.style.removeProperty(prop);
+  }
+  root.classList.remove("window-opacity-active");
+}
+
+/** 100 = fully opaque, no blur; lower values add transparency and backdrop blur. */
+export function applyWindowOpacity(opacity: number): void {
+  const root = document.documentElement;
+  const clamped = Math.min(100, Math.max(0, Math.round(opacity)));
+  const alpha = clamped / 100;
+  const blurPx = ((100 - clamped) / 100) * 40;
+  const saturate = 100 + ((100 - clamped) / 100) * 80;
+  root.style.setProperty("--window-bg-opacity", String(alpha));
+  root.style.setProperty("--window-bg-blur", `${blurPx}px`);
+  root.style.setProperty("--window-bg-saturate", `${saturate}%`);
+  root.classList.toggle("window-opacity-active", clamped < 100);
+}
+
+/** @deprecated Use applyWindowOpacity */
+export const applyWindowTransparency = applyWindowOpacity;
+
+
 export type { AppearanceSettings } from "./color-theme-config";
 
 export interface ColorThemePreferences {
@@ -60,6 +92,7 @@ function clearLegacyAppearanceOverrides(): void {
 export function resetThemeStyles(): void {
   clearLegacyAppearanceOverrides();
   clearColorThemeOverrides();
+  clearWindowOpacityOverrides();
 }
 
 export function systemPrefersDark(): boolean {
@@ -111,7 +144,9 @@ export function applyAppearance(
   };
   const palette = resolveEffectivePalette(effectiveSettings, resolved);
   const contrast = resolveEffectiveContrast(settings, resolved);
+  const opacity = resolveEffectiveOpacity(settings, resolved);
   applyColorThemePalette(palette, resolved, contrast);
+  applyWindowOpacity(opacity);
   document.documentElement.classList.toggle(
     "use-pointer-cursors",
     settings.usePointerCursors,

@@ -13,6 +13,8 @@ import {
   saveMainWindowState,
 } from "./windows/window-state.js";
 import { setMainWindow, navigateMainWindow } from "./windows/main-window.js";
+import { applyWindowOpacityBlur } from "./windows/window-opacity.js";
+import { getSettingsValue } from "./handlers/settings.js";
 import { initPaths } from "./services/paths.js";
 import { initGenerateConversationsDir, recoverOrphanedGenerations } from "./services/generate-conversations-service.js";
 import { initSettings } from "./handlers/settings.js";
@@ -106,6 +108,8 @@ async function createMainWindow(): Promise<void> {
   } else {
     await mainWindow.loadFile(load.file, load.query ? { query: load.query } : undefined);
   }
+
+  applyWindowOpacityBlur(getSettingsValue());
 }
 
 function setupApplicationMenu(): void {

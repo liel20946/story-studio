@@ -118,7 +118,7 @@ export interface RecordingProgress {
 }
 
 export interface RecordingAvailability {
-  codexAvailable: boolean;
+  agentAvailable: boolean;
   playwrightAvailable: boolean;
   browserInstalled: boolean;
 }
@@ -159,6 +159,8 @@ export interface AppSettings {
   colorThemePaletteDark: ColorThemePalette | null;
   colorThemeContrastLight: number;
   colorThemeContrastDark: number;
+  colorThemeOpacityLight: number;
+  colorThemeOpacityDark: number;
   usePointerCursors: boolean;
   startingUrl: string;
   runHook: string;
@@ -209,7 +211,7 @@ export type GenerateMessage =
   | { kind: "user"; text: string; at: number }
   | { kind: "assistant"; text: string; at: number }
   | { kind: "status"; text: string; at: number }
-  | { kind: "draft"; at: number; storyTitle: string; summary: string }
+  | { kind: "draft"; at: number; storyTitle: string; summary: string; draftMd?: string }
   | { kind: "error"; text: string; at: number };
 
 export interface GenerateConversation {
@@ -222,6 +224,12 @@ export interface GenerateConversation {
   updatedAt: number;
   messages: GenerateMessage[];
   generating?: boolean;
+  /** Provider session is established — follow-up turns use resume instead of replaying history. */
+  agentSessionEstablished?: boolean;
+  /** Codex rollout session id (parsed from first exec). Claude uses conversation id. */
+  codexSessionId?: string;
+  /** Agent provider used when the session was created (reset session if provider changes). */
+  agentSessionProvider?: AgentProvider;
 }
 
 export interface GenerateConversationSummary {
@@ -237,6 +245,11 @@ export interface GenerateConversationSummary {
 export interface GenerateConversationDetail extends GenerateConversation {
   draftMd?: string;
   draftYaml?: string;
+}
+
+export interface AgentModelOverride {
+  model: string;
+  effort: string;
 }
 
 export interface GenerateProgress {

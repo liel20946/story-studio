@@ -1,7 +1,9 @@
 import type { AppSettings } from "./contract-types";
 import {
   DEFAULT_COLOR_THEME_CONTRAST,
+  DEFAULT_COLOR_THEME_OPACITY,
   parseColorThemeContrast,
+  parseColorThemeOpacity,
   parseColorThemePalette,
 } from "./color-theme-config";
 import { parseColorThemeId, type ColorThemeId } from "./color-themes";
@@ -23,6 +25,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   colorThemePaletteDark: null,
   colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
   colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
+  colorThemeOpacityLight: DEFAULT_COLOR_THEME_OPACITY,
+  colorThemeOpacityDark: DEFAULT_COLOR_THEME_OPACITY,
   usePointerCursors: false,
   startingUrl: "https://example.com",
   runHook: "",
@@ -84,6 +88,18 @@ export function normalizeAppSettings(
     colorThemeContrastDark: parseColorThemeContrast(
       base.colorThemeContrastDark,
       DEFAULT_APP_SETTINGS.colorThemeContrastDark,
+    ),
+    colorThemeOpacityLight: parseColorThemeOpacity(
+      base.colorThemeOpacityLight ??
+        (base as { colorThemeTransparencyLight?: number })
+          .colorThemeTransparencyLight,
+      DEFAULT_APP_SETTINGS.colorThemeOpacityLight,
+    ),
+    colorThemeOpacityDark: parseColorThemeOpacity(
+      base.colorThemeOpacityDark ??
+        (base as { colorThemeTransparencyDark?: number })
+          .colorThemeTransparencyDark,
+      DEFAULT_APP_SETTINGS.colorThemeOpacityDark,
     ),
     usePointerCursors:
       typeof base.usePointerCursors === "boolean"

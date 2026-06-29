@@ -96,12 +96,93 @@ export function ThemeContrastField({
   accent: string;
   onChange: (value: number) => void;
 }) {
+  return (
+    <ThemeSliderField
+      label="Contrast"
+      value={value}
+      accent={accent}
+      onChange={onChange}
+    />
+  );
+}
+
+export function ThemeOpacityField({
+  value,
+  accent,
+  onPreview,
+  onCommit,
+}: {
+  value: number;
+  accent: string;
+  onPreview: (value: number) => void;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = React.useState(value);
+
+  React.useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const endDrag = React.useCallback(() => {
+    document.documentElement.classList.remove("window-opacity-dragging");
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      document.documentElement.classList.remove("window-opacity-dragging");
+    };
+  }, []);
+
+  return (
+    <ThemeSliderField
+      label="Opacity"
+      value={draft}
+      accent={accent}
+      onPointerDown={() =>
+        document.documentElement.classList.add("window-opacity-dragging")
+      }
+      onChange={(next) => {
+        setDraft(next);
+        onPreview(next);
+      }}
+      onCommit={(next) => {
+        setDraft(next);
+        endDrag();
+        onCommit(next);
+      }}
+    />
+  );
+}
+
+function ThemeSliderField({
+  label,
+  value,
+  accent,
+  onChange,
+  onCommit,
+  onPointerDown,
+}: {
+  label: string;
+  value: number;
+  accent: string;
+  onChange: (value: number) => void;
+  onCommit?: (value: number) => void;
+  onPointerDown?: () => void;
+}) {
   const sliderId = React.useId();
+
+  const commit = (next: number) => {
+    if (onCommit) {
+      onCommit(next);
+    } else {
+      onChange(next);
+    }
+  };
 
   return (
     <div className="theme-color-row">
       <label className="theme-color-row-label" htmlFor={sliderId}>
-        Contrast
+        {label}
       </label>
       <div className="theme-contrast-control">
         <input
@@ -118,7 +199,20 @@ export function ThemeContrastField({
               "--theme-contrast-fill": `${value}%`,
             } as React.CSSProperties
           }
+          onInput={(event) => onChange(Number(event.currentTarget.value))}
           onChange={(event) => onChange(Number(event.target.value))}
+          onPointerDown={() => onPointerDown?.()}
+          onPointerUp={(event) =>
+            commit(Number((event.currentTarget as HTMLInputElement).value))
+          }
+          onPointerCancel={(event) =>
+            commit(Number((event.currentTarget as HTMLInputElement).value))
+          }
+          onKeyUp={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              commit(Number((event.currentTarget as HTMLInputElement).value));
+            }
+          }}
         />
         <span className="theme-contrast-value">{value}</span>
       </div>

@@ -7,6 +7,9 @@ import {
 } from "./color-themes";
 
 export const DEFAULT_COLOR_THEME_CONTRAST = 60;
+export const DEFAULT_COLOR_THEME_OPACITY = 100;
+/** @deprecated Use DEFAULT_COLOR_THEME_OPACITY */
+export const DEFAULT_COLOR_THEME_TRANSPARENCY = DEFAULT_COLOR_THEME_OPACITY;
 /** Codex-compatible clipboard prefix (import accepts; export uses same). */
 export const CODEX_THEME_CLIPBOARD_PREFIX = "codex-theme-v1:";
 
@@ -23,6 +26,7 @@ export interface ModeColorThemeSettings {
   preset: ColorThemeId;
   palette: ColorThemePalette | null;
   contrast: number;
+  opacity: number;
 }
 
 export interface AppearanceSettings {
@@ -32,6 +36,8 @@ export interface AppearanceSettings {
   colorThemePaletteDark: ColorThemePalette | null;
   colorThemeContrastLight: number;
   colorThemeContrastDark: number;
+  colorThemeOpacityLight: number;
+  colorThemeOpacityDark: number;
 }
 
 /** Codex export shape (subset we read/write). */
@@ -91,6 +97,17 @@ export function parseColorThemeContrast(
   return Math.min(100, Math.max(0, Math.round(value)));
 }
 
+export function parseColorThemeOpacity(
+  value: unknown,
+  fallback = DEFAULT_COLOR_THEME_OPACITY,
+): number {
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+/** @deprecated Use parseColorThemeOpacity */
+export const parseColorThemeTransparency = parseColorThemeOpacity;
+
 function parseThemeVariant(value: unknown): ThemeMode | null {
   if (value === "light" || value === "dark") return value;
   return null;
@@ -141,6 +158,10 @@ export function modeColorThemeSettings(
       mode === "light"
         ? settings.colorThemeContrastLight
         : settings.colorThemeContrastDark,
+    opacity:
+      mode === "light"
+        ? settings.colorThemeOpacityLight
+        : settings.colorThemeOpacityDark,
   };
 }
 
@@ -165,6 +186,16 @@ export function resolveEffectiveContrast(
   return modeColorThemeSettings(settings, mode).contrast;
 }
 
+export function resolveEffectiveOpacity(
+  settings: AppearanceSettings,
+  mode: ThemeMode,
+): number {
+  return modeColorThemeSettings(settings, mode).opacity;
+}
+
+/** @deprecated Use resolveEffectiveOpacity */
+export const resolveEffectiveTransparency = resolveEffectiveOpacity;
+
 export function appearancePatchForMode(
   mode: ThemeMode,
   patch: Partial<ModeColorThemeSettings>,
@@ -178,6 +209,9 @@ export function appearancePatchForMode(
       ...(patch.contrast !== undefined
         ? { colorThemeContrastLight: patch.contrast }
         : {}),
+      ...(patch.opacity !== undefined
+        ? { colorThemeOpacityLight: patch.opacity }
+        : {}),
     };
   }
   return {
@@ -187,6 +221,9 @@ export function appearancePatchForMode(
       : {}),
     ...(patch.contrast !== undefined
       ? { colorThemeContrastDark: patch.contrast }
+      : {}),
+    ...(patch.opacity !== undefined
+      ? { colorThemeOpacityDark: patch.opacity }
       : {}),
   };
 }

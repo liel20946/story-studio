@@ -231,7 +231,7 @@ export function SettingsWindowView() {
                 disabled={isImporting || isExporting}
               >
                 {isImporting ? (
-                  <Loader2Icon className="size-4 animate-spin" />
+                  <Loader2Icon className="size-4 animate-spin text-accent" />
                 ) : (
                   <FolderOpenIcon className="size-4" />
                 )}
@@ -250,7 +250,7 @@ export function SettingsWindowView() {
                 disabled={isImporting || isExporting}
               >
                 {isExporting ? (
-                  <Loader2Icon className="size-4 animate-spin" />
+                  <Loader2Icon className="size-4 animate-spin text-accent" />
                 ) : (
                   <FolderDownIcon className="size-4" />
                 )}

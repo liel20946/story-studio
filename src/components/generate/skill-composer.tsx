@@ -49,6 +49,7 @@ export function SkillComposer({
   layout = "docked",
   showSkill = true,
   placeholder,
+  below,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -61,14 +62,19 @@ export function SkillComposer({
   layout?: "inline" | "docked";
   showSkill?: boolean;
   placeholder?: string;
+  /** Model / effort controls — right side inside the bar, before the send button. */
+  below?: React.ReactNode;
 }) {
   const hint = placeholder ?? (showSkill ? DEFAULT_HINT : FOLLOW_UP_HINT);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const prefixRef = React.useRef<HTMLSpanElement>(null);
+  const actionsRef = React.useRef<HTMLDivElement>(null);
   const hasDockChrome = layout === "docked";
   const isFirstPrompt = layout === "inline";
   const [prefixIndent, setPrefixIndent] = React.useState(0);
+  const [actionsWidth, setActionsWidth] = React.useState(0);
   const [isMultiline, setIsMultiline] = React.useState(false);
+  const [scrollTop, setScrollTop] = React.useState(0);
 
   React.useLayoutEffect(() => {
     if (!showSkill) {
@@ -85,6 +91,21 @@ export function SkillComposer({
     return () => observer.disconnect();
   }, [showSkill]);
 
+  React.useLayoutEffect(() => {
+    if (isFirstPrompt) {
+      setActionsWidth(0);
+      return;
+    }
+    const actions = actionsRef.current;
+    if (!actions) return;
+    const gapPx = 8;
+    const measure = () => setActionsWidth(actions.offsetWidth + gapPx);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(actions);
+    return () => observer.disconnect();
+  }, [isFirstPrompt, below, stopping, disabled, value]);
+
   React.useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
   }, [autoFocus]);
@@ -92,11 +113,8 @@ export function SkillComposer({
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (stopping) {
-        onStop?.();
-        return;
-      }
-      if (!disabled && value.trim()) onSubmit();
+      if (stopping || disabled || !value.trim()) return;
+      onSubmit();
     }
   }
 
@@ -120,6 +138,11 @@ export function SkillComposer({
     } else {
       el.style.height = "auto";
     }
+
+    if (el.scrollHeight <= el.clientHeight && el.scrollTop > 0) {
+      el.scrollTop = 0;
+    }
+    setScrollTop(el.scrollTop);
   }, [value, isFirstPrompt]);
 
   const canSend = !disabled && !stopping && !!value.trim();
@@ -131,31 +154,65 @@ export function SkillComposer({
     />
   );
 
+  const controls = below ? <div className="generate-composer-controls">{below}</div> : null;
+
+  const composerActions = (
+    <div className="generate-composer-actions" ref={actionsRef}>
+      {controls}
+      {actionButton}
+    </div>
+  );
+
+  const composerFooter = <div className="generate-composer-footer">{composerActions}</div>;
+
+  const inputRowStyle = {
+    "--skill-prefix-indent": `${prefixIndent}px`,
+    "--composer-scroll-top": `${scrollTop}px`,
+    ...(!isFirstPrompt && actionsWidth > 0
+      ? { "--composer-actions-width": `${actionsWidth}px` }
+      : {}),
+  } as React.CSSProperties;
+
   const inputRow = (
     <div
       className="generate-composer-input-row"
-      style={{ "--skill-prefix-indent": `${prefixIndent}px` } as React.CSSProperties}
-      onClick={() => !stopping && textareaRef.current?.focus()}
+      style={inputRowStyle}
+      onClick={() => textareaRef.current?.focus()}
     >
-      {showSkill ? (
-        <span ref={prefixRef} className="generate-skill-prefix" aria-hidden>
-          {SKILL_LABEL}
-        </span>
-      ) : null}
-      {!value ? (
-        <span className="generate-composer-hint" aria-hidden>
-          {hint}
-        </span>
-      ) : null}
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={disabled || stopping}
-        aria-label={hint}
-        className="generate-composer-text"
-      />
+      <div className="generate-composer-input-viewport">
+        {showSkill ? (
+          <span ref={prefixRef} className="generate-skill-prefix" aria-hidden>
+            {SKILL_LABEL}
+          </span>
+        ) : null}
+        {!value ? (
+          <span className="generate-composer-hint" aria-hidden>
+            {hint}
+          </span>
+        ) : null}
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          aria-label={hint}
+          className="generate-composer-text"
+        />
+      </div>
+    </div>
+  );
+
+  const composerBody = isFirstPrompt ? (
+    <div className="generate-composer-stack">
+      {inputRow}
+      {composerFooter}
+    </div>
+  ) : (
+    <div className="generate-composer-inline">
+      {inputRow}
+      {composerActions}
     </div>
   );
 
@@ -167,30 +224,16 @@ export function SkillComposer({
         isFirstPrompt && "generate-composer--prompt",
       )}
     >
-      <div
-        className={cn(
-          "generate-composer-box",
-          isFirstPrompt && "generate-composer-box--prompt",
-          disabled && "generate-composer-box--disabled",
-          stopping && "generate-composer-box--stopping",
-        )}
-      >
-        {isFirstPrompt ? (
-          <div className="generate-composer-stack">
-            {inputRow}
-            <div className="generate-composer-actions">{actionButton}</div>
-          </div>
-        ) : (
-          <div
-            className={cn(
-              "generate-composer-inline",
-              isMultiline && "generate-composer-inline--multiline",
-            )}
-          >
-            {inputRow}
-            {actionButton}
-          </div>
-        )}
+      <div className="generate-composer-area">
+        <div
+          className={cn(
+            "generate-composer-box",
+            isFirstPrompt ? "generate-composer-box--prompt" : "generate-composer-box--chat",
+            disabled && "generate-composer-box--disabled",
+          )}
+        >
+          {composerBody}
+        </div>
       </div>
     </div>
   );

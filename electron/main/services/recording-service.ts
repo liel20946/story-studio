@@ -7,10 +7,11 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { app } from "../electron-api.js";
 import { broadcast as ipcBroadcast } from "../broadcast.js";
-import type { RecordingProgress, RecordingAvailability } from "./contract-types.js";
-import { resolveCodexBinary } from "./codex-runner.js";
+import type { RecordingProgress, RecordingAvailability, AgentProvider } from "./contract-types.js";
+import { resolveAgentBinary } from "./agent-provider.js";
+import { getAgentRunConfig } from "./agent-config.js";
 import { createDraftDir, discardDraftDir, saveDraftToLibrary, listStories } from "./stories-service.js";
-import { convertRecordingWithCodex } from "./recording-convert-service.js";
+import { convertRecordingWithAgent } from "./recording-convert-service.js";
 import { formatRecordingFailure } from "./recording-errors.js";
 import { siteSlugFromUrl, parseCompositeName } from "./bowser-stories-service.js";
 import { getRunsDir } from "./paths.js";
@@ -168,14 +169,34 @@ function broadcast(progress: RecordingProgress): void {
   console.log("[recording] progress", progress.phase, progress.message);
 }
 
-export async function checkRecordingAvailability(codexBinaryPath: string | null): Promise<RecordingAvailability> {
-  let codexAvailable = false;
+type RecordingAgentSettings = {
+  agentProvider: AgentProvider;
+  codexBinaryPath: string | null;
+  claudeBinaryPath: string | null;
+  codexModel: string;
+  codexEffort: string;
+  claudeModel: string;
+  claudeEffort: string;
+};
+
+function agentCliLabel(provider: AgentProvider): string {
+  return provider === "claude-code" ? "Claude Code" : "Codex";
+}
+
+export async function checkRecordingAvailability(
+  settings: RecordingAgentSettings,
+): Promise<RecordingAvailability> {
+  let agentAvailable = false;
   let playwrightAvailable = false;
   let browserInstalled = false;
 
   try {
-    await resolveCodexBinary(codexBinaryPath);
-    codexAvailable = true;
+    await resolveAgentBinary(
+      settings.agentProvider,
+      settings.codexBinaryPath,
+      settings.claudeBinaryPath,
+    );
+    agentAvailable = true;
   } catch {
     // not available
   }
@@ -203,8 +224,13 @@ export async function checkRecordingAvailability(codexBinaryPath: string | null)
     browserInstalled = (await resolveRecordingBrowser()).ready;
   }
 
-  console.log("[recording] availability check", { codexAvailable, playwrightAvailable, browserInstalled });
-  return { codexAvailable, playwrightAvailable, browserInstalled };
+  console.log("[recording] availability check", {
+    agentProvider: settings.agentProvider,
+    agentAvailable,
+    playwrightAvailable,
+    browserInstalled,
+  });
+  return { agentAvailable, playwrightAvailable, browserInstalled };
 }
 
 export async function installBrowser(): Promise<{ ok: boolean; error?: string }> {
@@ -286,7 +312,7 @@ function recordingFailureMessage(exitCode: number | null, stderr: string): strin
 export async function startRecording(
   name: string,
   url: string,
-  codexBinaryPath: string | null,
+  agentSettings: RecordingAgentSettings,
   overwriteStoryKey?: string,
 ): Promise<{
   ok: boolean;
@@ -320,16 +346,23 @@ export async function startRecording(
     return { ok: false, cancelled: true };
   }
 
-  const codexBinary = await resolveCodexBinary(codexBinaryPath).catch(() => null);
-  if (!codexBinary) {
-    const msg = "Codex CLI not found. Install Codex CLI (or set its path in Settings) to convert recordings.";
+  const agentLabel = agentCliLabel(agentSettings.agentProvider);
+  const agentBinary = await resolveAgentBinary(
+    agentSettings.agentProvider,
+    agentSettings.codexBinaryPath,
+    agentSettings.claudeBinaryPath,
+  ).catch(() => null);
+  if (!agentBinary) {
+    const msg = `${agentLabel} CLI not found. Install ${agentLabel} CLI (or set its path in Settings) to convert recordings.`;
     broadcast({
       phase: "error",
       message: msg,
-      errorTitle: "Codex CLI required",
+      errorTitle: `${agentLabel} CLI required`,
     });
-    return { ok: false, error: msg, errorTitle: "Codex CLI required" };
+    return { ok: false, error: msg, errorTitle: `${agentLabel} CLI required` };
   }
+
+  const agentConfig = getAgentRunConfig(agentSettings.agentProvider, agentSettings);
 
   // Step 1: spawn headed playwright codegen
   const playwright = resolvePlaywrightInvocation();
@@ -434,7 +467,7 @@ export async function startRecording(
         const storyId = overwrite?.storyId;
         const siteSlug = overwrite?.siteSlug ?? siteSlugFromUrl(url);
 
-        // Step 3: convert Playwright recording → Bowser YAML via Codex
+        // Step 3: convert Playwright recording → Bowser YAML via the configured agent
         broadcast({
           phase: "converting",
           message: "Converting with AI…",
@@ -445,18 +478,18 @@ export async function startRecording(
         await fs.writeFile(specCopyPath, script, "utf-8");
 
         try {
-          await convertRecordingWithCodex(
+          await convertRecordingWithAgent(
             script,
             draftDir,
-            codexBinary,
-            runsDir,
             {
               url,
               name,
               storyId,
               siteSlug,
+              provider: agentSettings.agentProvider,
+              agentBinary,
+              agentConfig,
             },
-            buildEnv,
             (message) => broadcast({ phase: "converting", message }),
           );
         } catch (err) {

@@ -82,6 +82,10 @@
   --color-window-bg: var(--bg);
   --glass-bg: var(--bg-secondary);
   --glass-bg-elevated: var(--bg-elevated);
+  --window-bg-opacity: 1;
+  --window-bg-blur: 0px;
+  --window-bg-saturate: 100%;
+  --window-opacity-transition: 180ms cubic-bezier(0.32, 0.72, 0, 1);
   --glass-highlight: transparent;
   --glass-shadow: transparent;
   --accent-contrast: #ffffff;
@@ -147,6 +151,35 @@
   --color-window-outline: rgb(255 255 255 / 8%);
 }
 
+html {
+  transition:
+    --window-bg-opacity var(--window-opacity-transition),
+    --window-bg-blur var(--window-opacity-transition),
+    --window-bg-saturate var(--window-opacity-transition);
+}
+
+html.window-opacity-dragging {
+  transition: none;
+}
+
+@property --window-bg-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+@property --window-bg-blur {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --window-bg-saturate {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 100%;
+}
+
 html,
 body,
 #root {
@@ -168,8 +201,22 @@ body,
 .mac-window-chrome #root {
   overflow: hidden;
   border-radius: var(--radius-window);
-  background: var(--color-window-bg);
+  background: rgb(from var(--color-window-bg) r g b / var(--window-bg-opacity));
   box-shadow: inset 0 0 0 1px var(--color-window-outline);
+}
+
+.window-opacity-active.mac-window-chrome #root {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* macOS uses native vibrancy for blur; CSS backdrop-filter conflicts with it. */
+.window-opacity-active:not(.mac-window-chrome) body,
+.window-opacity-active:not(.mac-window-chrome) .main-pane,
+.window-opacity-active:not(.mac-window-chrome) .bg-surface-sidebar,
+.window-opacity-active:not(.mac-window-chrome) .bg-main-surface {
+  backdrop-filter: blur(var(--window-bg-blur)) saturate(var(--window-bg-saturate));
+  -webkit-backdrop-filter: blur(var(--window-bg-blur)) saturate(var(--window-bg-saturate));
 }
 
 #root {
@@ -179,7 +226,7 @@ body,
 }
 
 body {
-  background: var(--color-window-bg);
+  background: rgb(from var(--color-window-bg) r g b / var(--window-bg-opacity));
   color: var(--color-text-primary);
   font-family: var(--font-family-body);
   font-size: 12px;
@@ -328,7 +375,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 0.25rem 0.5rem 0.75rem 0.5rem;
+  padding: 0.25rem calc(var(--spacing) * 2) 0.75rem calc(var(--spacing) * 2);
+}
+
+.sidebar-footer-settings button {
+  width: 1.75rem;
+  height: 1.75rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  border-radius: var(--radius-pill);
+}
+
+.sidebar-footer-settings .lucide {
+  display: block;
 }
 
 /* Flat surfaces — no backdrop-filter (Codex-style, avoids GPU compositor bugs) */
@@ -340,7 +399,11 @@ body {
 }
 
 .bg-surface-sidebar {
-  background-color: var(--color-surface-sidebar);
+  background-color: rgb(from var(--color-surface-sidebar) r g b / var(--window-bg-opacity));
+}
+
+.bg-main-surface {
+  background: rgb(from var(--bg) r g b / var(--window-bg-opacity));
 }
 
 .liquid-glass-edge {
@@ -457,6 +520,7 @@ button.bg-accent:disabled {
 /* Thin monoline stroke for toolbar & sidebar action buttons (not timeline rows). */
 .detail-view-toolbar-actions .lucide,
 .sidebar-action-buttons .lucide,
+.sidebar-footer-settings .lucide,
 .home-actions .lucide,
 .segment-control .lucide {
   stroke-width: 1.75;

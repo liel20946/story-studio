@@ -30,6 +30,9 @@ import {
   settingsGet,
 } from "../lib/ipc";
 import type { RecordingAvailability } from "../lib/contract-types";
+import { formatAgentCliLabel } from "../lib/chat-model-selection";
+import { getCachedAppSettings } from "../lib/settings-cache";
+import { normalizeAppSettings } from "../lib/app-settings";
 import { useRecording, type RecordingPhase } from "../lib/recording-store";
 
 // Prep (availability/install) phases live locally; recording phases come from
@@ -51,7 +54,7 @@ function PhaseIcon({ phase }: { phase: Phase }) {
     case "starting":
     case "recording":
     case "converting":
-      return <Loader2Icon className="size-4 animate-spin text-tertiary" />;
+      return <Loader2Icon className="size-4 animate-spin text-accent" />;
     case "done":
       return <CheckCircle2Icon className="size-4 text-support-green" />;
     case "error":
@@ -136,9 +139,10 @@ export function RecordView() {
         // Branch on the actual missing prerequisite. Only a genuinely missing
         // Chromium gets the install button — a missing Codex CLI or Playwright
         // is a different problem (installing Chromium won't fix it).
-        if (!avail.codexAvailable) {
-          const message =
-            "Codex CLI not found. Install Codex CLI (or set its path in Settings) to record stories.";
+        if (!avail.agentAvailable) {
+          const provider = normalizeAppSettings(getCachedAppSettings()).agentProvider;
+          const agentLabel = formatAgentCliLabel(provider);
+          const message = `${agentLabel} CLI not found. Install ${agentLabel} CLI (or set its path in Settings) to record stories.`;
           setPrepPhase("error");
           setPrepMessage(message);
           reportAppError("Can't record", message);

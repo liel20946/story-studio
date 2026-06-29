@@ -237,7 +237,7 @@ function TimelineRow({ event, count = 1 }: { event: RunEvent; count?: number }) 
   return (
     <div className="timeline-row group">
       <div className="timeline-icon-wrap">{eventIcon(event.kind)}</div>
-      <span className="truncate text-[11px] font-medium leading-[15px] text-primary">
+      <span className="truncate text-[12px] font-medium leading-[16px] text-primary">
         {event.label}
         {count > 1 && (
           <span className="ml-1 tabular-nums text-tertiary">×{count}</span>
@@ -245,7 +245,7 @@ function TimelineRow({ event, count = 1 }: { event: RunEvent; count?: number }) 
       </span>
       <span
         className={cn(
-          "min-w-0 truncate text-[10px] leading-[13px] text-tertiary",
+          "min-w-0 truncate text-[12px] leading-[16px] text-tertiary",
           !isProse && "font-mono",
         )}
       >
@@ -525,7 +525,7 @@ function RunStatusHeader({
     <div className="run-rail-meta">
       {running ? (
         <>
-          <Loader2Icon className="size-3 shrink-0 animate-spin text-support-blue" />
+          <Loader2Icon className="size-3 shrink-0 animate-spin text-accent" />
           <Badge color="blue" size="xs">
             Running
           </Badge>
@@ -765,7 +765,7 @@ export function HistoryRunDetailView() {
     return (
       <ScrollArea title="Loading…">
         <div className="flex items-center gap-2 detail-view">
-          <Loader2Icon className="size-4 animate-spin text-tertiary" />
+          <Loader2Icon className="size-4 animate-spin text-accent" />
           <Text variant="small" color="tertiary">
             Loading run…
           </Text>

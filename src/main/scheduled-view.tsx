@@ -185,12 +185,9 @@ function ScheduleRail({
   return (
     <aside className="detail-rail detail-rail--card">
       <div className="codex-section">
-        <span className="section-label">Schedule</span>
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
-            <Text variant="small" color="secondary">
-              Name
-            </Text>
+            <span className="section-label !mb-0">Name</span>
             <Input
               value={name}
               onChange={(e) => onNameChange(e.target.value)}
@@ -200,9 +197,7 @@ function ScheduleRail({
           </label>
 
           <div className="flex flex-col gap-1.5">
-            <Text variant="small" color="secondary">
-              Run at
-            </Text>
+            <span className="section-label !mb-0">Run at</span>
             <SchedulePicker
               value={timing}
               onChange={onTimingChange}
@@ -558,7 +553,7 @@ export function ScheduledEditorView({ scheduleId }: { scheduleId?: string }) {
   if (!isNew && (scheduleQuery.isLoading || !initialized)) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2Icon className="size-5 animate-spin text-tertiary" />
+        <Loader2Icon className="size-5 animate-spin text-accent" />
       </div>
     );
   }
@@ -618,7 +613,7 @@ export function ScheduledEditorView({ scheduleId }: { scheduleId?: string }) {
 
   return (
     <ScrollArea toolbar={<ScheduledToolbar title={title} actions={toolbarActions} />}>
-      <div className="detail-view main-panel-in px-8 py-4 pb-8">
+      <div className="detail-view px-8 py-4 pb-8">
         <div className="detail-view-main min-w-0 flex-1">
           <div className="codex-section">
             <span className="section-label">Stories</span>

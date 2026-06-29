@@ -4,6 +4,7 @@ import type { GenerateMessage } from "@/lib/contract-types";
 import { clipboardWriteText } from "@/lib/ipc";
 import { DraftStoryCard } from "./draft-story-card";
 import { GenerateAgentActivity } from "./agent-activity";
+import { AssistantMarkdown } from "./assistant-markdown";
 
 function UserMessageBubble({ text }: { text: string }) {
   const [copied, setCopied] = React.useState(false);
@@ -55,11 +56,13 @@ export function ChatMessageList({
   draftMd,
   statusMessage,
   pendingUserMessage,
+  latestDraftRef,
 }: {
   messages: GenerateMessage[];
   draftMd?: string;
   statusMessage?: string | null;
   pendingUserMessage?: string | null;
+  latestDraftRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const latestDraftIndex = messages.reduce(
     (acc, m, i) => (m.kind === "draft" ? i : acc),
@@ -79,27 +82,30 @@ export function ChatMessageList({
         }
         if (message.kind === "status" || message.kind === "assistant") {
           return (
-            <p key={`${message.at}-${index}`} className="generate-assistant-line">
-              {message.text}
-            </p>
+            <div key={`${message.at}-${index}`} className="generate-assistant-line">
+              <AssistantMarkdown text={message.text} />
+            </div>
           );
         }
         if (message.kind === "error") {
           return (
-            <p key={`${message.at}-${index}`} className="generate-assistant-line">
+            <div key={`${message.at}-${index}`} className="generate-assistant-line">
               <span className="generate-assistant-error-label">Couldn't generate draft. </span>
-              {message.text}
-            </p>
+              <AssistantMarkdown text={message.text} />
+            </div>
           );
         }
         if (message.kind === "draft") {
           const isLatest = index === latestDraftIndex;
           return (
-            <div key={`${message.at}-${index}`} className="generate-draft-block">
+            <div
+              key={`${message.at}-${index}`}
+              ref={isLatest ? latestDraftRef : undefined}
+              className="generate-draft-block"
+            >
               <DraftStoryCard
                 title={message.storyTitle}
-                summary={message.summary}
-                body={isLatest ? draftMd : undefined}
+                body={isLatest ? (draftMd ?? message.draftMd) : message.draftMd}
               />
             </div>
           );

@@ -1,9 +1,10 @@
-import { spawn, type ChildProcess } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { stringify as stringifyYaml } from "yaml";
+import type { AgentProvider } from "./contract-types.js";
+import type { AgentRunConfig } from "./agent-config.js";
 import { BOWSER_STORY_FORMAT } from "./story-skill.js";
-import { buildCodexConversionConfigArgs } from "./codex-mcp-config.js";
+import { invokeGenerateAgent } from "./agent-generate-runner.js";
 import {
   normalizeBowserEntryForStorage,
   validateBowserEntry,
@@ -11,9 +12,6 @@ import {
   type BowserStoryEntry,
 } from "./bowser-stories-service.js";
 import { parseDraftYamlSnippet } from "./stories-service.js";
-
-const CONVERSION_MODEL = "gpt-5.5";
-const CONVERSION_TIMEOUT_MS = 120_000;
 
 export function buildRecordingConversionPrompt(
   script: string,
@@ -85,31 +83,6 @@ export function parseAgentMessageFromCodexStdout(stdout: string): string {
   return lastAgentMessage;
 }
 
-function progressFromCodexLine(line: string): string | null {
-  try {
-    const parsed = JSON.parse(line) as Record<string, unknown>;
-    const type = parsed["type"] as string | undefined;
-    if (type === "turn.started") {
-      return "Converting recording using AI…";
-    }
-    if (type === "item.started") {
-      const item = parsed["item"] as Record<string, unknown> | undefined;
-      if (item?.["type"] === "reasoning") {
-        return "Analyzing recording using AI…";
-      }
-      if (item?.["type"] === "command_execution") {
-        return "Processing recording using AI… (retry if this hangs)";
-      }
-    }
-    if (type === "turn.completed" || type === "item.completed") {
-      return "Finishing story using AI…";
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
 function normalizeConvertedEntry(
   entry: BowserStoryEntry,
   options: { url: string; name?: string; storyId?: string },
@@ -134,13 +107,22 @@ function normalizeConvertedEntry(
   return normalized;
 }
 
-export async function convertRecordingWithCodex(
+function agentProviderLabel(provider: AgentProvider): string {
+  return provider === "claude-code" ? "Claude Code" : "Codex";
+}
+
+export async function convertRecordingWithAgent(
   script: string,
   outputDir: string,
-  codexBinary: string,
-  _runsDir: string,
-  options: { url: string; name?: string; storyId?: string; siteSlug: string },
-  buildEnv: () => NodeJS.ProcessEnv,
+  options: {
+    url: string;
+    name?: string;
+    storyId?: string;
+    siteSlug: string;
+    provider: AgentProvider;
+    agentBinary: string;
+    agentConfig: AgentRunConfig;
+  },
   onProgress?: (message: string) => void,
 ): Promise<{ draftYaml: string }> {
   await fs.mkdir(outputDir, { recursive: true });
@@ -150,121 +132,51 @@ export async function convertRecordingWithCodex(
     storyId: options.storyId,
     siteSlug: options.siteSlug,
   });
-  const lastMessagePath = path.join(outputDir, "codex-last-message.txt");
+  const invocationId = `recording:${path.basename(outputDir)}`;
 
-  const convertArgs = [
-    "exec",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "--skip-git-repo-check",
-    "--ephemeral",
-    "--json",
-    "--ignore-user-config",
-    "-C",
-    outputDir,
-    "-c",
-    `model="${CONVERSION_MODEL}"`,
-    ...buildCodexConversionConfigArgs(),
-    "-o",
-    lastMessagePath,
-    convertPrompt,
-  ];
-
-  console.log("[recording] spawning codex for conversion", {
+  console.log("[recording] converting with agent", {
     name: options.name,
-    codexBinary,
+    provider: options.provider,
+    model: options.agentConfig.model,
     storyId: options.storyId,
-    lastMessagePath,
   });
 
-  const agentMessage = await new Promise<string>((resolve, reject) => {
-    let stdout = "";
-    let stderr = "";
-    let stdoutBuffer = "";
-    let settled = false;
-    let child: ChildProcess | null = null;
+  onProgress?.("Converting recording using AI…");
 
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      fn();
-    };
-
-    const timer = setTimeout(() => {
-      console.error("[recording] codex conversion timed out", { storyId: options.storyId });
-      try {
-        child?.kill("SIGTERM");
-      } catch {
-        // ignore
-      }
-      finish(() => {
-        reject(
-          new Error(
-            "Codex conversion timed out after 2 minutes. Try again, or check that Codex CLI is logged in.",
-          ),
-        );
-      });
-    }, CONVERSION_TIMEOUT_MS);
-
-    child = spawn(codexBinary, convertArgs, {
-      cwd: outputDir,
-      env: buildEnv(),
-      stdio: ["ignore", "pipe", "pipe"],
+  let agentMessage: string;
+  try {
+    const invokeResult = await invokeGenerateAgent({
+      conversationId: invocationId,
+      invocationId,
+      prompt: convertPrompt,
+      outputDir,
+      provider: options.provider,
+      agentBinary: options.agentBinary,
+      agentConfig: options.agentConfig,
+      exploring: false,
+      ephemeral: true,
+      onProgress: (message) => onProgress?.(message),
     });
-
-    child.stdout?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf-8");
-      stdout += text;
-      stdoutBuffer += text;
-      const lines = stdoutBuffer.split("\n");
-      stdoutBuffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const progress = progressFromCodexLine(line);
-        if (progress) onProgress?.(progress);
-      }
-    });
-
-    child.stderr?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf-8");
-      stderr += text;
-      const trimmed = text.trim();
-      if (trimmed) console.error("[recording] convert stderr:", trimmed);
-    });
-
-    child.on("error", (err) => {
-      finish(() => reject(new Error(`Codex conversion failed: ${err.message}`)));
-    });
-
-    child.on("close", async (code) => {
-      try {
-        let message = "";
-        try {
-          message = (await fs.readFile(lastMessagePath, "utf-8")).trim();
-        } catch {
-          // fall back to JSONL parsing
-        }
-        if (!message) {
-          message = parseAgentMessageFromCodexStdout(stdout);
-        }
-        if (!message.trim()) {
-          const detail = stderr.trim() || `exit code ${code ?? "?"}`;
-          finish(() => reject(new Error(`Codex did not produce story content. ${detail}`)));
-          return;
-        }
-        finish(() => resolve(message));
-      } catch (err) {
-        finish(() => reject(err));
-      }
-    });
-  });
+    agentMessage = invokeResult.message;
+  } catch (err) {
+    const label = agentProviderLabel(options.provider);
+    const detail = err instanceof Error ? err.message : String(err);
+    if (detail.includes("timed out")) {
+      throw new Error(
+        `${label} conversion timed out. Try again, or check that ${label} CLI is logged in.`,
+      );
+    }
+    throw new Error(`${label} conversion failed: ${detail}`);
+  }
 
   const yamlSnippet = extractYamlFromAgentMessage(agentMessage);
   let entry: BowserStoryEntry;
   try {
     entry = parseDraftYamlSnippet(yamlSnippet);
   } catch (err) {
+    const label = agentProviderLabel(options.provider);
     throw new Error(
-      `Codex returned invalid YAML: ${err instanceof Error ? err.message : String(err)}`,
+      `${label} returned invalid YAML: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 

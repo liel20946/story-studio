@@ -6,7 +6,7 @@ import {
   ListChecksIcon,
   ChevronRightIcon,
   FolderPlusIcon,
-  SparklesIcon,
+  BotIcon,
   Loader2Icon,
 } from "lucide-react";
 import { Button, Dialog, Input, Badge } from "@/components/ui";
@@ -112,9 +112,9 @@ export function HomeView() {
                 className="accent-cta accent-cta--secondary"
               >
                 {startingGenerate ? (
-                  <Loader2Icon className="size-4 animate-spin" />
+                  <Loader2Icon className="size-4 animate-spin text-accent" />
                 ) : (
-                  <SparklesIcon className="size-4" />
+                  <BotIcon className="size-4" />
                 )}
                 Generate story
               </button>
@@ -154,9 +154,9 @@ export function HomeView() {
                 onClick={() => void handleGenerateNew()}
               >
                 {startingGenerate ? (
-                  <Loader2Icon className="size-4 animate-spin" />
+                  <Loader2Icon className="size-4 animate-spin text-accent" />
                 ) : (
-                  <SparklesIcon className="size-4" />
+                  <BotIcon className="size-4" />
                 )}
                 Generate story
               </Button>

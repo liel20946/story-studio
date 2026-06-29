@@ -15,6 +15,7 @@ import type {
   GenerateConversation,
   GenerateConversationSummary,
   GenerateConversationDetail,
+  AgentModelOverride,
 } from "./contract-types";
 
 export function ipcInvoke<Res>(channel: string, req?: unknown): Promise<Res> {
@@ -158,12 +159,17 @@ export const settingsSet = (
       | "colorThemePaletteDark"
       | "colorThemeContrastLight"
       | "colorThemeContrastDark"
+      | "colorThemeOpacityLight"
+      | "colorThemeOpacityDark"
       | "usePointerCursors"
       | "startingUrl"
       | "runHook"
     >
   >,
 ): Promise<AppSettings> => ipcInvoke("settings:set", patch);
+
+export const settingsPreviewOpacity = (opacity: number): Promise<void> =>
+  ipcInvoke("settings:preview-opacity", { opacity });
 
 export const openSettings = (): Promise<void> =>
   ipcInvoke("window:openSettings");
@@ -289,8 +295,9 @@ export const generateGet = (
 export const generateSend = (
   conversationId: string,
   text: string,
+  modelOverride?: AgentModelOverride,
 ): Promise<{ ok: true; conversation: GenerateConversation }> =>
-  ipcInvoke("generate:send", { conversationId, text });
+  ipcInvoke("generate:send", { conversationId, text, modelOverride });
 
 export const generateApprove = (
   conversationId: string,

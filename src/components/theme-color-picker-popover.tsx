@@ -197,9 +197,9 @@ export function ThemeColorPickerPopover({
         <label className="theme-color-picker-rgb-field">
           <span>R</span>
           <input
-            type="number"
-            min={0}
-            max={255}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={r}
             onChange={(event) => {
               const next = clamp(Number(event.target.value), 0, 255);
@@ -210,9 +210,9 @@ export function ThemeColorPickerPopover({
         <label className="theme-color-picker-rgb-field">
           <span>G</span>
           <input
-            type="number"
-            min={0}
-            max={255}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={g}
             onChange={(event) => {
               const next = clamp(Number(event.target.value), 0, 255);
@@ -223,9 +223,9 @@ export function ThemeColorPickerPopover({
         <label className="theme-color-picker-rgb-field">
           <span>B</span>
           <input
-            type="number"
-            min={0}
-            max={255}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={b}
             onChange={(event) => {
               const next = clamp(Number(event.target.value), 0, 255);

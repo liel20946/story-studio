@@ -14,6 +14,7 @@ export function setCachedAppSettings(
     ...(cachedAppSettings ?? {}),
     ...settings,
   });
+  window.dispatchEvent(new CustomEvent("story-studio:settings-changed"));
   return cachedAppSettings;
 }
 

@@ -69,7 +69,7 @@ function statusIcon(status: LiveStatus): React.ReactNode {
     case "cancelled":
       return <XIcon className="size-4 text-secondary" />;
     default:
-      return <Loader2Icon className="size-4 animate-spin text-support-blue" />;
+      return <Loader2Icon className="size-4 animate-spin text-accent" />;
   }
 }
 

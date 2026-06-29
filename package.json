@@ -1,6 +1,6 @@
 {
   "name": "story-studio",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "productName": "Story Studio",
   "description": "Record and run automated browser tests",
   "private": true,
@@ -16,7 +16,8 @@
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
-    "dist:publish": "npm run build && electron-builder --publish always",
+    "dist:publish": "node scripts/publish-release.mjs",
+    "upload-update-metadata": "node scripts/upload-update-metadata.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {

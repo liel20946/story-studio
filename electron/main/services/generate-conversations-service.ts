@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { app } from "../electron-api.js";
 import { broadcast } from "../broadcast.js";
 import type {
+  AgentProvider,
   GenerateConversation,
   GenerateConversationSummary,
   GenerateMessage,
@@ -129,6 +130,20 @@ export async function setConversationGenerating(
   const conversation = await loadConversation(conversationId);
   if (!conversation) throw new Error(`Conversation not found: ${conversationId}`);
   conversation.generating = generating;
+  await saveConversation(conversation);
+  return conversation;
+}
+
+export async function markConversationAgentSession(
+  conversationId: string,
+  provider: AgentProvider,
+  codexSessionId?: string,
+): Promise<GenerateConversation> {
+  const conversation = await loadConversation(conversationId);
+  if (!conversation) throw new Error(`Conversation not found: ${conversationId}`);
+  conversation.agentSessionEstablished = true;
+  conversation.agentSessionProvider = provider;
+  if (codexSessionId) conversation.codexSessionId = codexSessionId;
   await saveConversation(conversation);
   return conversation;
 }

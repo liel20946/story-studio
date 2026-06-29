@@ -23,13 +23,18 @@ import {
   completeConversation,
   loadConversation,
   listConversationSummaries,
+  markConversationAgentSession,
   saveConversation,
   setConversationGenerating,
   updateConversationTitle,
 } from "./generate-conversations-service.js";
 import { createDraftDir, parseDraftYamlSnippet, saveDraftToLibrary } from "./stories-service.js";
 import { getDraftsDir } from "./paths.js";
-import { buildGeneratePrompt } from "./story-skill.js";
+import {
+  buildGeneratePrompt,
+  buildGenerateResumePrompt,
+  GENERATE_STORY_PLAYBOOK,
+} from "./story-skill.js";
 import {
   cancelGenerateInvocation,
   GenerateCancelledError,
@@ -144,6 +149,42 @@ type GenerateSettings = {
   claudeEffort: string;
 };
 
+export interface AgentModelOverride {
+  model: string;
+  effort: string;
+}
+
+function withAgentModelOverride(
+  settings: GenerateSettings,
+  override?: AgentModelOverride,
+): GenerateSettings {
+  if (!override) return settings;
+  if (settings.agentProvider === "claude-code") {
+    return { ...settings, claudeModel: override.model, claudeEffort: override.effort };
+  }
+  return { ...settings, codexModel: override.model, codexEffort: override.effort };
+}
+
+function canResumeAgentSession(
+  conversation: GenerateConversation,
+  provider: AgentProvider,
+): boolean {
+  if (!conversation.agentSessionEstablished) return false;
+  if (conversation.agentSessionProvider && conversation.agentSessionProvider !== provider) {
+    return false;
+  }
+  if (provider === "codex" && !conversation.codexSessionId?.trim()) return false;
+  return true;
+}
+
+function resolveProviderSessionId(
+  conversation: GenerateConversation,
+  provider: AgentProvider,
+): string | undefined {
+  if (provider === "claude-code") return conversation.id;
+  return conversation.codexSessionId;
+}
+
 async function suggestConversationTitle(
   conversationId: string,
   userMessage: string,
@@ -168,9 +209,10 @@ async function suggestConversationTitle(
     agentBinary,
     agentConfig,
     exploring: false,
+    ephemeral: true,
   });
 
-  const title = parseTitleFromAgentResponse(raw);
+  const title = parseTitleFromAgentResponse(raw.message);
   if (title) {
     await updateConversationTitle(conversationId, title);
   }
@@ -200,7 +242,9 @@ export async function sendGenerateMessage(
   conversationId: string,
   text: string,
   settings: GenerateSettings,
+  modelOverride?: AgentModelOverride,
 ): Promise<GenerateConversation> {
+  const agentSettings = withAgentModelOverride(settings, modelOverride);
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Message cannot be empty");
 
@@ -215,7 +259,6 @@ export async function sendGenerateMessage(
 
   const userCount = conversation.messages.filter((m) => m.kind === "user").length;
   const isFirstTurn = userCount === 0;
-  const exploring = isFirstTurn;
 
   if (isFirstTurn) {
     const url = extractUrlFromText(trimmed);
@@ -226,7 +269,7 @@ export async function sendGenerateMessage(
         at: Date.now(),
       };
       await appendMessage(conversationId, { kind: "user", text: trimmed, at: Date.now() });
-      void suggestConversationTitle(conversationId, trimmed, settings)
+      void suggestConversationTitle(conversationId, trimmed, agentSettings)
         .then(() => broadcastChanged())
         .catch(() => {
           // keep default title
@@ -239,18 +282,12 @@ export async function sendGenerateMessage(
 
   await appendMessage(conversationId, { kind: "user", text: trimmed, at: Date.now() });
   if (isFirstTurn) {
-    void suggestConversationTitle(conversationId, trimmed, settings)
+    void suggestConversationTitle(conversationId, trimmed, agentSettings)
       .then(() => broadcastChanged())
       .catch(() => {
         // keep default title
       });
   }
-  await setConversationGenerating(conversationId, true);
-  broadcast("generate:progress", {
-    conversationId,
-    message: exploring ? "Planning next moves" : "Reviewing your draft",
-  });
-  await broadcastChanged();
 
   const refreshed = (await loadConversation(conversationId))!;
   const transcript = buildTranscript(
@@ -258,6 +295,7 @@ export async function sendGenerateMessage(
   );
 
   let currentDraftYaml: string | undefined;
+  const hadDraftMessage = refreshed.messages.some((m) => m.kind === "draft");
   if (refreshed.draftId) {
     try {
       currentDraftYaml = await fs.readFile(
@@ -265,25 +303,45 @@ export async function sendGenerateMessage(
         "utf-8",
       );
     } catch {
-      if (!isFirstTurn) {
+      if (hadDraftMessage) {
         throw new Error("Draft files are missing — cannot revise.");
       }
     }
   }
 
-  const prompt = buildGeneratePrompt({
-    userMessage: trimmed,
-    transcript,
-    currentDraftYaml,
-    isFirstTurn,
+  const exploring = !currentDraftYaml?.trim();
+  const resumeSession = canResumeAgentSession(refreshed, agentSettings.agentProvider);
+  const enteringRevision = resumeSession && !exploring;
+
+  await setConversationGenerating(conversationId, true);
+  broadcast("generate:progress", {
+    conversationId,
+    message: exploring ? "Planning next moves" : "Reviewing your draft",
   });
+  await broadcastChanged();
+
+  const prompt = resumeSession
+    ? buildGenerateResumePrompt({
+        userMessage: trimmed,
+        currentDraftYaml,
+        exploring,
+        enteringRevision,
+      })
+    : buildGeneratePrompt({
+        userMessage: trimmed,
+        transcript,
+        currentDraftYaml,
+        isFirstTurn,
+        exploring,
+      });
 
   const agentBinary = await resolveAgentBinary(
-    settings.agentProvider,
-    settings.codexBinaryPath,
-    settings.claudeBinaryPath,
+    agentSettings.agentProvider,
+    agentSettings.codexBinaryPath,
+    agentSettings.claudeBinaryPath,
   );
-  const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
+  const agentConfig = getAgentRunConfig(agentSettings.agentProvider, agentSettings);
+  const sessionId = resolveProviderSessionId(refreshed, agentSettings.agentProvider);
 
   let draftDir = refreshed.draftId
     ? path.join(getDraftsDir(), refreshed.draftId)
@@ -308,30 +366,49 @@ export async function sendGenerateMessage(
       _activeGenerations.set(conversationId, { playwrightHeld: true });
     }
 
-    agentMessage = await invokeGenerateAgent({
+    const invokeResult = await invokeGenerateAgent({
       conversationId,
       prompt,
       outputDir: draftDir,
-      provider: settings.agentProvider,
+      provider: agentSettings.agentProvider,
       agentBinary,
       agentConfig,
       exploring,
+      sessionId,
+      resumeSession,
+      systemPrompt: resumeSession ? undefined : GENERATE_STORY_PLAYBOOK,
       onProgress: (message) => {
         broadcast("generate:progress", { conversationId, message });
       },
     });
+    agentMessage = invokeResult.message;
+
+    if (!resumeSession) {
+      const codexSessionId = invokeResult.codexSessionId;
+      if (
+        agentSettings.agentProvider === "claude-code" ||
+        (agentSettings.agentProvider === "codex" && codexSessionId)
+      ) {
+        await markConversationAgentSession(
+          conversationId,
+          agentSettings.agentProvider,
+          codexSessionId,
+        );
+      }
+    }
 
     const yamlSnippet = parseGeneratedYaml(agentMessage);
     const entry = parseDraftYamlSnippet(yamlSnippet);
     const url = extractUrlFromText(trimmed) ?? entry.url ?? "https://example.com";
     const normalized = normalizeGeneratedEntry(entry, url);
-    await writeDraftArtifacts(draftDir, normalized);
+    const { draftMd } = await writeDraftArtifacts(draftDir, normalized);
 
     const draftMessage: GenerateMessage = {
       kind: "draft",
       at: Date.now(),
       storyTitle: normalized.name,
       summary: summarizeEntry(normalized),
+      draftMd,
     };
     await appendMessage(conversationId, draftMessage);
   } catch (err) {

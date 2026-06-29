@@ -117,6 +117,16 @@ export const GENERATE_STORY_PLAYBOOK = `You are generating a Bowser YAML v2 UI s
 3. Prefer stable, user-facing flows: navigation, search/filter, forms, article/detail pages.
 4. Capture meaningful actions only — prefer user-facing descriptions over brittle selectors.
 
+## Login credentials (required when the flow needs sign-in)
+- If the flow requires login — the site shows a sign-in gate, the user mentions logging in, or you cannot proceed without authentication — you MUST have real credentials before attempting login.
+- Look for credentials in the user's message and the conversation so far (email/username, password, or other auth fields).
+- If login is required and credentials are NOT provided:
+  1. Do NOT attempt login with placeholder, example, or guessed values.
+  2. Do NOT return YAML yet.
+  3. Reply in plain prose asking the user for the required login details. Be specific (e.g. email and password).
+- Once credentials are provided, perform the real login in the browser, complete the flow, and put the supplied values in \`variables:\` (e.g. login_email, login_password) referenced in Fill steps.
+- For non-login inputs that are still unknown, you may use sensible placeholders in \`variables:\`.
+
 ${BOWSER_STORY_FORMAT}
 
 ## Output requirements
@@ -126,8 +136,8 @@ ${BOWSER_STORY_FORMAT}
 - workflow = action steps only; assertions = checks with \`@N\` prefixes (not in workflow).
 - Include at least one assertion. For dynamic values, verify format/pattern not exact literals.
 - Do NOT write files or append to any story library.
-- Never ask clarifying questions in prose — if login or other inputs are unknown, add them to \`variables:\` with sensible placeholder values (e.g. login_email: user@example.com) and reference them in Fill steps.
-- Return ONLY the YAML document — no markdown fences, no explanation.`;
+- When login is required but credentials are missing, reply with plain prose only — no YAML.
+- When the story is complete, return ONLY the YAML document — no markdown fences, no explanation.`;
 
 export const DRAFT_REVISION_PLAYBOOK = `IMPORTANT: This is a TEXT-ONLY revision. Do NOT open a browser, run shell commands, install packages, or use any MCP/tools.
 
@@ -145,11 +155,13 @@ export interface GeneratePromptContext {
   transcript: string;
   currentDraftYaml?: string;
   isFirstTurn: boolean;
+  /** True while no draft YAML exists yet — browser exploration is allowed. */
+  exploring: boolean;
 }
 
 /** Build the full prompt for a generate conversation turn. */
 export function buildGeneratePrompt(ctx: GeneratePromptContext): string {
-  const base = ctx.isFirstTurn ? GENERATE_STORY_PLAYBOOK : DRAFT_REVISION_PLAYBOOK;
+  const base = ctx.exploring ? GENERATE_STORY_PLAYBOOK : DRAFT_REVISION_PLAYBOOK;
   const parts = [base, "\n\n## User request\n", ctx.userMessage.trim()];
   if (ctx.transcript.trim()) {
     parts.push("\n\n## Conversation so far\n", ctx.transcript.trim());
@@ -162,6 +174,34 @@ export function buildGeneratePrompt(ctx: GeneratePromptContext): string {
       "\n\nThe user's message must include a target URL (https://…). If no URL is present, reply with a single line: ERROR: missing URL",
     );
   }
+  return parts.join("");
+}
+
+export interface GenerateResumePromptContext {
+  userMessage: string;
+  currentDraftYaml?: string;
+  exploring: boolean;
+  /** First revision turn after a draft was produced in this session. */
+  enteringRevision?: boolean;
+}
+
+/** Incremental follow-up for an established provider session (no full playbook replay). */
+export function buildGenerateResumePrompt(ctx: GenerateResumePromptContext): string {
+  const userMessage = ctx.userMessage.trim();
+  if (ctx.exploring) {
+    return userMessage;
+  }
+
+  const parts = [`Revise the draft based on this feedback:\n${userMessage}`];
+  if (ctx.enteringRevision) {
+    parts.push(
+      "\n\nSwitch to text-only revision now: do NOT open a browser, run shell commands, install packages, or use any MCP/tools.",
+    );
+  }
+  if (ctx.currentDraftYaml?.trim()) {
+    parts.push("\n\n## Current draft YAML\n```yaml\n", ctx.currentDraftYaml.trim(), "\n```");
+  }
+  parts.push("\n\nReturn ONLY the updated YAML document — no markdown fences, no explanation.");
   return parts.join("");
 }
 

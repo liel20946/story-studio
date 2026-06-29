@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   PlayIcon,
   Loader2Icon,
@@ -36,31 +36,7 @@ import type { StoryDetail } from "../lib/contract-types";
 import { InlineCode, stripCode } from "../components/inline-code";
 import { RailAssertionLine } from "../components/rail-assertion-line";
 import { useActiveRunForStory, useRegisterRun } from "../lib/run-store";
-// ---------- per-variable colors ----------
-// Each variable name gets a stable color from the design-system support palette
-// (cycled by definition order) so it reads the same in the Variables list and
-// wherever it's referenced in Steps/Assertions. `text` tints the name in the
-// Variables list; `chip` tints the inline-code chip in steps/assertions.
-const VAR_PALETTE: { text: string; chip: string }[] = [
-  { text: "text-support-blue", chip: "bg-support-blue-10 text-support-blue" },
-  { text: "text-support-purple", chip: "bg-support-purple-10 text-support-purple" },
-  { text: "text-support-green", chip: "bg-support-green-10 text-support-green" },
-  { text: "text-support-orange", chip: "bg-support-orange-10 text-support-orange" },
-  { text: "text-support-red", chip: "bg-support-red-10 text-support-red" },
-  { text: "text-support-yellow", chip: "bg-support-yellow-10 text-support-yellow" },
-];
-
-function buildVarColors(story: StoryDetail) {
-  const text: Record<string, string> = {};
-  const chip: Record<string, string> = {};
-  story.variables.forEach((v, i) => {
-    const key = stripCode(v.key);
-    const c = VAR_PALETTE[i % VAR_PALETTE.length];
-    text[key] = c.text;
-    chip[key] = c.chip;
-  });
-  return { text, chip };
-}
+import { buildVarColors } from "../lib/story-var-colors";
 
 // ---------- section (Steps on the left; Variables / Assertions on the rail) ----------
 function Section({
@@ -526,6 +502,35 @@ function ReadOnlyVariables({
   );
 }
 
+function StoryLoadingShell({ title }: { title: string }) {
+  return (
+    <ScrollArea
+      toolbar={
+        <Toolbar titlebar surface="main" seamless>
+          <ToolbarRow inset="main" className="main-titlebar-row detail-view-toolbar">
+            <ToolbarContent className="detail-view-toolbar-content">
+              <ToolbarTitle>{title}</ToolbarTitle>
+            </ToolbarContent>
+          </ToolbarRow>
+        </Toolbar>
+      }
+    >
+      <div className="detail-view story-loading-shell">
+        <div className="detail-view-main story-sections">
+          <div className="codex-section">
+            <span className="section-label">Steps</span>
+            <div className="story-loading-shell-lines" aria-hidden>
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        </div>
+      </div>
+    </ScrollArea>
+  );
+}
+
 export function StoryView() {
   const { name } = useParams({ from: "/story/$name" });
   const navigate = useNavigate();
@@ -552,9 +557,6 @@ export function StoryView() {
   const storyQuery = useQuery({
     queryKey: ["stories:get", name],
     queryFn: () => storiesGet(name),
-    // Keep the previously-viewed story on screen while the next one loads so
-    // switching items doesn't flash the loading skeleton.
-    placeholderData: keepPreviousData,
   });
 
   const storiesListQuery = useQuery({
@@ -562,8 +564,8 @@ export function StoryView() {
     queryFn: storiesList,
   });
 
-  // Deleted stories stay in the stories:get cache (staleTime + keepPreviousData).
-  // Redirect home once the list no longer contains this story.
+  // Deleted stories stay in the stories:get cache; redirect home once the list
+  // no longer contains this story.
   React.useEffect(() => {
     const stories = storiesListQuery.data;
     if (!stories) return;
@@ -573,6 +575,9 @@ export function StoryView() {
   }, [storiesListQuery.data, name, navigate]);
 
   const story = storyQuery.isError ? undefined : storyQuery.data;
+  const storyReady = story?.name === name;
+  const storyTitle =
+    storiesListQuery.data?.find((s) => s.name === name)?.title ?? name;
   const activeRun = useActiveRunForStory(name, story?.title);
   const isEditingThisStory = editingStoryName === name;
 
@@ -581,17 +586,9 @@ export function StoryView() {
   const varColors = React.useMemo(() => {
     if (!story) return { text: {}, chip: {} };
     if (isEditingThisStory && draft) {
-      const pseudo: StoryDetail = {
-        ...story,
-        variables: draft.variables.map((v) => ({
-          key: v.key,
-          value: v.value,
-          secret: /password|secret|token/i.test(v.key),
-        })),
-      };
-      return buildVarColors(pseudo);
+      return buildVarColors(draft.variables);
     }
-    return buildVarColors(story);
+    return buildVarColors(story.variables);
   }, [story, isEditingThisStory, draft]);
 
   React.useEffect(() => {
@@ -680,36 +677,34 @@ export function StoryView() {
   }
 
   function handleRecordAgain() {
-    // Use the route param for the story id — query data can lag behind
-    // (keepPreviousData) when switching stories in the sidebar.
-    const baseUrl =
-      story?.name === name ? (story.baseUrl ?? "") : "";
-    const title = story?.name === name ? story.title : undefined;
+    const baseUrl = story.baseUrl ?? "";
     navigate({
       to: "/record",
-      search: { storyKey: name, title, url: baseUrl },
+      search: { storyKey: name, title: story.title, url: baseUrl },
     });
   }
 
-  if (storyQuery.isLoading) {
-    return (
-      <ScrollArea title="Story">
-        <div className="flex flex-col gap-4 detail-view">
-          {/* Skeleton */}
-          <div className="h-6 w-48 rounded-md bg-control animate-pulse" />
-          <div className="h-4 w-32 rounded-md bg-control animate-pulse" />
-          <div className="h-px bg-separator" />
-          <div className="flex flex-col gap-2">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-4 w-full rounded-md bg-control animate-pulse" />
-            ))}
-          </div>
-        </div>
-      </ScrollArea>
-    );
+  if (!storyReady) {
+    if (storyQuery.isError) {
+      return (
+        <ScrollArea title="Story">
+          <EmptyState
+            title="Story not found"
+            description="This story may have been deleted."
+            actions={
+              <Button variant="filled" onClick={() => navigate({ to: "/stories" })}>
+                Go back
+              </Button>
+            }
+          />
+        </ScrollArea>
+      );
+    }
+
+    return <StoryLoadingShell title={storyTitle} />;
   }
 
-  if (storyQuery.isError || !story) {
+  if (!story) {
     return (
       <ScrollArea title="Story">
         <EmptyState
@@ -755,7 +750,7 @@ export function StoryView() {
                     disabled={isSaving}
                   >
                     {isSaving ? (
-                      <Loader2Icon className="size-4 animate-spin" />
+                      <Loader2Icon className="size-4 animate-spin text-accent" />
                     ) : (
                       <CheckIcon className="size-4" />
                     )}

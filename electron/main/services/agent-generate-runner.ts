@@ -4,7 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import type { AgentProvider } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
-import { buildCodexMcpConfigArgs, buildCodexConversionConfigArgs } from "./codex-mcp-config.js";
+import { buildCodexMcpConfigArgs } from "./codex-mcp-config.js";
 import {
   extractYamlFromAgentMessage,
   parseAgentMessageFromCodexStdout,
@@ -47,6 +47,50 @@ function buildEnv(): NodeJS.ProcessEnv {
   };
 }
 
+function buildCodexModelConfigArgs(agentConfig: AgentRunConfig): string[] {
+  return [
+    "-c",
+    `model="${agentConfig.model}"`,
+    "-c",
+    `model_reasoning_effort="${agentConfig.effort}"`,
+  ];
+}
+
+function buildCodexSharedFlags(agentConfig: AgentRunConfig): string[] {
+  return [
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--skip-git-repo-check",
+    "--json",
+    "--ignore-user-config",
+    ...buildCodexModelConfigArgs(agentConfig),
+  ];
+}
+
+export function parseCodexSessionIdFromStdout(stdout: string): string | null {
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const type = parsed["type"] as string | undefined;
+      if (type === "session.configured" || type === "session_configured") {
+        const id =
+          (parsed["session_id"] as string | undefined) ??
+          (parsed["sessionId"] as string | undefined);
+        if (id?.trim()) return id.trim();
+      }
+      if (type === "session_meta") {
+        const payload = parsed["payload"] as Record<string, unknown> | undefined;
+        const id = payload?.["id"] as string | undefined;
+        if (id?.trim()) return id.trim();
+      }
+    } catch {
+      // ignore non-JSON lines
+    }
+  }
+  return null;
+}
+
 function progressFromCodexLine(line: string, exploring: boolean): string | null {
   try {
     const parsed = JSON.parse(line) as Record<string, unknown>;
@@ -64,7 +108,7 @@ function spawnTracked(
   timeoutMs: number,
   exploring: boolean,
   onProgress?: (message: string) => void,
-  parseStdout?: (stdout: string, lastMessagePath?: string) => Promise<string>,
+  parseStdout?: (stdout: string) => Promise<string>,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let stdout = "";
@@ -164,65 +208,109 @@ export interface GenerateInvokeOptions {
   agentBinary: string;
   agentConfig: AgentRunConfig;
   exploring: boolean;
+  /** Claude: stable session id (conversation uuid). Codex: rollout session id when resuming. */
+  sessionId?: string;
+  /** Continue an existing provider session instead of starting fresh. */
+  resumeSession?: boolean;
+  /** Claude first turn: playbook / system instructions. */
+  systemPrompt?: string;
+  /** One-off runs (e.g. title suggestion) that must not join the conversation session. */
+  ephemeral?: boolean;
   onProgress?: (message: string) => void;
 }
 
-export async function invokeGenerateAgent(options: GenerateInvokeOptions): Promise<string> {
+export interface GenerateInvokeResult {
+  message: string;
+  codexSessionId?: string;
+}
+
+export async function invokeGenerateAgent(
+  options: GenerateInvokeOptions,
+): Promise<GenerateInvokeResult> {
   const {
     conversationId,
     invocationId = conversationId,
-    prompt,
     outputDir,
     provider,
-    agentBinary,
-    agentConfig,
     exploring,
-    onProgress,
   } = options;
 
   await fs.mkdir(outputDir, { recursive: true });
   const timeoutMs = exploring ? GENERATE_TIMEOUT_MS : REVISION_TIMEOUT_MS;
 
   if (provider === "claude-code") {
-    return invokeClaude(options, timeoutMs);
+    const message = await invokeClaude(options, timeoutMs);
+    return { message };
   }
-  return invokeCodex(options, timeoutMs);
+  return invokeCodex(options, timeoutMs, invocationId);
 }
 
 async function invokeCodex(
   options: GenerateInvokeOptions,
   timeoutMs: number,
-): Promise<string> {
+  invocationId: string,
+): Promise<GenerateInvokeResult> {
   const {
-    conversationId,
-    invocationId = conversationId,
     prompt,
     outputDir,
     agentBinary,
     agentConfig,
     exploring,
+    sessionId,
+    resumeSession,
+    ephemeral,
     onProgress,
   } = options;
   const lastMessagePath = path.join(outputDir, "agent-last-message.txt");
 
+  const parseStdout = async (stdout: string) => {
+    try {
+      const fromFile = (await fs.readFile(lastMessagePath, "utf-8")).trim();
+      if (fromFile) return fromFile;
+    } catch {
+      // fall through
+    }
+    return parseAgentMessageFromCodexStdout(stdout);
+  };
+
+  if (resumeSession && sessionId) {
+    const args = [
+      "exec",
+      "resume",
+      ...buildCodexSharedFlags(agentConfig),
+      "-o",
+      lastMessagePath,
+      sessionId,
+      prompt,
+    ];
+
+    const message = await spawnTracked(
+      invocationId,
+      agentBinary,
+      args,
+      outputDir,
+      timeoutMs,
+      exploring,
+      onProgress,
+      parseStdout,
+    );
+    return { message };
+  }
+
   const args = [
     "exec",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "--skip-git-repo-check",
-    "--ephemeral",
-    "--json",
-    "--ignore-user-config",
+    ...buildCodexSharedFlags(agentConfig),
     "-C",
     outputDir,
-    "-c",
-    `model="${agentConfig.model}"`,
-    ...(exploring ? buildCodexMcpConfigArgs() : buildCodexConversionConfigArgs()),
+    ...(exploring ? buildCodexMcpConfigArgs() : []),
+    ...(ephemeral ? ["--ephemeral"] : []),
     "-o",
     lastMessagePath,
     prompt,
   ];
 
-  return spawnTracked(
+  let capturedStdout = "";
+  const message = await spawnTracked(
     invocationId,
     agentBinary,
     args,
@@ -231,15 +319,14 @@ async function invokeCodex(
     exploring,
     onProgress,
     async (stdout) => {
-      try {
-        const fromFile = (await fs.readFile(lastMessagePath, "utf-8")).trim();
-        if (fromFile) return fromFile;
-      } catch {
-        // fall through
-      }
-      return parseAgentMessageFromCodexStdout(stdout);
+      capturedStdout = stdout;
+      return parseStdout(stdout);
     },
   );
+
+  const parsedSessionId = parseCodexSessionIdFromStdout(capturedStdout);
+  const codexSessionId = ephemeral ? undefined : (parsedSessionId ?? undefined);
+  return { message, codexSessionId };
 }
 
 async function invokeClaude(
@@ -254,6 +341,9 @@ async function invokeClaude(
     agentBinary,
     agentConfig,
     exploring,
+    sessionId,
+    resumeSession,
+    systemPrompt,
     onProgress,
   } = options;
 
@@ -269,7 +359,16 @@ async function invokeClaude(
     "text",
   ];
 
-  if (exploring) {
+  if (resumeSession && sessionId) {
+    args.push("--resume", sessionId);
+  } else if (sessionId) {
+    args.push("--session-id", sessionId);
+    if (systemPrompt?.trim()) {
+      args.push("--system-prompt", systemPrompt);
+    }
+  }
+
+  if (exploring && !resumeSession) {
     const mcpConfig = JSON.stringify({
       mcpServers: {
         playwright: {
@@ -283,7 +382,7 @@ async function invokeClaude(
 
   onProgress?.(exploring ? "Planning next moves" : "Reviewing your draft");
 
-  const raw = await spawnTracked(
+  return spawnTracked(
     invocationId,
     agentBinary,
     args,
@@ -292,7 +391,6 @@ async function invokeClaude(
     exploring,
     onProgress,
   );
-  return raw;
 }
 
 export function parseGeneratedYaml(agentMessage: string): string {

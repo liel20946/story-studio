@@ -1,4 +1,4 @@
-import type { AgentProvider } from "./contract-types";
+import type { AgentProvider, AgentModelOverride } from "./contract-types";
 
 /** Fallback labels when capabilities have not been loaded yet. */
 export const CODEX_MODELS = [
@@ -117,4 +117,52 @@ export function formatAgentModelLabel(
 ): string {
   const options = getModelOptions(provider, capabilities);
   return options.find((opt) => opt.value === model)?.label ?? model;
+}
+
+export function formatChatModelLabel(
+  provider: AgentProvider,
+  model: string,
+  effort: string,
+  capabilities?: AgentCapabilities | null,
+): string {
+  const modelLabel = formatAgentModelLabel(provider, model, capabilities);
+  return `${modelLabel} ${formatEffortLabel(effort)}`;
+}
+
+export interface ChatModelOption {
+  model: string;
+  effort: string;
+  label: string;
+}
+
+export function buildChatModelOptions(
+  provider: AgentProvider,
+  capabilities?: AgentCapabilities | null,
+): ChatModelOption[] {
+  const options: ChatModelOption[] = [];
+  for (const model of getModelOptions(provider, capabilities)) {
+    for (const effort of getEffortOptions(provider, model.value, capabilities)) {
+      options.push({
+        model: model.value,
+        effort,
+        label: formatChatModelLabel(provider, model.value, effort, capabilities),
+      });
+    }
+  }
+  return options;
+}
+
+export function getDefaultChatModelSelection(
+  provider: AgentProvider,
+  settings: {
+    codexModel: string;
+    codexEffort: string;
+    claudeModel: string;
+    claudeEffort: string;
+  },
+): AgentModelOverride {
+  if (provider === "claude-code") {
+    return { model: settings.claudeModel, effort: settings.claudeEffort };
+  }
+  return { model: settings.codexModel, effort: settings.codexEffort };
 }

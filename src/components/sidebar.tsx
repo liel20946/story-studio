@@ -53,6 +53,7 @@ import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type { RunStatus, StorySummary, RunResult, GenerateConversationSummary } from "../lib/contract-types";
 import {
   storiesList,
+  storiesGet,
   onStoriesChanged,
   storiesDelete,
   runsList,
@@ -253,7 +254,7 @@ function RowAccessory({
   return (
     <span className="relative col-start-3 flex h-5 w-11 shrink-0 items-center justify-end justify-self-end">
       {isRunning ? (
-        <Loader2Icon className="size-3.5 shrink-0 animate-spin text-support-blue" />
+        <Loader2Icon className="size-3.5 shrink-0 animate-spin text-accent" />
       ) : (
         <>
           {time ? (
@@ -303,12 +304,15 @@ function CollapsibleSection({
   open,
   onOpenChange,
   contextMenu,
+  leading = false,
   children,
 }: {
   title: React.ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contextMenu?: React.ReactNode;
+  /** First section in the list — skip header top padding; search row owns that gap. */
+  leading?: boolean;
   children: React.ReactNode;
 }) {
   const header = (
@@ -318,7 +322,10 @@ function CollapsibleSection({
     // section label.
     <CollapsibleTrigger
       variant="section"
-      className="flex w-full items-center gap-2 px-2 pt-2"
+      className={cn(
+        "flex w-full items-center gap-2 px-2",
+        leading ? "pt-0" : "pt-2",
+      )}
     >
       <SidebarListGroupTitle className="ml-0 mb-0">
         {title}
@@ -357,6 +364,7 @@ function StoryRow({
   isRunning,
   sections,
   onOpen,
+  onPrefetch,
   onRename,
   onMove,
   onMoveToNew,
@@ -367,6 +375,7 @@ function StoryRow({
   isRunning: boolean;
   sections: StorySection[];
   onOpen: () => void;
+  onPrefetch?: () => void;
   onRename: () => void;
   onMove: (sectionId: string | null) => void;
   onMoveToNew: () => void;
@@ -386,7 +395,7 @@ function StoryRow({
           only — an unnamed `group` collided with an ancestor `group` so every
           row's accessory revealed at once. */}
       <ContextMenuTrigger asChild>
-        <div className="group/row w-full">
+        <div className="group/row w-full" onPointerEnter={onPrefetch}>
           {/* Single-row story: no leading icon — status reads from a pill, and
               the right-side accessory shows the relative creation time at rest and
               reveals a grey archive button on hover (time hides). */}
@@ -884,6 +893,17 @@ export function AppSidebar() {
     [queryClient],
   );
 
+  const prefetchStory = React.useCallback(
+    (storyName: string) => {
+      void queryClient.prefetchQuery({
+        queryKey: ["stories:get", storyName],
+        queryFn: () => storiesGet(storyName),
+        staleTime: 30_000,
+      });
+    },
+    [queryClient],
+  );
+
   React.useEffect(() => {
     const unsub = onGenerateChanged((updated) => {
       queryClient.setQueryData(["generate:list"], updated);
@@ -1046,6 +1066,7 @@ export function AppSidebar() {
   }
 
   function openStory(story: StorySummary) {
+    prefetchStory(story.name);
     navigate({ to: "/story/$name", params: { name: story.name } });
   }
 
@@ -1146,6 +1167,7 @@ export function AppSidebar() {
         isRunning={!!runId}
         sections={sections}
         onOpen={() => openStory(story)}
+        onPrefetch={() => prefetchStory(story.name)}
         onRename={() =>
           setDialog({
             open: true,
@@ -1228,7 +1250,7 @@ export function AppSidebar() {
             <TooltipTrigger asChild>
               <Button
                 variant="transparent"
-                size="small"
+                size="titlebar"
                 iconOnly
                 onClick={(e) => {
                   e.currentTarget.blur();
@@ -1236,7 +1258,7 @@ export function AppSidebar() {
                 }}
                 aria-label="Settings"
               >
-                <SettingsIcon className="size-4" />
+                <SettingsIcon className="size-3.5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top" shortcut={["mod", ","]} />
@@ -1247,7 +1269,7 @@ export function AppSidebar() {
       toolbar={
         <Toolbar className="border-b-0 bg-surface-sidebar">
           <MacTitlebarRow />
-          <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-1.5">
+          <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-0">
             <SegmentControl value={tab} onChange={handleTabChange} />
             <ToolbarActions className="sidebar-action-buttons ml-auto">
               <SidebarActionSlot
@@ -1319,7 +1341,7 @@ export function AppSidebar() {
               </SidebarActionSlot>
             </ToolbarActions>
           </ToolbarRow>
-          <ToolbarRow className="h-auto px-2 pb-2">
+          <ToolbarRow className="h-auto min-h-0 px-2 py-2">
             <label className="sidebar-search w-full">
               <SearchIcon className="size-3.5 shrink-0 text-tertiary" />
               <input
@@ -1360,7 +1382,7 @@ export function AppSidebar() {
         </Toolbar>
       }
     >
-      <SidebarList className="pt-2">
+      <SidebarList className="pt-0 pb-1">
         {/* Keyed by list group so Stories ↔ Runs swap in place (no flash).
             Other tab changes replay the slide-in, timed with the toggle. */}
         <div key={sidebarListAnimKey(tab)} className="tab-panel-in">
@@ -1485,6 +1507,12 @@ function StoriesTab({
     unassigned.length > 0 ||
     sections.some((s) => (bySection.get(s.id) ?? []).length > 0);
 
+  const visibleSections = sections.filter(
+    (section) => (bySection.get(section.id) ?? []).length > 0 || !searchActive,
+  );
+  const showDefaultStories = hasStories && (!searchActive || unassigned.length > 0);
+  let isFirstSection = true;
+
   return (
     <>
       {!hasStories && (
@@ -1504,12 +1532,14 @@ function StoriesTab({
       )}
 
       {/* User-created sections (right-click header → Rename / Delete) */}
-      {sections
-        .filter((section) => (bySection.get(section.id) ?? []).length > 0 || !searchActive)
-        .map((section) => (
+      {visibleSections.map((section) => {
+        const leading = isFirstSection;
+        isFirstSection = false;
+        return (
         <CollapsibleSection
           key={section.id}
           title={section.name}
+          leading={leading}
           open={!collapsed[section.id]}
           onOpenChange={(o) => setCollapsed(section.id, !o)}
           contextMenu={
@@ -1541,12 +1571,14 @@ function StoriesTab({
             </Text>
           )}
         </CollapsibleSection>
-      ))}
+        );
+      })}
 
       {/* Default "Stories" group for unassigned stories */}
-      {hasStories && (!searchActive || unassigned.length > 0) && (
+      {showDefaultStories && (
         <CollapsibleSection
           title="Stories"
+          leading={isFirstSection}
           open={!collapsed[DEFAULT_SECTION_ID]}
           onOpenChange={(o) => setCollapsed(DEFAULT_SECTION_ID, !o)}
         >
@@ -1670,21 +1702,19 @@ function ScheduledTab({
     );
   }
   return (
-    <div className="pt-1">
-      <ExpandableRows
-        items={schedules}
-        renderItem={(schedule) => (
-          <ScheduledRow
-            key={schedule.id}
-            schedule={schedule}
-            selected={activeScheduleId === schedule.id}
-            onOpen={() => onOpen(schedule.id)}
-            onRename={() => onRename(schedule)}
-            onDelete={() => onDelete(schedule.id)}
-          />
-        )}
-      />
-    </div>
+    <ExpandableRows
+      items={schedules}
+      renderItem={(schedule) => (
+        <ScheduledRow
+          key={schedule.id}
+          schedule={schedule}
+          selected={activeScheduleId === schedule.id}
+          onOpen={() => onOpen(schedule.id)}
+          onRename={() => onRename(schedule)}
+          onDelete={() => onDelete(schedule.id)}
+        />
+      )}
+    />
   );
 }
 
@@ -1766,22 +1796,20 @@ function GenerateTab({
     );
   }
   return (
-    <div className="pt-1">
-      <ExpandableRows
-        items={conversations}
-        renderItem={(conversation) => (
-          <GenerateConversationRow
-            key={conversation.id}
-            conversation={conversation}
-            selected={activeConversationId === conversation.id}
-            onPrefetch={() => onPrefetch(conversation.id)}
-            onOpen={() => onOpen(conversation.id)}
-            onRename={() => onRename(conversation)}
-            onArchive={() => onArchive(conversation.id)}
-          />
-        )}
-      />
-    </div>
+    <ExpandableRows
+      items={conversations}
+      renderItem={(conversation) => (
+        <GenerateConversationRow
+          key={conversation.id}
+          conversation={conversation}
+          selected={activeConversationId === conversation.id}
+          onPrefetch={() => onPrefetch(conversation.id)}
+          onOpen={() => onOpen(conversation.id)}
+          onRename={() => onRename(conversation)}
+          onArchive={() => onArchive(conversation.id)}
+        />
+      )}
+    />
   );
 }
 
@@ -1811,20 +1839,18 @@ function RunsTab({
     );
   }
   return (
-    <div className="pt-1">
-      <ExpandableRows
-        items={runs}
-        renderItem={(run) => (
-          <HistoryRunRow
-            key={run.runId}
-            run={run}
-            selected={activeRunId === run.runId}
-            running={run.isRunning}
-            onOpen={() => onOpen(run.runId, !!run.isRunning)}
-            onDelete={() => onDelete(run.runId)}
-          />
-        )}
-      />
-    </div>
+    <ExpandableRows
+      items={runs}
+      renderItem={(run) => (
+        <HistoryRunRow
+          key={run.runId}
+          run={run}
+          selected={activeRunId === run.runId}
+          running={run.isRunning}
+          onOpen={() => onOpen(run.runId, !!run.isRunning)}
+          onDelete={() => onDelete(run.runId)}
+        />
+      )}
+    />
   );
 }

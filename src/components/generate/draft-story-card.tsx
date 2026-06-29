@@ -3,19 +3,22 @@ import { ChevronDownIcon, CopyIcon, CheckIcon } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { clipboardWriteText } from "@/lib/ipc";
+import { DraftStoryPreview } from "./draft-story-preview";
 
 export function DraftStoryCard({
   title,
-  summary,
   body,
 }: {
   title: string;
-  summary: string;
   body?: string;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const cardRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!body && expanded) setExpanded(false);
+  }, [body, expanded]);
 
   async function handleCopy() {
     if (!body) return;
@@ -35,7 +38,7 @@ export function DraftStoryCard({
   React.useLayoutEffect(() => {
     if (!expanded) return;
     const frame = requestAnimationFrame(() => {
-      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     return () => cancelAnimationFrame(frame);
   }, [expanded]);
@@ -66,17 +69,9 @@ export function DraftStoryCard({
       </div>
       <div className="generate-draft-card-body">
         <p className="generate-draft-card-title">{title}</p>
-        <p className="generate-draft-card-summary">{summary}</p>
         {body ? (
           <>
-            <pre
-              className={cn(
-                "generate-draft-card-pre",
-                expanded ? "generate-draft-card-pre--expanded" : "generate-draft-card-pre--preview",
-              )}
-            >
-              {body}
-            </pre>
+            <DraftStoryPreview body={body} expanded={expanded} />
             <button
               type="button"
               className={cn(
@@ -86,7 +81,7 @@ export function DraftStoryCard({
               onClick={() => (expanded ? setExpanded(false) : handleExpand())}
             >
               <ChevronDownIcon
-                className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
+                className={cn("size-3.5", expanded && "rotate-180")}
               />
               {expanded ? "Show less" : "Show more"}
             </button>

@@ -27,9 +27,34 @@ import { cn } from "@/lib/utils";
 import { SkillComposer } from "@/components/generate/skill-composer";
 import { DraftApprovalQuestion } from "@/components/generate/draft-approval-panel";
 import { ChatMessageList } from "@/components/generate/chat-message-list";
+import { ChatModelPicker } from "@/components/generate/chat-model-picker";
+import { useChatModelSelection } from "@/lib/chat-model-selection";
+import { useAgentCapabilities } from "@/lib/agent-capabilities-store";
+import { getCachedAppSettings } from "@/lib/settings-cache";
+import { normalizeAppSettings } from "@/lib/app-settings";
 
 const CREATING_STORY_MS = 1500;
 const NAVIGATE_FADE_MS = 160;
+
+function bootstrapStorageKey(conversationId: string): string {
+  return `story-studio:generate-bootstrap:${conversationId}`;
+}
+
+function hasBootstrapStarted(conversationId: string): boolean {
+  try {
+    return sessionStorage.getItem(bootstrapStorageKey(conversationId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markBootstrapStarted(conversationId: string): void {
+  try {
+    sessionStorage.setItem(bootstrapStorageKey(conversationId), "1");
+  } catch {
+    // ignore quota / private mode
+  }
+}
 
 function GenerateEmptyStage({
   composer,
@@ -40,8 +65,9 @@ function GenerateEmptyStage({
     <div className="generate-empty-stage flex min-h-0 flex-1 flex-col items-center justify-center">
       <h2 className="generate-empty-title">What story should we generate?</h2>
       <p className="generate-empty-sub">
-        Include a URL and describe the flow. The agent will explore the site and draft a story you
-        can refine in chat.
+        Paste a URL and describe the flow you want to capture. If login is required, add credentials
+        in your message. If not, the agent will ask before signing in. Refine the draft anytime in
+        chat.
       </p>
       <div className="generate-empty-composer w-full">{composer}</div>
     </div>
@@ -53,6 +79,9 @@ export function GenerateHomeView() {
   const queryClient = useQueryClient();
   const [composerText, setComposerText] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  const provider = normalizeAppSettings(getCachedAppSettings()).agentProvider;
+  const capabilities = useAgentCapabilities(provider);
+  const chatModel = useChatModelSelection(capabilities);
 
   async function handleSend(text: string) {
     const trimmed = text.trim();
@@ -82,6 +111,17 @@ export function GenerateHomeView() {
       disabled={submitting}
       autoFocus
       layout="inline"
+      below={
+        <ChatModelPicker
+          value={chatModel.selection}
+          models={chatModel.models}
+          efforts={chatModel.efforts}
+          modelLabel={chatModel.modelLabel}
+          effortLabel={chatModel.effortLabel}
+          disabled={submitting}
+          onChange={chatModel.setChatModelSelection}
+        />
+      }
     />
   );
 
@@ -106,9 +146,15 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
   const [openingStoryName, setOpeningStoryName] = React.useState<string | null>(null);
   const [navigatingAway, setNavigatingAway] = React.useState(false);
   const [stopping, setStopping] = React.useState(false);
-  const bootstrappedSendRef = React.useRef(false);
+  const bootstrappedSendRef = React.useRef(hasBootstrapStarted(conversationId));
   const openStoryTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigateTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const provider = normalizeAppSettings(getCachedAppSettings()).agentProvider;
+  const capabilities = useAgentCapabilities(provider);
+  const chatModel = useChatModelSelection(capabilities);
+  const modelSelectionRef = React.useRef(chatModel.selection);
+  modelSelectionRef.current = chatModel.selection;
+  const latestDraftRef = React.useRef<HTMLDivElement>(null);
 
   const initialMessage = useRouterState({
     select: (s) =>
@@ -127,6 +173,18 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
     ?.find((item) => item.id === conversationId)?.title;
   const isComplete = conversation?.status === "complete";
   const isGenerating = conversation?.generating ?? submitting;
+
+  const modelPicker = (
+    <ChatModelPicker
+      value={chatModel.selection}
+      models={chatModel.models}
+      efforts={chatModel.efforts}
+      modelLabel={chatModel.modelLabel}
+      effortLabel={chatModel.effortLabel}
+      disabled={isComplete || approving}
+      onChange={chatModel.setChatModelSelection}
+    />
+  );
 
   const beginActivity = React.useCallback((message: string) => {
     setStatusMessage(message);
@@ -175,10 +233,27 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
   React.useEffect(() => {
     const msg = initialMessage?.trim();
     if (!msg || bootstrappedSendRef.current) return;
+
+    if (conversationQuery.isPending) return;
+
+    const hasUserMessage = conversation?.messages.some((m) => m.kind === "user");
+    if (hasUserMessage || conversation?.generating) {
+      bootstrappedSendRef.current = true;
+      return;
+    }
+
     bootstrappedSendRef.current = true;
+    markBootstrapStarted(conversationId);
+    navigate({
+      to: "/generate/$conversationId",
+      params: { conversationId },
+      replace: true,
+      state: {},
+    });
     beginActivity("Planning next moves");
     setSubmitting(true);
-    void generateSend(conversationId, msg)
+    const modelOverride = modelSelectionRef.current;
+    void generateSend(conversationId, msg, modelOverride)
       .then(() => {
         queryClient.invalidateQueries({ queryKey: ["generate:get", conversationId] });
       })
@@ -187,19 +262,29 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
         queryClient.invalidateQueries({ queryKey: ["generate:get", conversationId] });
       })
       .finally(() => setSubmitting(false));
-  }, [conversationId, initialMessage, beginActivity, queryClient]);
+  }, [
+    conversationId,
+    initialMessage,
+    conversation,
+    conversationQuery.isPending,
+    beginActivity,
+    queryClient,
+    navigate,
+  ]);
 
-  async function handleSend(text: string) {
+  async function handleSend(text: string, source: "composer" | "feedback" = "composer") {
     const trimmed = text.trim();
     if (!trimmed || isGenerating || isComplete) return;
+    if (source === "composer") setComposerText("");
+    else setFeedback("");
     setSubmitting(true);
     const hasDraft = conversation?.messages.some((m) => m.kind === "draft");
     beginActivity(hasDraft ? "Reviewing your draft" : "Planning next moves");
     try {
-      await generateSend(conversationId, trimmed);
-      setComposerText("");
-      setFeedback("");
+      await generateSend(conversationId, trimmed, chatModel.selection);
     } catch (err) {
+      if (source === "composer") setComposerText(trimmed);
+      else setFeedback(trimmed);
       reportAppErrorFromUnknown("Generation failed", err);
       queryClient.invalidateQueries({ queryKey: ["generate:get", conversationId] });
     } finally {
@@ -265,7 +350,7 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
           </ScrollArea>
         ) : (
           <div className="flex flex-1 items-center justify-center">
-            <Loader2Icon className="size-5 animate-spin text-tertiary" />
+            <Loader2Icon className="size-5 animate-spin text-accent" />
           </div>
         )}
       </div>
@@ -330,7 +415,7 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
       feedback={feedback}
       onFeedbackChange={setFeedback}
       onApprove={handleApprove}
-      onSubmitFeedback={() => handleSend(feedback)}
+      onSubmitFeedback={() => handleSend(feedback, "feedback")}
       approving={approving}
       submitting={submitting}
     />
@@ -345,6 +430,7 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
       autoFocus
       layout={showEmptyStage ? "inline" : "docked"}
       showSkill={showEmptyStage}
+      below={modelPicker}
     />
   );
 
@@ -383,21 +469,29 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
             isComplete && "generate-chat-body--complete",
             isCreatingStory && "generate-chat-body--creating",
             navigatingAway && "generate-chat-body--leaving",
+            showApproval && "generate-chat-body--approval",
           )}
         >
           <ScrollArea
             className="min-h-0 flex-1"
-            autoScrollToBottom
-            autoScrollDeps={[conversation.messages.length, activeStatusMessage]}
+            autoScrollToBottom={!showApproval}
+            scrollAnchorRef={showApproval ? latestDraftRef : undefined}
+            autoScrollDeps={[
+              conversation.messages.length,
+              activeStatusMessage,
+              showApproval,
+              conversation.draftMd,
+            ]}
           >
             <ChatMessageList
               messages={conversation.messages}
               draftMd={conversation.draftMd}
               statusMessage={activeStatusMessage}
               pendingUserMessage={pendingUserMessage}
+              latestDraftRef={latestDraftRef}
             />
           </ScrollArea>
-          {composer}
+          <div className="generate-chat-footer">{composer}</div>
         </div>
       )}
     </div>

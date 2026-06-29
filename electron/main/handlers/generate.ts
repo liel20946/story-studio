@@ -13,6 +13,7 @@ import {
   sendGenerateMessage,
   approveGenerateConversation,
   cancelGenerate,
+  type AgentModelOverride,
 } from "../services/story-generate-service.js";
 import { readDraftArtifact } from "../services/stories-service.js";
 import { getDraftsDir } from "../services/paths.js";
@@ -64,9 +65,13 @@ export function registerGenerateHandlers(): void {
     ) {
       throw new Error("generate:send requires { conversationId: string; text: string }");
     }
-    const { conversationId, text } = params as { conversationId: string; text: string };
+    const { conversationId, text, modelOverride } = params as {
+      conversationId: string;
+      text: string;
+      modelOverride?: AgentModelOverride;
+    };
     const settings = getSettingsValue();
-    const conversation = await sendGenerateMessage(conversationId, text, settings);
+    const conversation = await sendGenerateMessage(conversationId, text, settings, modelOverride);
     return { ok: true as const, conversation };
   });
 

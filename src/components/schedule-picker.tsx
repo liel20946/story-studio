@@ -8,6 +8,7 @@ import {
 import { cn } from "@/lib/utils";
 import { LabeledSegment } from "./labeled-segment";
 import { Text } from "@/components/ui";
+import { CollapseSection } from "@/components/collapse-section";
 import {
   type ScheduleTiming,
   REPEAT_OPTIONS,
@@ -124,87 +125,89 @@ function SchedulePickerPanel({
         className="w-full"
       />
 
-      {value.repeat === "weekly" && (
-        <div className="schedule-picker-weekdays">
-          {[0, 1, 2, 3, 4, 5, 6].map((d) => (
-            <button
-              key={d}
-              type="button"
-              disabled={disabled}
-              className={cn(
-                "schedule-picker-weekday",
-                value.dayOfWeek === d && "schedule-picker-weekday--active",
-              )}
-              onClick={() => patch({ dayOfWeek: d })}
-            >
-              {weekdayLabel(d)}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {value.repeat === "once" && (
-        <div className="schedule-picker-calendar">
-          <div className="schedule-picker-calendar-header">
-            <button
-              type="button"
-              className="schedule-picker-nav"
-              onClick={prevMonth}
-              aria-label="Previous month"
-            >
-              <ChevronLeftIcon className="size-3.5" />
-            </button>
-            <Text variant="small-strong" color="secondary">
-              {monthLabel(viewYear, viewMonth)}
-            </Text>
-            <button
-              type="button"
-              className="schedule-picker-nav"
-              onClick={nextMonth}
-              aria-label="Next month"
-            >
-              <ChevronRightIcon className="size-3.5" />
-            </button>
-          </div>
-          <div className="schedule-picker-weekday-row">
-            {["S", "M", "T", "W", "T", "F", "S"].map((label, i) => (
-              <span key={i} className="schedule-picker-weekday-label">
-                {label}
-              </span>
+      <CollapseSection open={value.repeat !== "daily"} className="schedule-picker-repeat-section">
+        {value.repeat === "weekly" ? (
+          <div className="schedule-picker-weekdays">
+            {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+              <button
+                key={d}
+                type="button"
+                disabled={disabled}
+                className={cn(
+                  "schedule-picker-weekday",
+                  value.dayOfWeek === d && "schedule-picker-weekday--active",
+                )}
+                onClick={() => patch({ dayOfWeek: d })}
+              >
+                {weekdayLabel(d)}
+              </button>
             ))}
           </div>
-          <div className="schedule-picker-day-grid">
-            {days.map((date, i) => {
-              if (!date) {
-                return <span key={`empty-${i}`} className="schedule-picker-day-empty" />;
-              }
-              const active = isSameDay(date, selected);
-              const today = isToday(date);
-              return (
-                <button
-                  key={date.toISOString()}
-                  type="button"
-                  disabled={disabled}
-                  className={cn(
-                    "schedule-picker-day",
-                    active && "schedule-picker-day--active",
-                    today && !active && "schedule-picker-day--today",
-                  )}
-                  onClick={() =>
-                    patch({
-                      year: date.getFullYear(),
-                      month: date.getMonth(),
-                      day: date.getDate(),
-                    })
-                  }
-                >
-                  {date.getDate()}
-                </button>
-              );
-            })}
+        ) : null}
+
+        {value.repeat === "once" ? (
+          <div className="schedule-picker-calendar">
+            <div className="schedule-picker-calendar-header">
+              <button
+                type="button"
+                className="schedule-picker-nav"
+                onClick={prevMonth}
+                aria-label="Previous month"
+              >
+                <ChevronLeftIcon className="size-3.5" />
+              </button>
+              <Text variant="small-strong" color="secondary">
+                {monthLabel(viewYear, viewMonth)}
+              </Text>
+              <button
+                type="button"
+                className="schedule-picker-nav"
+                onClick={nextMonth}
+                aria-label="Next month"
+              >
+                <ChevronRightIcon className="size-3.5" />
+              </button>
+            </div>
+            <div className="schedule-picker-weekday-row">
+              {["S", "M", "T", "W", "T", "F", "S"].map((label, i) => (
+                <span key={i} className="schedule-picker-weekday-label">
+                  {label}
+                </span>
+              ))}
+            </div>
+            <div className="schedule-picker-day-grid">
+              {days.map((date, i) => {
+                if (!date) {
+                  return <span key={`empty-${i}`} className="schedule-picker-day-empty" />;
+                }
+                const active = isSameDay(date, selected);
+                const today = isToday(date);
+                return (
+                  <button
+                    key={date.toISOString()}
+                    type="button"
+                    disabled={disabled}
+                    className={cn(
+                      "schedule-picker-day",
+                      active && "schedule-picker-day--active",
+                      today && !active && "schedule-picker-day--today",
+                    )}
+                    onClick={() =>
+                      patch({
+                        year: date.getFullYear(),
+                        month: date.getMonth(),
+                        day: date.getDate(),
+                      })
+                    }
+                  >
+                    {date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </CollapseSection>
 
       <TimeSelects
         hour={value.hour}
@@ -268,9 +271,9 @@ export function SchedulePicker({
           )}
         />
       </button>
-      {open && !disabled ? (
+      <CollapseSection open={open && !disabled}>
         <SchedulePickerPanel value={value} onChange={onChange} disabled={disabled} />
-      ) : null}
+      </CollapseSection>
     </div>
   );
 }

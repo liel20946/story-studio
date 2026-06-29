@@ -9,7 +9,7 @@ import {
   toast,
   Switch,
 } from "@/components/ui";
-import { settingsGet, settingsSet, storiesImport, storiesExport } from "../lib/ipc";
+import { settingsGet, settingsSet, settingsPreviewOpacity, storiesImport, storiesExport } from "../lib/ipc";
 import type { AppSettings, AgentCapabilities } from "../lib/contract-types";
 import { useAgentCapabilities } from "../lib/agent-capabilities-store";
 import { FolderDownIcon, FolderOpenIcon, Loader2Icon } from "lucide-react";
@@ -34,7 +34,7 @@ import {
   effortSegmentClass,
   modelSegmentClass,
 } from "../lib/agent-config";
-import { applyAppearance, activeColorThemeForMode, resolveTheme } from "../lib/theme";
+import { applyAppearance, applyWindowOpacity, activeColorThemeForMode, resolveTheme } from "../lib/theme";
 import { ColorThemePicker } from "../components/color-theme-picker";
 import {
   applyImportedColorTheme,
@@ -43,11 +43,13 @@ import {
   parseImportedColorTheme,
   resolveEffectiveContrast,
   resolveEffectivePalette,
+  resolveEffectiveOpacity,
 } from "../lib/color-theme-config";
 import type { ColorThemePalette } from "../lib/color-themes";
 import {
   ThemeColorField,
   ThemeContrastField,
+  ThemeOpacityField,
 } from "../components/theme-color-field";
 import { normalizeAppSettings } from "../lib/app-settings";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
@@ -228,6 +230,8 @@ function AppearancePanel({
   onColorThemeChange,
   onPaletteChange,
   onContrastChange,
+  onOpacityPreview,
+  onOpacityCommit,
   onCopyTheme,
   onImportTheme,
 }: {
@@ -237,6 +241,8 @@ function AppearancePanel({
   onColorThemeChange: (colorTheme: ColorThemeId) => void;
   onPaletteChange: (key: keyof ColorThemePalette, color: string) => void;
   onContrastChange: (contrast: number) => void;
+  onOpacityPreview: (opacity: number) => void;
+  onOpacityCommit: (opacity: number) => void;
   onCopyTheme: () => void;
   onImportTheme: () => void;
 }) {
@@ -244,6 +250,7 @@ function AppearancePanel({
   const colorTheme = activeColorThemeForMode(resolvedMode, settings);
   const palette = resolveEffectivePalette(settings, resolvedMode);
   const contrast = resolveEffectiveContrast(settings, resolvedMode);
+  const opacity = resolveEffectiveOpacity(settings, resolvedMode);
   const modeLabel = resolvedMode === "light" ? "Light theme" : "Dark theme";
 
   return (
@@ -292,7 +299,7 @@ function AppearancePanel({
               onChange={(color) => onPaletteChange("surface", color)}
             />
             <ThemeColorField
-              label="Foreground"
+              label="Text"
               value={palette.ink}
               onChange={(color) => onPaletteChange("ink", color)}
             />
@@ -300,6 +307,12 @@ function AppearancePanel({
               value={contrast}
               accent={palette.accent}
               onChange={onContrastChange}
+            />
+            <ThemeOpacityField
+              value={opacity}
+              accent={palette.accent}
+              onPreview={onOpacityPreview}
+              onCommit={onOpacityCommit}
             />
           </div>
         </div>
@@ -395,7 +408,7 @@ function DataPanel({
             disabled={isImporting || isExporting}
           >
             {isImporting ? (
-              <Loader2Icon className="size-3.5 animate-spin" />
+              <Loader2Icon className="size-3.5 animate-spin text-accent" />
             ) : (
               <FolderOpenIcon className="size-3.5" />
             )}
@@ -414,7 +427,7 @@ function DataPanel({
             disabled={isImporting || isExporting}
           >
             {isExporting ? (
-              <Loader2Icon className="size-3.5 animate-spin" />
+              <Loader2Icon className="size-3.5 animate-spin text-accent" />
             ) : (
               <FolderDownIcon className="size-3.5" />
             )}
@@ -631,6 +644,32 @@ export function SettingsView() {
     }
   };
 
+  const handleOpacityPreview = (opacity: number) => {
+    applyWindowOpacity(opacity);
+    void settingsPreviewOpacity(opacity);
+  };
+
+  const handleOpacityCommit = async (opacity: number) => {
+    const mode = resolveTheme(resolvedSettings.theme);
+    const current = resolveEffectiveOpacity(resolvedSettings, mode);
+    if (opacity === current) return;
+
+    const patch = appearancePatchForMode(mode, { opacity });
+    const nextSettings = normalizeAppSettings({
+      ...resolvedSettings,
+      ...patch,
+    });
+
+    commitAppSettings(nextSettings);
+    applyWindowOpacity(opacity);
+    try {
+      commitAppSettings(await settingsSet(patch));
+    } catch (error) {
+      void refreshAppSettings();
+      reportAppErrorFromUnknown("Failed to save opacity", error);
+    }
+  };
+
   const handleCopyTheme = async () => {
     const mode = resolveTheme(resolvedSettings.theme);
     try {
@@ -774,6 +813,8 @@ export function SettingsView() {
               onColorThemeChange={handleColorThemeChange}
               onPaletteChange={handlePaletteChange}
               onContrastChange={handleContrastChange}
+              onOpacityPreview={handleOpacityPreview}
+              onOpacityCommit={handleOpacityCommit}
               onCopyTheme={handleCopyTheme}
               onImportTheme={handleImportTheme}
             />

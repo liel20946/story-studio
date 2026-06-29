@@ -91,14 +91,19 @@ export function SplitView({
 
   return (
     <div
-      className={cn("relative flex h-full min-h-0 gap-x-1.5 bg-surface-sidebar", className)}
+      className={cn("relative flex h-full min-h-0 bg-surface-sidebar", className)}
       style={{ "--sidebar-width": `${width + SPLIT_GAP_PX}px` } as React.CSSProperties}
     >
       <div
         className="relative shrink-0 min-h-0 flex flex-col bg-surface-sidebar"
-        style={{ width }}
+        style={{ width: width + SPLIT_GAP_PX }}
       >
-        <aside className="min-h-0 flex flex-1 flex-col overflow-hidden">{sidebar}</aside>
+        <aside
+          className="min-h-0 flex flex-1 flex-col overflow-hidden"
+          style={{ width }}
+        >
+          {sidebar}
+        </aside>
       </div>
       <div
         role="separator"
@@ -242,7 +247,7 @@ export function Toolbar({
       className={cn(
         "drag-region",
         !seamless && "border-b border-separator",
-        surface === "sidebar" ? "bg-surface-sidebar" : "bg-[var(--bg)]",
+        surface === "sidebar" ? "bg-surface-sidebar" : "bg-main-surface",
         titlebar && "titlebar-toolbar",
         className,
       )}
@@ -340,6 +345,8 @@ export function ScrollArea({
   actions,
   subtitle,
   autoScrollToBottom,
+  scrollAnchorRef,
+  scrollAnchorBlock = "start",
   autoScrollDeps,
   className,
   children,
@@ -349,6 +356,8 @@ export function ScrollArea({
   actions?: React.ReactNode;
   subtitle?: React.ReactNode;
   autoScrollToBottom?: boolean;
+  scrollAnchorRef?: React.RefObject<HTMLElement | null>;
+  scrollAnchorBlock?: ScrollLogicalPosition;
   autoScrollDeps?: unknown[];
   className?: string;
   children: React.ReactNode;
@@ -356,14 +365,18 @@ export function ScrollArea({
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const initialAutoScroll = React.useRef(true);
 
-  React.useEffect(() => {
-    if (autoScrollToBottom) {
-      bottomRef.current?.scrollIntoView({
-        behavior: initialAutoScroll.current ? "auto" : "smooth",
-      });
+  React.useLayoutEffect(() => {
+    const behavior = initialAutoScroll.current ? "auto" : "smooth";
+    const frame = requestAnimationFrame(() => {
+      if (scrollAnchorRef?.current) {
+        scrollAnchorRef.current.scrollIntoView({ behavior, block: scrollAnchorBlock });
+      } else if (autoScrollToBottom) {
+        bottomRef.current?.scrollIntoView({ behavior });
+      }
       initialAutoScroll.current = false;
-    }
-  }, autoScrollDeps ?? (autoScrollToBottom ? [children] : []));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, autoScrollDeps ?? (autoScrollToBottom || scrollAnchorRef ? [children] : []));
 
   const header =
     toolbar ??
