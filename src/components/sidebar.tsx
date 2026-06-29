@@ -1354,7 +1354,7 @@ export function AppSidebar() {
                     : tab === "runs"
                       ? "Filter runs…"
                       : tab === "generate"
-                        ? "Filter generations…"
+                        ? "Filter conversations…"
                         : "Filter schedules…"
                 }
                 aria-label={
@@ -1363,7 +1363,7 @@ export function AppSidebar() {
                     : tab === "runs"
                       ? "Filter runs"
                       : tab === "generate"
-                        ? "Filter generations"
+                        ? "Filter conversations"
                         : "Filter schedules"
                 }
               />

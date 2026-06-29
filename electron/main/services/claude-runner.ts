@@ -361,7 +361,7 @@ export async function startClaudeRun(
     mcpServers: {
       playwright: {
         command: "npx",
-        args: ["@playwright/mcp@latest", "--headless", "--isolated"],
+        args: ["@playwright/mcp@latest", "--headless", "--isolated", "--viewport-size=1920x1080"],
       },
     },
   });

@@ -11,7 +11,7 @@ export function buildCodexMcpConfigArgs(): string[] {
     "-c",
     'mcp_servers.playwright.command="npx"',
     "-c",
-    'mcp_servers.playwright.args=["-y","@playwright/mcp@latest","--headless","--isolated"]',
+    'mcp_servers.playwright.args=["-y","@playwright/mcp@latest","--headless","--isolated","--viewport-size=1920x1080"]',
     "-c",
     "mcp_servers.playwright.startup_timeout_sec=60",
     "-c",
@@ -21,7 +21,7 @@ export function buildCodexMcpConfigArgs(): string[] {
 
 const PROJECT_CODEX_CONFIG = `[mcp_servers.playwright]
 command = "npx"
-args = ["-y", "@playwright/mcp@latest", "--headless", "--isolated"]
+args = ["-y", "@playwright/mcp@latest", "--headless", "--isolated", "--viewport-size=1920x1080"]
 enabled = true
 startup_timeout_sec = 60
 
