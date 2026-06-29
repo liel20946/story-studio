@@ -17,22 +17,26 @@ function findArtifact(pattern) {
   return fs.readdirSync(releaseDir).find((name) => pattern.test(name));
 }
 
+function releaseAssetName(localName) {
+  return localName.replace(/^Story Studio/, "Story.Studio");
+}
+
 export function generateLatestMacYml(version) {
-  const zipName = findArtifact(new RegExp(`^Story[.-]Studio-${version}-arm64-mac\\.zip$`));
+  const zipName = findArtifact(new RegExp(`^Story[.\\s-]Studio-${version}-arm64-mac\\.zip$`));
   if (!zipName) {
     throw new Error(
       `No arm64 mac zip found in release/ for version ${version}. Run npm run dist first.`,
     );
   }
 
-  const dmgName = findArtifact(new RegExp(`^Story[.-]Studio-${version}-arm64\\.dmg$`));
+  const dmgName = findArtifact(new RegExp(`^Story[.\\s-]Studio-${version}-arm64\\.dmg$`));
   const zipPath = path.join(releaseDir, zipName);
   const zipSha512 = sha512Base64(zipPath);
   const zipSize = fs.statSync(zipPath).size;
 
   const files = [
     {
-      url: zipName,
+      url: releaseAssetName(zipName),
       sha512: zipSha512,
       size: zipSize,
     },
@@ -41,7 +45,7 @@ export function generateLatestMacYml(version) {
   if (dmgName) {
     const dmgPath = path.join(releaseDir, dmgName);
     files.push({
-      url: dmgName,
+      url: releaseAssetName(dmgName),
       sha512: sha512Base64(dmgPath),
       size: fs.statSync(dmgPath).size,
     });
@@ -55,7 +59,7 @@ export function generateLatestMacYml(version) {
       `    sha512: ${file.sha512}`,
       `    size: ${file.size}`,
     ]),
-    `path: ${zipName}`,
+    `path: ${releaseAssetName(zipName)}`,
     `sha512: ${zipSha512}`,
     `releaseDate: '${new Date().toISOString()}'`,
     "",
