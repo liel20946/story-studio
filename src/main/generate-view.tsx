@@ -63,7 +63,7 @@ function GenerateEmptyStage({
 }) {
   return (
     <div className="generate-empty-stage flex min-h-0 flex-1 flex-col items-center justify-center">
-      <h2 className="generate-empty-title">What story should we generate?</h2>
+      <h2 className="generate-empty-title">What story should we generate ?</h2>
       <p className="generate-empty-sub">
         Paste a URL and describe the flow you want to capture. If login is required, add credentials
         in your message. If not, the agent will ask before signing in. Refine the draft anytime in
