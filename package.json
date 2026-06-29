@@ -1,6 +1,6 @@
 {
   "name": "story-studio",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "productName": "Story Studio",
   "description": "Record and run automated browser tests",
   "private": true,

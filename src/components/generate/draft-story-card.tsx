@@ -15,6 +15,7 @@ export function DraftStoryCard({
   const [expanded, setExpanded] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const cardRef = React.useRef<HTMLDivElement>(null);
+  const toggleRef = React.useRef<HTMLButtonElement>(null);
 
   React.useEffect(() => {
     if (!body && expanded) setExpanded(false);
@@ -37,10 +38,42 @@ export function DraftStoryCard({
 
   React.useLayoutEffect(() => {
     if (!expanded) return;
-    const frame = requestAnimationFrame(() => {
-      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    return () => cancelAnimationFrame(frame);
+    const card = cardRef.current;
+    if (!card) return;
+
+    const preview = card.querySelector<HTMLElement>(
+      ".generate-draft-card-preview, .generate-draft-card-pre",
+    );
+
+    const scrollToExpandedBottom = () => {
+      toggleRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    };
+
+    if (!preview) {
+      const frame = requestAnimationFrame(scrollToExpandedBottom);
+      return () => cancelAnimationFrame(frame);
+    }
+
+    let scrolled = false;
+    const scrollOnce = () => {
+      if (scrolled) return;
+      scrolled = true;
+      scrollToExpandedBottom();
+    };
+
+    const onTransitionEnd = (event: TransitionEvent) => {
+      if (event.target === preview && event.propertyName === "max-height") {
+        scrollOnce();
+      }
+    };
+
+    preview.addEventListener("transitionend", onTransitionEnd);
+    const fallback = window.setTimeout(scrollOnce, 300);
+
+    return () => {
+      preview.removeEventListener("transitionend", onTransitionEnd);
+      window.clearTimeout(fallback);
+    };
   }, [expanded]);
 
   return (
@@ -73,6 +106,7 @@ export function DraftStoryCard({
           <>
             <DraftStoryPreview body={body} expanded={expanded} />
             <button
+              ref={toggleRef}
               type="button"
               className={cn(
                 "generate-draft-card-toggle",

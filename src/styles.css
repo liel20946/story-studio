@@ -1132,6 +1132,7 @@
   line-height: 1rem;
   color: var(--color-text-tertiary);
   cursor: pointer;
+  scroll-margin-bottom: 1rem;
   transition: color 150ms ease;
 }
 
