@@ -68,11 +68,9 @@ export function SkillComposer({
   const hint = placeholder ?? (showSkill ? DEFAULT_HINT : FOLLOW_UP_HINT);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const prefixRef = React.useRef<HTMLSpanElement>(null);
-  const actionsRef = React.useRef<HTMLDivElement>(null);
   const hasDockChrome = layout === "docked";
   const isFirstPrompt = layout === "inline";
   const [prefixIndent, setPrefixIndent] = React.useState(0);
-  const [actionsWidth, setActionsWidth] = React.useState(0);
   const [isMultiline, setIsMultiline] = React.useState(false);
   const [scrollTop, setScrollTop] = React.useState(0);
 
@@ -90,21 +88,6 @@ export function SkillComposer({
     observer.observe(prefix);
     return () => observer.disconnect();
   }, [showSkill]);
-
-  React.useLayoutEffect(() => {
-    if (isFirstPrompt) {
-      setActionsWidth(0);
-      return;
-    }
-    const actions = actionsRef.current;
-    if (!actions) return;
-    const gapPx = 8;
-    const measure = () => setActionsWidth(actions.offsetWidth + gapPx);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(actions);
-    return () => observer.disconnect();
-  }, [isFirstPrompt, below, stopping, disabled, value]);
 
   React.useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -157,7 +140,7 @@ export function SkillComposer({
   const controls = below ? <div className="generate-composer-controls">{below}</div> : null;
 
   const composerActions = (
-    <div className="generate-composer-actions" ref={actionsRef}>
+    <div className="generate-composer-actions">
       {controls}
       {actionButton}
     </div>
@@ -168,9 +151,6 @@ export function SkillComposer({
   const inputRowStyle = {
     "--skill-prefix-indent": `${prefixIndent}px`,
     "--composer-scroll-top": `${scrollTop}px`,
-    ...(!isFirstPrompt && actionsWidth > 0
-      ? { "--composer-actions-width": `${actionsWidth}px` }
-      : {}),
   } as React.CSSProperties;
 
   const inputRow = (
@@ -210,9 +190,14 @@ export function SkillComposer({
       {composerFooter}
     </div>
   ) : (
-    <div className="generate-composer-inline">
+    <div
+      className={cn(
+        "generate-composer-inline",
+        isMultiline && "generate-composer-inline--multiline",
+      )}
+    >
       {inputRow}
-      {composerActions}
+      {isMultiline ? composerFooter : composerActions}
     </div>
   );
 

@@ -49,7 +49,6 @@ function PickerButton({
   label,
   disabled,
   ariaLabel,
-  title,
   className,
   open,
   onClick,
@@ -58,7 +57,6 @@ function PickerButton({
   label: string;
   disabled?: boolean;
   ariaLabel: string;
-  title?: string;
   className?: string;
   open: boolean;
   onClick: () => void;
@@ -69,7 +67,6 @@ function PickerButton({
       ref={buttonRef}
       type="button"
       disabled={disabled}
-      title={title}
       aria-label={ariaLabel}
       aria-expanded={open}
       aria-haspopup="menu"
@@ -310,7 +307,6 @@ export function ChatModelPicker({
         label={modelLabel}
         disabled={disabled || models.length === 0}
         ariaLabel="Model"
-        title="Models"
         className="generate-model-picker--model"
         open={openMenu === "model"}
         onClick={() => setOpenMenu((current) => (current === "model" ? null : "model"))}
@@ -329,7 +325,6 @@ export function ChatModelPicker({
         label={effortLabel}
         disabled={disabled || efforts.length === 0}
         ariaLabel="Reasoning effort"
-        title="Effort"
         className="generate-model-picker--effort"
         open={openMenu === "effort"}
         onClick={() => setOpenMenu((current) => (current === "effort" ? null : "effort"))}

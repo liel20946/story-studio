@@ -600,12 +600,8 @@ export function ScheduledEditorView({ scheduleId }: { scheduleId?: string }) {
           onClick={() => void handleCreate()}
           disabled={creating || !name.trim() || selectedStoryNames.length === 0}
         >
-          {creating ? (
-            <Loader2Icon className="size-4 animate-spin" />
-          ) : (
-            <ClockIcon className="size-4" />
-          )}
-          Create schedule
+          <ClockIcon className="size-4" />
+          Create
         </Button>
       )}
     </>
