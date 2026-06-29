@@ -106,68 +106,18 @@ export function ThemeContrastField({
   );
 }
 
-export function ThemeOpacityField({
-  value,
-  accent,
-  onPreview,
-  onCommit,
-}: {
-  value: number;
-  accent: string;
-  onPreview: (value: number) => void;
-  onCommit: (value: number) => void;
-}) {
-  const [draft, setDraft] = React.useState(value);
-
-  React.useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  const endDrag = React.useCallback(() => {
-    document.documentElement.classList.remove("window-opacity-dragging");
-  }, []);
-
-  React.useEffect(() => {
-    return () => {
-      document.documentElement.classList.remove("window-opacity-dragging");
-    };
-  }, []);
-
-  return (
-    <ThemeSliderField
-      label="Opacity"
-      value={draft}
-      accent={accent}
-      onPointerDown={() =>
-        document.documentElement.classList.add("window-opacity-dragging")
-      }
-      onChange={(next) => {
-        setDraft(next);
-        onPreview(next);
-      }}
-      onCommit={(next) => {
-        setDraft(next);
-        endDrag();
-        onCommit(next);
-      }}
-    />
-  );
-}
-
 function ThemeSliderField({
   label,
   value,
   accent,
   onChange,
   onCommit,
-  onPointerDown,
 }: {
   label: string;
   value: number;
   accent: string;
   onChange: (value: number) => void;
   onCommit?: (value: number) => void;
-  onPointerDown?: () => void;
 }) {
   const sliderId = React.useId();
 
@@ -201,7 +151,6 @@ function ThemeSliderField({
           }
           onInput={(event) => onChange(Number(event.currentTarget.value))}
           onChange={(event) => onChange(Number(event.target.value))}
-          onPointerDown={() => onPointerDown?.()}
           onPointerUp={(event) =>
             commit(Number((event.currentTarget as HTMLInputElement).value))
           }

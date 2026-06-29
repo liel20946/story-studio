@@ -8,6 +8,9 @@ import {
 
 export const DEFAULT_COLOR_THEME_CONTRAST = 60;
 export const DEFAULT_COLOR_THEME_OPACITY = 100;
+export const OPAQUE_WINDOW_OPACITY = DEFAULT_COLOR_THEME_OPACITY;
+export const BLURRED_WINDOW_OPACITY = 0;
+export const WINDOW_OPACITY_TRANSITION_MS = 220;
 /** @deprecated Use DEFAULT_COLOR_THEME_OPACITY */
 export const DEFAULT_COLOR_THEME_TRANSPARENCY = DEFAULT_COLOR_THEME_OPACITY;
 /** Codex-compatible clipboard prefix (import accepts; export uses same). */
@@ -191,6 +194,14 @@ export function resolveEffectiveOpacity(
   mode: ThemeMode,
 ): number {
   return modeColorThemeSettings(settings, mode).opacity;
+}
+
+export function isBlurredBackgroundEnabled(opacity: number): boolean {
+  return opacity < OPAQUE_WINDOW_OPACITY;
+}
+
+export function opacityForBlurredBackground(enabled: boolean): number {
+  return enabled ? BLURRED_WINDOW_OPACITY : OPAQUE_WINDOW_OPACITY;
 }
 
 /** @deprecated Use resolveEffectiveOpacity */

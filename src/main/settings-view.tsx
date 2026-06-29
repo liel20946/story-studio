@@ -9,7 +9,7 @@ import {
   toast,
   Switch,
 } from "@/components/ui";
-import { settingsGet, settingsSet, settingsPreviewOpacity, storiesImport, storiesExport } from "../lib/ipc";
+import { settingsGet, settingsSet, settingsTransitionOpacity, storiesImport, storiesExport } from "../lib/ipc";
 import type { AppSettings, AgentCapabilities } from "../lib/contract-types";
 import { useAgentCapabilities } from "../lib/agent-capabilities-store";
 import { FolderDownIcon, FolderOpenIcon, Loader2Icon } from "lucide-react";
@@ -34,7 +34,7 @@ import {
   effortSegmentClass,
   modelSegmentClass,
 } from "../lib/agent-config";
-import { applyAppearance, applyWindowOpacity, activeColorThemeForMode, resolveTheme } from "../lib/theme";
+import { applyAppearance, activeColorThemeForMode, resolveTheme } from "../lib/theme";
 import { ColorThemePicker } from "../components/color-theme-picker";
 import {
   applyImportedColorTheme,
@@ -44,12 +44,13 @@ import {
   resolveEffectiveContrast,
   resolveEffectivePalette,
   resolveEffectiveOpacity,
+  isBlurredBackgroundEnabled,
+  opacityForBlurredBackground,
 } from "../lib/color-theme-config";
 import type { ColorThemePalette } from "../lib/color-themes";
 import {
   ThemeColorField,
   ThemeContrastField,
-  ThemeOpacityField,
 } from "../components/theme-color-field";
 import { normalizeAppSettings } from "../lib/app-settings";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
@@ -230,8 +231,7 @@ function AppearancePanel({
   onColorThemeChange,
   onPaletteChange,
   onContrastChange,
-  onOpacityPreview,
-  onOpacityCommit,
+  onBlurredBackgroundChange,
   onCopyTheme,
   onImportTheme,
 }: {
@@ -241,8 +241,7 @@ function AppearancePanel({
   onColorThemeChange: (colorTheme: ColorThemeId) => void;
   onPaletteChange: (key: keyof ColorThemePalette, color: string) => void;
   onContrastChange: (contrast: number) => void;
-  onOpacityPreview: (opacity: number) => void;
-  onOpacityCommit: (opacity: number) => void;
+  onBlurredBackgroundChange: (enabled: boolean) => void;
   onCopyTheme: () => void;
   onImportTheme: () => void;
 }) {
@@ -250,7 +249,9 @@ function AppearancePanel({
   const colorTheme = activeColorThemeForMode(resolvedMode, settings);
   const palette = resolveEffectivePalette(settings, resolvedMode);
   const contrast = resolveEffectiveContrast(settings, resolvedMode);
-  const opacity = resolveEffectiveOpacity(settings, resolvedMode);
+  const blurredBackground = isBlurredBackgroundEnabled(
+    resolveEffectiveOpacity(settings, resolvedMode),
+  );
   const modeLabel = resolvedMode === "light" ? "Light theme" : "Dark theme";
 
   return (
@@ -308,14 +309,18 @@ function AppearancePanel({
               accent={palette.accent}
               onChange={onContrastChange}
             />
-            <ThemeOpacityField
-              value={opacity}
-              accent={palette.accent}
-              onPreview={onOpacityPreview}
-              onCommit={onOpacityCommit}
-            />
           </div>
         </div>
+        <SettingsRow
+          label="Blurred background"
+          description="Use a frosted, translucent window so content behind shows through."
+        >
+          <Switch
+            checked={blurredBackground}
+            aria-label="Blurred background"
+            onCheckedChange={onBlurredBackgroundChange}
+          />
+        </SettingsRow>
         <SettingsRow
           label="Use pointer cursors"
           description="Change the cursor to a pointer when hovering over interactive elements."
@@ -644,13 +649,9 @@ export function SettingsView() {
     }
   };
 
-  const handleOpacityPreview = (opacity: number) => {
-    applyWindowOpacity(opacity);
-    void settingsPreviewOpacity(opacity);
-  };
-
-  const handleOpacityCommit = async (opacity: number) => {
+  const handleBlurredBackgroundChange = async (enabled: boolean) => {
     const mode = resolveTheme(resolvedSettings.theme);
+    const opacity = opacityForBlurredBackground(enabled);
     const current = resolveEffectiveOpacity(resolvedSettings, mode);
     if (opacity === current) return;
 
@@ -661,12 +662,14 @@ export function SettingsView() {
     });
 
     commitAppSettings(nextSettings);
-    applyWindowOpacity(opacity);
+
+    await settingsTransitionOpacity(opacity);
+
     try {
       commitAppSettings(await settingsSet(patch));
     } catch (error) {
       void refreshAppSettings();
-      reportAppErrorFromUnknown("Failed to save opacity", error);
+      reportAppErrorFromUnknown("Failed to save blurred background", error);
     }
   };
 
@@ -813,8 +816,7 @@ export function SettingsView() {
               onColorThemeChange={handleColorThemeChange}
               onPaletteChange={handlePaletteChange}
               onContrastChange={handleContrastChange}
-              onOpacityPreview={handleOpacityPreview}
-              onOpacityCommit={handleOpacityCommit}
+              onBlurredBackgroundChange={handleBlurredBackgroundChange}
               onCopyTheme={handleCopyTheme}
               onImportTheme={handleImportTheme}
             />

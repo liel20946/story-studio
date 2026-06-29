@@ -11,6 +11,7 @@ import {
   resolveEffectiveContrast,
   resolveEffectivePalette,
   resolveEffectiveOpacity,
+  WINDOW_OPACITY_TRANSITION_MS,
 } from "./color-theme-config";
 import { applyColorThemePalette, clearColorThemeOverrides } from "./color-theme-apply";
 import { normalizeAppSettings } from "./app-settings";
@@ -57,8 +58,7 @@ function clearWindowOpacityOverrides(): void {
   root.classList.remove("window-opacity-active");
 }
 
-/** 100 = fully opaque, no blur; lower values add transparency and backdrop blur. */
-export function applyWindowOpacity(opacity: number): void {
+function setWindowOpacityVars(opacity: number): void {
   const root = document.documentElement;
   const clamped = Math.min(100, Math.max(0, Math.round(opacity)));
   const alpha = clamped / 100;
@@ -67,7 +67,73 @@ export function applyWindowOpacity(opacity: number): void {
   root.style.setProperty("--window-bg-opacity", String(alpha));
   root.style.setProperty("--window-bg-blur", `${blurPx}px`);
   root.style.setProperty("--window-bg-saturate", `${saturate}%`);
+}
+
+function readCurrentWindowOpacity(): number {
+  const root = document.documentElement;
+  const inline = root.style.getPropertyValue("--window-bg-opacity").trim();
+  const raw =
+    inline || getComputedStyle(root).getPropertyValue("--window-bg-opacity").trim();
+  const alpha = Number.parseFloat(raw);
+  if (!Number.isNaN(alpha)) {
+    return Math.round(alpha * 100);
+  }
+  return root.classList.contains("window-opacity-active") ? 0 : 100;
+}
+
+/** 100 = fully opaque, no blur; lower values add transparency and backdrop blur. */
+export function applyWindowOpacity(opacity: number): void {
+  const root = document.documentElement;
+  const clamped = Math.min(100, Math.max(0, Math.round(opacity)));
+  setWindowOpacityVars(clamped);
   root.classList.toggle("window-opacity-active", clamped < 100);
+}
+
+/** Smoothly animate window opacity like the former slider (all windows via IPC). */
+export function transitionWindowOpacity(toOpacity: number): Promise<void> {
+  const to = Math.min(100, Math.max(0, Math.round(toOpacity)));
+  const from = readCurrentWindowOpacity();
+  if (from === to) return Promise.resolve();
+
+  const root = document.documentElement;
+  const enablingBlur = to < from;
+
+  return new Promise((resolve) => {
+    let finished = false;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      root.classList.remove("window-opacity-transitioning");
+      root.removeEventListener("transitionend", onTransitionEnd);
+      window.clearTimeout(fallbackTimer);
+      applyWindowOpacity(to);
+      resolve();
+    };
+
+    const onTransitionEnd = (event: TransitionEvent) => {
+      if (event.target !== root) return;
+      if (event.propertyName !== "--window-bg-opacity") return;
+      finish();
+    };
+
+    root.classList.add("window-opacity-transitioning");
+    if (enablingBlur) {
+      root.classList.add("window-opacity-active");
+    }
+
+    root.addEventListener("transitionend", onTransitionEnd);
+    const fallbackTimer = window.setTimeout(
+      finish,
+      WINDOW_OPACITY_TRANSITION_MS + 50,
+    );
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setWindowOpacityVars(to);
+      });
+    });
+  });
 }
 
 /** @deprecated Use applyWindowOpacity */
@@ -234,12 +300,22 @@ export function useTheme(): void {
       },
     );
 
+    const unsubscribeOpacityTransition = window.electronAPI.on(
+      "settings:opacity-transition",
+      (payload: unknown) => {
+        const data = payload as { opacity?: number };
+        if (typeof data.opacity !== "number" || Number.isNaN(data.opacity)) return;
+        void transitionWindowOpacity(data.opacity);
+      },
+    );
+
     return () => {
       cancelled = true;
       mediaQuery.removeEventListener("change", onSystemThemeChange);
       unsubscribeTheme();
       unsubscribeColorTheme();
       unsubscribeAppearance();
+      unsubscribeOpacityTransition();
     };
   }, []);
 }

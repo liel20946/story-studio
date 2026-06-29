@@ -85,7 +85,7 @@
   --window-bg-opacity: 1;
   --window-bg-blur: 0px;
   --window-bg-saturate: 100%;
-  --window-opacity-transition: 180ms cubic-bezier(0.32, 0.72, 0, 1);
+  --window-opacity-transition: 220ms cubic-bezier(0.32, 0.72, 0, 1);
   --glass-highlight: transparent;
   --glass-shadow: transparent;
   --accent-contrast: #ffffff;
@@ -151,15 +151,11 @@
   --color-window-outline: rgb(255 255 255 / 8%);
 }
 
-html {
+html.window-opacity-transitioning {
   transition:
     --window-bg-opacity var(--window-opacity-transition),
     --window-bg-blur var(--window-opacity-transition),
     --window-bg-saturate var(--window-opacity-transition);
-}
-
-html.window-opacity-dragging {
-  transition: none;
 }
 
 @property --window-bg-opacity {
@@ -206,7 +202,6 @@ body,
 }
 
 .window-opacity-active.mac-window-chrome #root {
-  background: transparent;
   box-shadow: none;
 }
 

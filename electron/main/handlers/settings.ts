@@ -27,6 +27,7 @@ import { parseColorThemeId } from "../../../src/lib/color-themes.js";
 import {
   DEFAULT_COLOR_THEME_CONTRAST,
   DEFAULT_COLOR_THEME_OPACITY,
+  WINDOW_OPACITY_TRANSITION_MS,
   parseColorThemeContrast,
   parseColorThemeOpacity,
   parseColorThemePalette,
@@ -451,6 +452,28 @@ export function registerSettingsHandlers(): void {
     const opacity = (params as { opacity?: unknown }).opacity;
     if (typeof opacity !== "number" || Number.isNaN(opacity)) return;
     previewWindowOpacityBlur(opacity);
+  });
+
+  ipcMain.handle("settings:transition-opacity", async (_event, params: unknown) => {
+    if (typeof params !== "object" || params === null) return;
+    const opacity = (params as { opacity?: unknown }).opacity;
+    if (typeof opacity !== "number" || Number.isNaN(opacity)) return;
+    const clamped = Math.min(100, Math.max(0, Math.round(opacity)));
+    const enablingBlur = clamped < 100;
+
+    if (enablingBlur) {
+      previewWindowOpacityBlur(clamped);
+    }
+
+    broadcast("settings:opacity-transition", { opacity: clamped });
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, WINDOW_OPACITY_TRANSITION_MS + 50);
+    });
+
+    if (!enablingBlur) {
+      previewWindowOpacityBlur(clamped);
+    }
   });
 }
 
