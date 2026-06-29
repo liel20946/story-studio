@@ -8,6 +8,7 @@ import {
   CircleDotIcon,
   CopyIcon,
   CheckIcon,
+  HistoryIcon,
 } from "lucide-react";
 import {
   ScrollArea,
@@ -794,8 +795,10 @@ export function StoryView() {
                     onClick={handleRun}
                     disabled={isStarting}
                   >
-                    {activeRun || isStarting ? (
+                    {isStarting ? (
                       <Loader2Icon className="size-4 animate-spin" />
+                    ) : activeRun ? (
+                      <HistoryIcon className="size-4" />
                     ) : (
                       <PlayIcon className="size-4" />
                     )}

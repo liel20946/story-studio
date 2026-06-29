@@ -452,7 +452,7 @@
   min-height: 1.375rem;
   box-sizing: border-box;
   font-size: 0.6875rem;
-  line-height: 1;
+  line-height: 1.375rem;
   font-weight: 400;
   color: var(--color-text-tertiary);
   transition:
@@ -462,7 +462,7 @@
 
 .generate-model-controls .generate-model-picker-label {
   display: block;
-  line-height: 1;
+  line-height: inherit;
 }
 
 .generate-model-controls .generate-model-picker:hover:not(:disabled),
