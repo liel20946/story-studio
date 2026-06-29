@@ -2303,10 +2303,11 @@
   flex-direction: column;
 }
 
-/* Toolbar row — compact band; left inset matches top (vertical centering in 35px row) */
+/* Toolbar row — left inset matches vertical centering in the titlebar row;
+   right inset matches detail-view body so actions line up with content. */
 .detail-view-toolbar {
   padding-left: var(--titlebar-content-inset) !important;
-  padding-right: var(--titlebar-content-inset) !important;
+  padding-right: var(--detail-view-inset-x) !important;
 }
 
 .detail-view-toolbar-content {
