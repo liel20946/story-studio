@@ -66,29 +66,12 @@ Locate inputs by name / type / placeholder / aria-label. Verify values before su
 - Dynamic values (dates, times, counts, totals, prices, IDs): verify format/pattern/relative condition, not exact literals.
 - Stop on first failed Verify and mark status failed or blocked if environment prevents progress.
 
-## Screenshots (required — use Playwright MCP browser_take_screenshot)
-- Create the \`screenshots/\` directory in the run output directory before executing steps.
-- Save every image with \`browser_take_screenshot\` and its \`filename\` argument pointing at the target path.
-- Most action steps should have \`screenshot: null\` in steps.json — but **Verify steps and the hero are never optional**.
-
-### Minimum required on every successful run
-1. **Every Verify step** in Execution order — after the assertion passes, take a fresh screenshot, save it as \`screenshots/step-{index}-{slug}.png\`, and attach that path on the matching steps.json entry. Do not skip Verify screenshots.
-2. **Hero screenshot** — after the **last** line in Execution order completes successfully, wait for the UI to settle, then take a **new** \`browser_take_screenshot\` and save it to the exact hero path from **This run**. The hero must show the story's final post-condition screen (e.g. landed page, success toast, new table row) — not a pre-submit form or an earlier page.
-3. **Failure** — if the run stops early, capture a screenshot immediately before stopping.
-
-A run that saves only one early screenshot (e.g. after Navigate) and skips Verify or hero screenshots is **incorrect**.
-
-### Optional checkpoints (skip routine Fill / Click / Press / Select between form fields)
-- **Navigate** — after the new page has loaded.
-- **Form groups** — after filling all fields in a form/dialog, immediately before Submit / Save / Continue / Log In / Issue / Confirm (one per form; this is **not** the hero).
-
-### Hero vs checkpoints
-- Checkpoint files live under \`screenshots/\`. The hero is a separate file at the hero path from **This run**.
-- Do **not** copy or reuse an earlier checkpoint as the hero — always capture a fresh image at the end.
-- Set structured output \`screenshotPath\` to the hero path only when that PNG file exists.
-
-## steps.json
-- Write \`steps.json\` as a non-empty array covering every line in Execution order (actions and Verify steps). Each entry: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
+## Screenshots and steps.json (required)
+- Create a \`screenshots/\` directory in the run output directory before executing steps.
+- After each step in Execution order that changes visible UI, save \`screenshots/step-{index}-{slug}.png\` and record the path in steps.json.
+- Always capture a screenshot on failure before stopping.
+- Write \`steps.json\` as a non-empty array. Each entry must include: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
+- Set structured output screenshotPath to the most relevant image (failure screenshot if failed, else last step screenshot).
 
 ## Report
 - Report pass/fail with concise evidence for each Verify step.
@@ -219,12 +202,8 @@ export function buildRunPromptSuffix(paths: RunPromptPaths): string {
     "```markdown\n" +
     storyContents +
     "\n```\n\n" +
-    `Write steps.json to ${stepsPath} (log every step in Execution order). ` +
-    `Use browser_take_screenshot with filename for: (a) every Verify step — save under ${screenshotsDir}; ` +
-    `(b) the hero — after the last Execution order step succeeds, wait for the UI to settle, then save to exactly ${heroScreenshotPath}. ` +
-    `Do not stop after a single early screenshot; Verify and hero captures are mandatory. ` +
-    `Do not reuse a pre-submit or earlier checkpoint as the hero. ` +
-    `Set screenshotPath in the output schema to ${heroScreenshotPath} only after that file exists.` +
+    `Write steps.json to ${stepsPath} and save step screenshots under ${screenshotsDir}. ` +
+    `Set screenshotPath in the output schema to ${heroScreenshotPath} (hero/final image).` +
     (runHook?.trim() ? `\n\n## Additional instructions\n${runHook.trim()}` : "")
   );
 }

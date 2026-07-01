@@ -685,19 +685,10 @@ export function formatStoryForRun(story: StoryDetail): string {
   const execution = story.workflow.length > 0 ? story.workflow : [...steps, ...assertionLines];
   const lastStep = execution[execution.length - 1] ?? "";
   const lastIndex = execution.length;
-  const verifyCount = execution.filter((line) => /^verify\b/i.test(line)).length;
   const vars =
     story.variables.length > 0
       ? `\n## Variables\n${story.variables.map((v) => `- ${v.key}: ${v.value}`).join("\n")}\n`
       : "";
-  const executionLines = execution.map((line, i) => {
-    const markers: string[] = [];
-    if (/^verify\b/i.test(line)) markers.push("screenshot required");
-    if (/^navigate\b/i.test(line)) markers.push("screenshot checkpoint");
-    if (i === execution.length - 1) markers.push("hero screenshot after this step");
-    const suffix = markers.length > 0 ? ` [${markers.join("; ")}]` : "";
-    return `${i + 1}. ${line}${suffix}`;
-  });
   return (
     `# ${story.title}\n\n` +
     `URL: ${story.baseUrl ?? ""}\n` +
@@ -705,12 +696,7 @@ export function formatStoryForRun(story: StoryDetail): string {
     vars +
     `\n## Steps\n${steps.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
     `\n## Assertions\n${assertionLines.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
-    `\n## Execution order\n${executionLines.join("\n")}\n` +
-    (verifyCount > 0
-      ? `\n## Screenshot minimum\n` +
-        `This story requires at least ${verifyCount} Verify screenshot(s) under screenshots/ ` +
-        `plus 1 hero screenshot after step ${lastIndex}. Do not finish with only one early screenshot.\n`
-      : "") +
+    `\n## Execution order\n${execution.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
     (lastStep
       ? `\n## Hero screenshot\n` +
         `After execution step ${lastIndex} ("${lastStep}") passes, wait for the UI to fully reflect the outcome ` +

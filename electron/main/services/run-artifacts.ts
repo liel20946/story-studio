@@ -63,17 +63,7 @@ export async function loadRunSteps(runId: string): Promise<RunStep[]> {
 }
 
 export async function collectScreenshotPaths(runId: string): Promise<string[]> {
-  const checkpoints = await collectPngPathsByMtime(getRunScreenshotsDir(runId));
-  const hero = getHeroScreenshotPath(runId);
-  try {
-    await fs.access(hero);
-    if (!checkpoints.includes(hero)) {
-      return [...checkpoints, hero];
-    }
-  } catch {
-    // hero not written yet
-  }
-  return checkpoints;
+  return collectPngPathsByMtime(getRunScreenshotsDir(runId));
 }
 
 async function collectPngPathsByMtime(dir: string): Promise<string[]> {
