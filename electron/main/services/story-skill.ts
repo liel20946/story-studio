@@ -68,8 +68,7 @@ Locate inputs by name / type / placeholder / aria-label. Verify values before su
 
 ## Screenshots and steps.json (required)
 - Create a \`screenshots/\` directory in the run output directory before executing steps.
-- Screenshots are expensive — do NOT capture one after every workflow line. Most steps should have \`screenshot: null\` in steps.json.
-- Capture checkpoint screenshots only at meaningful moments:
+- Capture checkpoint screenshots at meaningful moments:
   1. **Navigate** — after the new page has loaded.
   2. **Verify** — after each assertion in Execution order passes (evidence for the report).
   3. **Form groups** — after filling all fields in a form/dialog/section, **immediately before** clicking Submit / Save / Continue / Log In / Issue / Confirm (one screenshot per form, not per field). This is **not** the hero screenshot.
