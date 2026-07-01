@@ -68,10 +68,26 @@ Locate inputs by name / type / placeholder / aria-label. Verify values before su
 
 ## Screenshots and steps.json (required)
 - Create a \`screenshots/\` directory in the run output directory before executing steps.
-- After each step in Execution order that changes visible UI, save \`screenshots/step-{index}-{slug}.png\` and record the path in steps.json.
-- Always capture a screenshot on failure before stopping.
-- Write \`steps.json\` as a non-empty array. Each entry must include: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
-- Set structured output screenshotPath to the most relevant image (failure screenshot if failed, else last step screenshot).
+- Capture checkpoint screenshots at meaningful moments:
+  1. **Navigate** — after the new page has loaded.
+  2. **Verify** — after each assertion in Execution order passes (evidence for the report).
+  3. **Form groups** — after filling all fields in a form/dialog/section, **immediately before** clicking Submit / Save / Continue / Log In / Issue / Confirm (one screenshot per form, not per field). This is **not** the hero screenshot.
+  4. **Major UI change** — modal opened, wizard step advanced (optional checkpoint only).
+  5. **Failure** — always, immediately before stopping.
+- Skip screenshots for intermediate Fill / Click / Press / Select steps inside a form group, focus changes, scrolling, and waiting.
+- Aim for roughly **3–8 checkpoint screenshots** on a typical story, not one per workflow line.
+- Save checkpoint images as \`screenshots/step-{index}-{slug}.png\` and attach the path only on that steps.json entry.
+
+## Hero screenshot (critical — read carefully)
+- The hero screenshot is **separate** from form-group / pre-submit checkpoints.
+- Capture it **only after the last line in Execution order** completes successfully (usually the final Verify).
+- After the last submit/navigation action, **wait for the UI to settle** (e.g. browser_wait_for 2–3s, or wait until the element the final Verify checks is visible) **before** the final Verify and hero capture.
+- The hero must show the **post-condition** the story ends on — e.g. the new row in a table, success toast visible, landed page after the last click — **not** a dialog about to be submitted and not an earlier page.
+- Take a **fresh** browser screenshot and save it to the hero path. Do **not** copy or reuse an earlier checkpoint file (especially not a pre-submit form screenshot).
+- Attach the hero path only on the **last** steps.json entry and in structured output \`screenshotPath\`.
+
+## steps.json
+- Write \`steps.json\` as a non-empty array covering every line in Execution order (actions and Verify steps). Each entry: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
 
 ## Report
 - Report pass/fail with concise evidence for each Verify step.
@@ -202,8 +218,12 @@ export function buildRunPromptSuffix(paths: RunPromptPaths): string {
     "```markdown\n" +
     storyContents +
     "\n```\n\n" +
-    `Write steps.json to ${stepsPath} and save step screenshots under ${screenshotsDir}. ` +
-    `Set screenshotPath in the output schema to ${heroScreenshotPath} (hero/final image).` +
+    `Write steps.json to ${stepsPath} (log every step in Execution order; attach screenshots only at checkpoints — see playbook). ` +
+    `Save checkpoint screenshots under ${screenshotsDir}. ` +
+    `The hero screenshot MUST be a fresh capture taken after the last Execution order step succeeds — ` +
+    `wait for the UI to update after the final submit/navigation, then save it to exactly ${heroScreenshotPath}. ` +
+    `Do not reuse a pre-submit or earlier checkpoint as the hero. ` +
+    `Set screenshotPath in the output schema to ${heroScreenshotPath}.` +
     (runHook?.trim() ? `\n\n## Additional instructions\n${runHook.trim()}` : "")
   );
 }
