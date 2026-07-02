@@ -58,6 +58,7 @@ async function openSettingsData(page) {
 
 async function main() {
   const port = process.env.CDP_PORT ?? "9222";
+  const onlyImport = process.argv.includes("--import-only");
   await waitForCdp(port);
 
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
@@ -71,18 +72,24 @@ async function main() {
   }
 
   await page.bringToFront();
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(500);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
 
-  await openSettingsData(page);
-  await captureWindow(page, "01-settings-data-panel");
+  if (!onlyImport) {
+    await openSettingsData(page);
+    await captureWindow(page, "01-settings-data-panel");
 
-  await page.getByRole("button", { name: "Export…" }).click();
-  await page.waitForSelector("text=Export stories", { timeout: 10_000 });
-  await page.waitForTimeout(400);
-  await captureWindow(page, "02-export-dialog");
+    await page.getByRole("button", { name: "Export…" }).click();
+    await page.waitForSelector("text=Export stories", { timeout: 10_000 });
+    await page.waitForTimeout(400);
+    await captureWindow(page, "02-export-dialog");
 
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await page.waitForTimeout(400);
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.waitForTimeout(400);
+  } else {
+    await openSettingsData(page);
+  }
 
   await page.evaluate(
     async ({ yamlPath }) => {

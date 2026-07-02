@@ -9,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
   Field,
-  Label,
   RadioGroup,
   RadioGroupItem,
   Text,
@@ -25,6 +24,7 @@ import {
 } from "@/lib/ipc";
 import type { ExportPreview, ImportMode, ImportPreview } from "@/lib/contract-types";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
+import { cn } from "@/lib/utils";
 import { FolderDownIcon, FolderOpenIcon, Loader2Icon } from "lucide-react";
 
 function formatStoryCount(count: number): string {
@@ -73,8 +73,13 @@ function ImportStoriesDialog({
             orientation="vertical"
             className="gap-3"
           >
-            <Label className="items-start gap-3 rounded-card border border-separator p-3">
-              <RadioGroupItem value="add" className="mt-0.5" />
+            <label
+              className={cn(
+                "flex w-full cursor-pointer items-start gap-3 rounded-card border p-3 transition-colors",
+                mode === "add" ? "border-accent bg-accent/5" : "border-separator",
+              )}
+            >
+              <RadioGroupItem value="add" className="mt-0.5 shrink-0" />
               <span className="flex flex-col gap-1">
                 <Text variant="regular">Add to library</Text>
                 <Text variant="small" color="secondary">
@@ -82,9 +87,14 @@ function ImportStoriesDialog({
                   ID in the same site file are skipped.
                 </Text>
               </span>
-            </Label>
-            <Label className="items-start gap-3 rounded-card border border-separator p-3">
-              <RadioGroupItem value="overwrite" className="mt-0.5" />
+            </label>
+            <label
+              className={cn(
+                "flex w-full cursor-pointer items-start gap-3 rounded-card border p-3 transition-colors",
+                mode === "overwrite" ? "border-accent bg-accent/5" : "border-separator",
+              )}
+            >
+              <RadioGroupItem value="overwrite" className="mt-0.5 shrink-0" />
               <span className="flex flex-col gap-1">
                 <Text variant="regular">Overwrite existing data</Text>
                 <Text variant="small" color="secondary">
@@ -92,7 +102,7 @@ function ImportStoriesDialog({
                   are left unchanged.
                 </Text>
               </span>
-            </Label>
+            </label>
           </RadioGroup>
         </DialogBody>
         <DialogFooter>
