@@ -36,9 +36,9 @@
 
 /* Codex-inspired — true dark, flat surfaces, coral accent */
 :root {
-  --font-family-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  --font-family-body: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  --font-family-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --font-family-display: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --font-family-body: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-family-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", monospace;
 
   --bg: #f5f5f5;
   --bg-secondary: #ffffff;
@@ -225,8 +225,10 @@ body {
   color: var(--color-text-primary);
   font-family: var(--font-family-body);
   font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
 }
 
