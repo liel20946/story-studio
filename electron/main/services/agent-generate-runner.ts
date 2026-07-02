@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
 import * as fs from "fs/promises";
-import * as os from "os";
 import * as path from "path";
 import type { AgentProvider } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
@@ -10,6 +9,10 @@ import {
   parseAgentMessageFromCodexStdout,
 } from "./recording-convert-service.js";
 import { progressFromCodexEvent } from "./codex-event-labels.js";
+import {
+  buildBaseAgentSpawnEnv,
+  buildClaudeSpawnEnv,
+} from "./agent-spawn-env.js";
 
 const GENERATE_TIMEOUT_MS = 8 * 60_000;
 const REVISION_TIMEOUT_MS = 2 * 60_000;
@@ -35,16 +38,6 @@ export function cancelGenerateInvocation(invocationId: string): boolean {
   }
   _activeChildren.delete(invocationId);
   return true;
-}
-
-function buildEnv(): NodeJS.ProcessEnv {
-  const extraPath = `/opt/homebrew/bin:${path.dirname(process.execPath)}`;
-  const existingPath = process.env.PATH ?? "";
-  return {
-    ...process.env,
-    HOME: os.homedir(),
-    PATH: `${extraPath}:${existingPath}`,
-  };
 }
 
 function buildCodexModelConfigArgs(agentConfig: AgentRunConfig): string[] {
@@ -109,6 +102,7 @@ function spawnTracked(
   exploring: boolean,
   onProgress?: (message: string) => void,
   parseStdout?: (stdout: string) => Promise<string>,
+  env: NodeJS.ProcessEnv = buildBaseAgentSpawnEnv(),
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let stdout = "";
@@ -137,7 +131,7 @@ function spawnTracked(
 
     child = spawn(command, args, {
       cwd,
-      env: buildEnv(),
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     _activeChildren.set(conversationId, child);
@@ -390,6 +384,8 @@ async function invokeClaude(
     timeoutMs,
     exploring,
     onProgress,
+    undefined,
+    buildClaudeSpawnEnv(),
   );
 }
 
