@@ -49,25 +49,12 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 
 export function StoryDetailPanel({
   children,
-  variant = "card",
   className,
 }: {
   children: React.ReactNode;
-  variant?: "card" | "embedded";
   className?: string;
 }) {
-  return (
-    <div
-      className={cn(
-        "story-detail-panel",
-        variant === "card" && "story-detail-panel--card",
-        variant === "embedded" && "story-detail-panel--embedded",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
+  return <div className={cn("story-detail-layout", className)}>{children}</div>;
 }
 
 export function StoryDetailPanelSection({
@@ -80,7 +67,7 @@ export function StoryDetailPanelSection({
   className?: string;
 }) {
   return (
-    <section className={cn("story-detail-panel-section", className)}>
+    <section className={cn("story-detail-section", className)}>
       <span className="section-label">{title}</span>
       {children}
     </section>
@@ -283,9 +270,9 @@ export function StoryAssertionList({
   if (assertions.length === 0) return null;
 
   return (
-    <ul className="story-assertion-list">
+    <div className="story-assertion-block">
       {assertions.map((assertion, i) => (
-        <li key={i} className="story-assertion-row">
+        <div key={i} className="story-assertion-block-row">
           {editable ? (
             <input
               ref={(el) => {
@@ -306,9 +293,9 @@ export function StoryAssertionList({
               <InlineCode text={assertion} colorMap={colorMap} />
             </div>
           )}
-        </li>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }
 
