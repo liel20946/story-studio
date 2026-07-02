@@ -17,10 +17,6 @@ function findArtifact(pattern) {
   return fs.readdirSync(releaseDir).find((name) => pattern.test(name));
 }
 
-function releaseAssetName(localName) {
-  return localName.replace(/^Story Studio/, "Story.Studio");
-}
-
 export function generateLatestMacYml(version) {
   const zipName = findArtifact(new RegExp(`^Story[.\\s-]Studio-${version}-arm64-mac\\.zip$`));
   if (!zipName) {
@@ -36,7 +32,7 @@ export function generateLatestMacYml(version) {
 
   const files = [
     {
-      url: releaseAssetName(zipName),
+      url: zipName,
       sha512: zipSha512,
       size: zipSize,
     },
@@ -45,7 +41,7 @@ export function generateLatestMacYml(version) {
   if (dmgName) {
     const dmgPath = path.join(releaseDir, dmgName);
     files.push({
-      url: releaseAssetName(dmgName),
+      url: dmgName,
       sha512: sha512Base64(dmgPath),
       size: fs.statSync(dmgPath).size,
     });
@@ -59,7 +55,7 @@ export function generateLatestMacYml(version) {
       `    sha512: ${file.sha512}`,
       `    size: ${file.size}`,
     ]),
-    `path: ${releaseAssetName(zipName)}`,
+    `path: ${zipName}`,
     `sha512: ${zipSha512}`,
     `releaseDate: '${new Date().toISOString()}'`,
     "",
