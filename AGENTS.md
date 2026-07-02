@@ -40,6 +40,13 @@ Ground truth: a working release (e.g. v1.4.8) has both the asset and the yml `ur
 - GitHub auth for publishing, one of:
   - `gh auth login -h github.com`, or
   - `GH_TOKEN` env var with `repo` scope.
+  - Note: `electron-builder` reads the token **only** from the `GH_TOKEN` (or `GH_TOKEN`/`GITHUB_TOKEN`)
+    env var — it does **not** use the `gh` CLI keyring. Being logged in with `gh` is not enough for
+    `dist:publish`. Bridge the keyring token into the env when publishing:
+
+    ```bash
+    GH_TOKEN=$(gh auth token) npm run dist:publish
+    ```
 - Bump `version` in `package.json` before releasing. Never reuse a version number for different bits.
 
 ## Build (no publish)
@@ -58,8 +65,10 @@ Preferred, single command:
 
 ```bash
 # 1. Bump "version" in package.json first
-npm run dist:publish
+GH_TOKEN=$(gh auth token) npm run dist:publish
 ```
+
+`GH_TOKEN` is required — `electron-builder` won't pick up the `gh` login on its own.
 
 `dist:publish` (`scripts/publish-release.mjs`) does:
 
