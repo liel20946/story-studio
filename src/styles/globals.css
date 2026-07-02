@@ -36,8 +36,8 @@
 
 /* Codex-inspired — true dark, flat surfaces, coral accent */
 :root {
-  --font-family-display: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  --font-family-body: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-family-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  --font-family-body: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --font-family-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 
   --bg: #f5f5f5;
