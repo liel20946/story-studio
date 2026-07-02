@@ -278,35 +278,22 @@
   color: #fff;
 }
 
-/* Sidebar search */
-.sidebar-search {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  height: 28px;
-  padding: 0 0.6rem;
-  border-radius: var(--radius-control);
+/* Command search overlay (Codex-style palette) */
+.command-search-overlay {
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+.command-search-panel {
   border: 1px solid var(--color-border-separator);
-  background: var(--color-surface-control);
+  box-shadow:
+    0 24px 64px rgb(0 0 0 / 45%),
+    0 0 0 1px rgb(255 255 255 / 4%) inset;
 }
 
-.sidebar-search:focus-within {
-  border-color: var(--color-border-field);
-  background: var(--color-surface-control);
-}
-
-.sidebar-search input {
-  min-width: 0;
-  flex: 1;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: 12px;
-  color: var(--color-text-primary);
-}
-
-.sidebar-search input::placeholder {
-  color: var(--color-text-tertiary);
+.command-search-results {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-control) transparent;
 }
 
 .generate-skill-chip {
