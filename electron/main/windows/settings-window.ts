@@ -5,8 +5,6 @@ import { getMacWindowChromeOptions, applyMacWindowChrome } from "./window-chrome
 import { disableReloadShortcut } from "./disable-reload-shortcut.js";
 import { applyDefaultZoom } from "./window-zoom.js";
 import { logger } from "../logger.js";
-import { applyWindowOpacityBlur } from "./window-opacity.js";
-import { getSettingsValue } from "../handlers/settings.js";
 
 let settingsWindow: BrowserWindow | null = null;
 
@@ -59,8 +57,6 @@ export async function openSettingsWindow(): Promise<void> {
   } else {
     await settingsWindow.loadFile(load.file, load.query ? { query: load.query } : undefined);
   }
-
-  applyWindowOpacityBlur(getSettingsValue());
 }
 
 export function getSettingsWindow(): BrowserWindow | null {

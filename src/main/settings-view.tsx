@@ -9,7 +9,7 @@ import {
   toast,
   Switch,
 } from "@/components/ui";
-import { settingsGet, settingsSet, settingsTransitionOpacity } from "../lib/ipc";
+import { settingsGet, settingsSet } from "../lib/ipc";
 import type { AppSettings, AgentCapabilities } from "../lib/contract-types";
 import { useAgentCapabilities } from "../lib/agent-capabilities-store";
 import { FolderDownIcon, FolderOpenIcon, Loader2Icon } from "lucide-react";
@@ -44,9 +44,6 @@ import {
   parseImportedColorTheme,
   resolveEffectiveContrast,
   resolveEffectivePalette,
-  resolveEffectiveOpacity,
-  isBlurredBackgroundEnabled,
-  opacityForBlurredBackground,
 } from "../lib/color-theme-config";
 import type { ColorThemePalette } from "../lib/color-themes";
 import {
@@ -232,7 +229,6 @@ function AppearancePanel({
   onColorThemeChange,
   onPaletteChange,
   onContrastChange,
-  onBlurredBackgroundChange,
   onCopyTheme,
   onImportTheme,
 }: {
@@ -242,7 +238,6 @@ function AppearancePanel({
   onColorThemeChange: (colorTheme: ColorThemeId) => void;
   onPaletteChange: (key: keyof ColorThemePalette, color: string) => void;
   onContrastChange: (contrast: number) => void;
-  onBlurredBackgroundChange: (enabled: boolean) => void;
   onCopyTheme: () => void;
   onImportTheme: () => void;
 }) {
@@ -250,9 +245,6 @@ function AppearancePanel({
   const colorTheme = activeColorThemeForMode(resolvedMode, settings);
   const palette = resolveEffectivePalette(settings, resolvedMode);
   const contrast = resolveEffectiveContrast(settings, resolvedMode);
-  const blurredBackground = isBlurredBackgroundEnabled(
-    resolveEffectiveOpacity(settings, resolvedMode),
-  );
   const modeLabel = resolvedMode === "light" ? "Light theme" : "Dark theme";
 
   return (
@@ -312,16 +304,6 @@ function AppearancePanel({
             />
           </div>
         </div>
-        <SettingsRow
-          label="Blurred background"
-          description="Use a frosted, translucent window so content behind shows through."
-        >
-          <Switch
-            checked={blurredBackground}
-            aria-label="Blurred background"
-            onCheckedChange={onBlurredBackgroundChange}
-          />
-        </SettingsRow>
         <SettingsRow
           label="Use pointer cursors"
           description="Change the cursor to a pointer when hovering over interactive elements."
@@ -649,30 +631,6 @@ export function SettingsView() {
     }
   };
 
-  const handleBlurredBackgroundChange = async (enabled: boolean) => {
-    const mode = resolveTheme(resolvedSettings.theme);
-    const opacity = opacityForBlurredBackground(enabled);
-    const current = resolveEffectiveOpacity(resolvedSettings, mode);
-    if (opacity === current) return;
-
-    const patch = appearancePatchForMode(mode, { opacity });
-    const nextSettings = normalizeAppSettings({
-      ...resolvedSettings,
-      ...patch,
-    });
-
-    commitAppSettings(nextSettings);
-
-    await settingsTransitionOpacity(opacity);
-
-    try {
-      commitAppSettings(await settingsSet(patch));
-    } catch (error) {
-      void refreshAppSettings();
-      reportAppErrorFromUnknown("Failed to save blurred background", error);
-    }
-  };
-
   const handleCopyTheme = async () => {
     const mode = resolveTheme(resolvedSettings.theme);
     try {
@@ -783,7 +741,6 @@ export function SettingsView() {
               onColorThemeChange={handleColorThemeChange}
               onPaletteChange={handlePaletteChange}
               onContrastChange={handleContrastChange}
-              onBlurredBackgroundChange={handleBlurredBackgroundChange}
               onCopyTheme={handleCopyTheme}
               onImportTheme={handleImportTheme}
             />

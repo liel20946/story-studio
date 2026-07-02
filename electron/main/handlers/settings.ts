@@ -18,18 +18,10 @@ import {
   isEffortAllowed,
 } from "../services/agent-capabilities.js";
 import { getStoriesDir, getRunsDir, overridePaths } from "../services/paths.js";
-import {
-  applyWindowOpacityBlur,
-  previewWindowOpacityBlur,
-  registerWindowOpacityListeners,
-} from "../windows/window-opacity.js";
 import { parseColorThemeId } from "../../../src/lib/color-themes.js";
 import {
   DEFAULT_COLOR_THEME_CONTRAST,
-  DEFAULT_COLOR_THEME_OPACITY,
-  WINDOW_OPACITY_TRANSITION_MS,
   parseColorThemeContrast,
-  parseColorThemeOpacity,
   parseColorThemePalette,
 } from "../../../src/lib/color-theme-config.js";
 
@@ -73,8 +65,6 @@ function parseColorThemeFields(
 
 type ParsedSettings = Partial<AppSettings> & {
   colorTheme?: unknown;
-  colorThemeTransparencyLight?: number;
-  colorThemeTransparencyDark?: number;
 };
 
 function toAppSettings(
@@ -112,14 +102,6 @@ function toAppSettings(
       parsed.colorThemeContrastDark,
       defaults.colorThemeContrastDark,
     ),
-    colorThemeOpacityLight: parseColorThemeOpacity(
-      parsed.colorThemeOpacityLight ?? parsed.colorThemeTransparencyLight,
-      defaults.colorThemeOpacityLight,
-    ),
-    colorThemeOpacityDark: parseColorThemeOpacity(
-      parsed.colorThemeOpacityDark ?? parsed.colorThemeTransparencyDark,
-      defaults.colorThemeOpacityDark,
-    ),
     usePointerCursors:
       typeof parsed.usePointerCursors === "boolean"
         ? parsed.usePointerCursors
@@ -150,8 +132,6 @@ async function loadSettings(): Promise<AppSettings> {
     colorThemePaletteDark: null,
     colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
     colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
-    colorThemeOpacityLight: DEFAULT_COLOR_THEME_OPACITY,
-    colorThemeOpacityDark: DEFAULT_COLOR_THEME_OPACITY,
     usePointerCursors: false,
     startingUrl: DEFAULT_STARTING_URL,
     runHook: "",
@@ -176,11 +156,7 @@ async function loadSettings(): Promise<AppSettings> {
       !("colorThemeLight" in parsed) ||
       !("colorThemeDark" in parsed) ||
       !("colorThemeContrastLight" in parsed) ||
-      !("colorThemeContrastDark" in parsed) ||
-      !("colorThemeOpacityLight" in parsed) ||
-      !("colorThemeOpacityDark" in parsed) ||
-      "colorThemeTransparencyLight" in parsed ||
-      "colorThemeTransparencyDark" in parsed;
+      !("colorThemeContrastDark" in parsed);
     if (needsMigration) {
       await persistSettings(_settings);
     }
@@ -216,8 +192,6 @@ export function getSettingsValue(): AppSettings {
       colorThemePaletteDark: null,
       colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
       colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
-      colorThemeOpacityLight: DEFAULT_COLOR_THEME_OPACITY,
-      colorThemeOpacityDark: DEFAULT_COLOR_THEME_OPACITY,
       usePointerCursors: false,
       startingUrl: DEFAULT_STARTING_URL,
       runHook: "",
@@ -368,22 +342,6 @@ export function registerSettingsHandlers(): void {
       current.colorThemeContrastDark = parseColorThemeContrast(val);
     }
 
-    if ("colorThemeOpacityLight" in p) {
-      const val = p["colorThemeOpacityLight"];
-      if (typeof val !== "number" || Number.isNaN(val)) {
-        throw new Error("settings:set colorThemeOpacityLight must be a number");
-      }
-      current.colorThemeOpacityLight = parseColorThemeOpacity(val);
-    }
-
-    if ("colorThemeOpacityDark" in p) {
-      const val = p["colorThemeOpacityDark"];
-      if (typeof val !== "number" || Number.isNaN(val)) {
-        throw new Error("settings:set colorThemeOpacityDark must be a number");
-      }
-      current.colorThemeOpacityDark = parseColorThemeOpacity(val);
-    }
-
     if ("startingUrl" in p) {
       const val = p["startingUrl"];
       if (typeof val !== "string") {
@@ -413,7 +371,6 @@ export function registerSettingsHandlers(): void {
     broadcast("settings:codexBinaryPath-changed", { value: current.codexBinaryPath });
     if ("theme" in p) {
       broadcast("settings:theme-changed", { theme: current.theme });
-      applyWindowOpacityBlur(current);
     }
     if (
       "colorThemeLight" in p ||
@@ -421,9 +378,7 @@ export function registerSettingsHandlers(): void {
       "colorThemePaletteLight" in p ||
       "colorThemePaletteDark" in p ||
       "colorThemeContrastLight" in p ||
-      "colorThemeContrastDark" in p ||
-      "colorThemeOpacityLight" in p ||
-      "colorThemeOpacityDark" in p
+      "colorThemeContrastDark" in p
     ) {
       broadcast("settings:color-theme-changed", {
         colorThemeLight: current.colorThemeLight,
@@ -432,10 +387,7 @@ export function registerSettingsHandlers(): void {
         colorThemePaletteDark: current.colorThemePaletteDark,
         colorThemeContrastLight: current.colorThemeContrastLight,
         colorThemeContrastDark: current.colorThemeContrastDark,
-        colorThemeOpacityLight: current.colorThemeOpacityLight,
-        colorThemeOpacityDark: current.colorThemeOpacityDark,
       });
-      applyWindowOpacityBlur(current);
     }
     if ("usePointerCursors" in p) {
       broadcast("settings:appearance-changed", {
@@ -445,35 +397,6 @@ export function registerSettingsHandlers(): void {
     console.log("[settings] saved", current);
     // Shallow copy so renderer setState always sees a new reference.
     return { ...current };
-  });
-
-  ipcMain.handle("settings:preview-opacity", async (_event, params: unknown) => {
-    if (typeof params !== "object" || params === null) return;
-    const opacity = (params as { opacity?: unknown }).opacity;
-    if (typeof opacity !== "number" || Number.isNaN(opacity)) return;
-    previewWindowOpacityBlur(opacity);
-  });
-
-  ipcMain.handle("settings:transition-opacity", async (_event, params: unknown) => {
-    if (typeof params !== "object" || params === null) return;
-    const opacity = (params as { opacity?: unknown }).opacity;
-    if (typeof opacity !== "number" || Number.isNaN(opacity)) return;
-    const clamped = Math.min(100, Math.max(0, Math.round(opacity)));
-    const enablingBlur = clamped < 100;
-
-    if (enablingBlur) {
-      previewWindowOpacityBlur(clamped);
-    }
-
-    broadcast("settings:opacity-transition", { opacity: clamped });
-
-    await new Promise((resolve) => {
-      setTimeout(resolve, WINDOW_OPACITY_TRANSITION_MS + 50);
-    });
-
-    if (!enablingBlur) {
-      previewWindowOpacityBlur(clamped);
-    }
   });
 }
 
@@ -525,8 +448,6 @@ export async function initSettings(): Promise<AppSettings> {
   }
 
   _settings = s;
-  applyWindowOpacityBlur(s);
-  registerWindowOpacityListeners(getSettingsValue);
   return s;
 }
 
