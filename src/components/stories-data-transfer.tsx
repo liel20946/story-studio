@@ -167,12 +167,8 @@ function ExportStoriesDialog({
                 onClick={onPickFolder}
                 disabled={isExporting || isPickingFolder}
               >
-                {isPickingFolder ? (
-                  <Loader2Icon className="size-4 animate-spin text-accent" />
-                ) : (
-                  <FolderOpenIcon className="size-4" />
-                )}
-                {isPickingFolder ? "Choosing folder…" : "Choose folder"}
+                <FolderOpenIcon className="size-4" />
+                Choose folder
               </Button>
               {destDir ? (
                 <Text variant="small" color="secondary" className="break-all">
@@ -297,7 +293,6 @@ export function useStoriesDataTransfer() {
 
   const startExport = async () => {
     if (isImporting || isExporting) return;
-    setIsExporting(true);
     try {
       const preview = await storiesExportPreview();
       if (preview.storyCount === 0) {
@@ -309,12 +304,8 @@ export function useStoriesDataTransfer() {
       setExportDialogOpen(true);
     } catch (err) {
       reportAppErrorFromUnknown("Export failed", err);
-    } finally {
-      setIsExporting(false);
     }
   };
-
-  const pickExportFolder = async () => {
     if (isPickingFolder || isExporting) return;
     setIsPickingFolder(true);
     try {

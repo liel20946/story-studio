@@ -414,12 +414,8 @@ function DataPanel({
             onClick={onExport}
             disabled={isImporting || isExporting}
           >
-            {isExporting ? (
-              <Loader2Icon className="size-3.5 animate-spin text-accent" />
-            ) : (
-              <FolderDownIcon className="size-3.5" />
-            )}
-            {isExporting ? "Exporting…" : "Export…"}
+            <FolderDownIcon className="size-3.5" />
+            Export
           </Button>
         </SettingsRow>
       </SettingsGroup>
