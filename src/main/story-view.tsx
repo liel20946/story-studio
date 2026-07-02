@@ -40,16 +40,18 @@ import { StorySteps } from "../components/story-steps";
 import { useActiveRunForStory, useRegisterRun } from "../lib/run-store";
 import { buildVarColors } from "../lib/story-var-colors";
 
-// ---------- section (Steps on the left; Variables / Assertions on the rail) ----------
+// ---------- section (Variables, Steps, Assertions in story detail) ----------
 function Section({
   title,
   children,
+  className,
 }: {
   title: React.ReactNode;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="codex-section">
+    <div className={cn("codex-section", className)}>
       <span className="section-label">{title}</span>
       {children}
     </div>
@@ -812,12 +814,29 @@ export function StoryView() {
         </Toolbar>
       }
     >
-      {/* Two-column detail: steps on the left; variables + assertions on the
-          right rail card (matches run view layout and typography). */}
-      <div className="detail-view">
+      {/* Single-column detail: variables, then steps, then assertions. */}
+      <div className="detail-view detail-view--story">
         <div className="detail-view-main story-sections">
+          {(isEditingThisStory && draft) || story.variables.length > 0 ? (
+            <Section title="Variables">
+              {isEditingThisStory && draft ? (
+                <EditableVariables
+                  draft={draft}
+                  nameColors={varColors.text}
+                  keyInputRefs={variableKeyInputRefs}
+                  valueInputRefs={variableValueInputRefs}
+                  onChange={(variables) => updateDraftVariables(variables)}
+                  onChangeNow={(variables) => updateDraftVariables(variables, true)}
+                  onCommitCheckpoint={commitCheckpoint}
+                />
+              ) : (
+                <ReadOnlyVariables story={story} nameColors={varColors.text} />
+              )}
+            </Section>
+          ) : null}
+
           {(isEditingThisStory && draft) || story.steps.length > 0 ? (
-            <Section title="Steps">
+            <Section title="Steps" className="story-steps-section">
               <StorySteps
                 steps={isEditingThisStory && draft ? draft.steps : story.steps}
                 colorMap={varColors.chip}
@@ -848,82 +867,58 @@ export function StoryView() {
           ) : (
             <EmptyState placement="inline" title="No steps yet." />
           )}
-        </div>
 
-        {((isEditingThisStory && draft) ||
-          story.variables.length > 0 ||
-          story.assertions.length > 0) && (
-          <div className="detail-rail detail-rail--card">
-            {(isEditingThisStory && draft) || story.variables.length > 0 ? (
-              <Section title="Variables">
-                {isEditingThisStory && draft ? (
-                  <EditableVariables
-                    draft={draft}
-                    nameColors={varColors.text}
-                    keyInputRefs={variableKeyInputRefs}
-                    valueInputRefs={variableValueInputRefs}
-                    onChange={(variables) => updateDraftVariables(variables)}
-                    onChangeNow={(variables) => updateDraftVariables(variables, true)}
-                    onCommitCheckpoint={commitCheckpoint}
-                  />
-                ) : (
-                  <ReadOnlyVariables story={story} nameColors={varColors.text} />
-                )}
-              </Section>
-            ) : null}
-
-            {(isEditingThisStory && draft) || story.assertions.length > 0 ? (
-              <Section title="Assertions">
-                <div className="flex flex-col">
-                  {(isEditingThisStory && draft ? draft.assertions : story.assertions).map(
-                    (assertion, i) =>
-                      isEditingThisStory && draft ? (
-                        <div key={i} className="flex items-center gap-1.5 py-0.5 min-w-0">
-                          <input
-                            ref={(el) => {
-                              assertionInputRefs.current[i] = el;
-                            }}
-                            aria-label={`Assertion ${i + 1}`}
-                            value={assertion}
-                            onChange={(e) =>
-                              updateTextRow(
-                                i,
-                                e.target.value,
-                                draft.assertions,
-                                (assertions) => updateDraftAssertions(assertions),
-                              )
-                            }
-                            onBlur={commitCheckpoint}
-                            onKeyDown={(e) =>
-                              handleTextRowKeyDown(
-                                e,
-                                i,
-                                assertion,
-                                draft.assertions,
-                                (assertions, immediate) =>
-                                  updateDraftAssertions(assertions, immediate),
-                                assertionInputRefs,
-                              )
-                            }
-                            className={cn(
-                              storyEditInputClass,
-                              "text-[11px] leading-[15px] text-secondary",
-                            )}
-                          />
-                        </div>
-                      ) : (
-                        <RailAssertionLine
-                          key={i}
-                          text={assertion}
-                          colorMap={varColors.chip}
+          {(isEditingThisStory && draft) || story.assertions.length > 0 ? (
+            <Section title="Assertions">
+              <div className="flex flex-col">
+                {(isEditingThisStory && draft ? draft.assertions : story.assertions).map(
+                  (assertion, i) =>
+                    isEditingThisStory && draft ? (
+                      <div key={i} className="flex items-center gap-1.5 py-0.5 min-w-0">
+                        <input
+                          ref={(el) => {
+                            assertionInputRefs.current[i] = el;
+                          }}
+                          aria-label={`Assertion ${i + 1}`}
+                          value={assertion}
+                          onChange={(e) =>
+                            updateTextRow(
+                              i,
+                              e.target.value,
+                              draft.assertions,
+                              (assertions) => updateDraftAssertions(assertions),
+                            )
+                          }
+                          onBlur={commitCheckpoint}
+                          onKeyDown={(e) =>
+                            handleTextRowKeyDown(
+                              e,
+                              i,
+                              assertion,
+                              draft.assertions,
+                              (assertions, immediate) =>
+                                updateDraftAssertions(assertions, immediate),
+                              assertionInputRefs,
+                            )
+                          }
+                          className={cn(
+                            storyEditInputClass,
+                            "text-[11px] leading-[15px] text-secondary",
+                          )}
                         />
-                      ),
-                  )}
-                </div>
-              </Section>
-            ) : null}
-          </div>
-        )}
+                      </div>
+                    ) : (
+                      <RailAssertionLine
+                        key={i}
+                        text={assertion}
+                        colorMap={varColors.chip}
+                      />
+                    ),
+                )}
+              </div>
+            </Section>
+          ) : null}
+        </div>
       </div>
     </ScrollArea>
   );

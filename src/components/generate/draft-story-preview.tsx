@@ -8,12 +8,14 @@ import { StorySteps } from "@/components/story-steps";
 function PreviewSection({
   title,
   children,
+  className,
 }: {
   title: string;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="generate-draft-preview-section">
+    <div className={cn("generate-draft-preview-section", className)}>
       <span className="section-label">{title}</span>
       {children}
     </div>
@@ -88,7 +90,7 @@ export function DraftStoryPreview({
       ) : null}
 
       {parsed.steps.length > 0 ? (
-        <PreviewSection title="Steps">
+        <PreviewSection title="Steps" className="story-steps-section">
           <StorySteps steps={parsed.steps} colorMap={varColors.chip} />
         </PreviewSection>
       ) : null}
