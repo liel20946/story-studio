@@ -1,22 +1,20 @@
 import { stripCode } from "@/components/inline-code";
 
-export const VAR_PALETTE: { text: string; chip: string }[] = [
-  { text: "text-support-blue", chip: "bg-support-blue-10 text-support-blue" },
-  { text: "text-support-purple", chip: "bg-support-purple-10 text-support-purple" },
-  { text: "text-support-green", chip: "bg-support-green-10 text-support-green" },
-  { text: "text-support-orange", chip: "bg-support-orange-10 text-support-orange" },
-  { text: "text-support-red", chip: "bg-support-red-10 text-support-red" },
-  { text: "text-support-yellow", chip: "bg-support-yellow-10 text-support-yellow" },
-];
+/** Unified styling for variable names in the Variables rail. */
+export const VAR_NAME_CLASS = "text-primary font-medium";
+
+/** Unified styling for inline variable chips in steps/assertions. */
+export const VAR_CHIP_CLASS =
+  "bg-control-subtle text-primary ring-1 ring-inset ring-separator";
 
 export function buildVarColors(variables: { key: string }[]) {
   const text: Record<string, string> = {};
   const chip: Record<string, string> = {};
-  variables.forEach((v, i) => {
+  for (const v of variables) {
     const key = stripCode(v.key);
-    const c = VAR_PALETTE[i % VAR_PALETTE.length];
-    text[key] = c.text;
-    chip[key] = c.chip;
-  });
+    if (!key) continue;
+    text[key] = VAR_NAME_CLASS;
+    chip[key] = VAR_CHIP_CLASS;
+  }
   return { text, chip };
 }
