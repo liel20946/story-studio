@@ -143,6 +143,30 @@
   grid-template-columns: var(--segment-size) var(--segment-size) var(--segment-size) var(--segment-size);
 }
 
+.segment-control.segment-control--five {
+  grid-template-columns:
+    var(--segment-size) var(--segment-size) var(--segment-size) var(--segment-size)
+    var(--segment-size);
+}
+
+.segment-control-search {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: var(--segment-size);
+  height: var(--segment-size);
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-tertiary);
+  background: transparent;
+  transition: color 160ms ease;
+}
+
+.segment-control-search:hover {
+  color: var(--color-text-secondary);
+}
+
 .segment-control:not(.segment-control--labeled)[data-active-index="2"] .segment-control-thumb {
   transform: translateX(calc(var(--segment-size) * 2));
 }

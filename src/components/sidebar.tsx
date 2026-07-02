@@ -701,9 +701,11 @@ function SidebarActionSlot({
 function SegmentControl({
   value,
   onChange,
+  onSearch,
 }: {
   value: "stories" | "runs" | "scheduled" | "generate";
   onChange: (value: "stories" | "runs" | "scheduled" | "generate") => void;
+  onSearch: () => void;
 }) {
   const options = [
     { value: "stories" as const, label: "Stories", icon: BookOpenIcon },
@@ -721,7 +723,7 @@ function SegmentControl({
           : 3;
   return (
     <div
-      className="segment-control segment-control--four"
+      className="segment-control segment-control--five"
       role="tablist"
       aria-label="Sidebar view"
       data-active-index={activeIndex}
@@ -744,6 +746,22 @@ function SegmentControl({
           </button>
         );
       })}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label="Search"
+            className="segment-control-search"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onSearch();
+            }}
+          >
+            <SearchIcon className="size-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent shortcut={["mod", "K"]} />
+      </Tooltip>
     </div>
   );
 }
@@ -1228,25 +1246,12 @@ export function AppSidebar() {
         <Toolbar className="border-b-0 bg-surface-sidebar">
           <MacTitlebarRow />
           <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-0">
-            <SegmentControl value={tab} onChange={handleTabChange} />
+            <SegmentControl
+              value={tab}
+              onChange={handleTabChange}
+              onSearch={openCommandSearch}
+            />
             <ToolbarActions className="sidebar-action-buttons ml-auto">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="transparent"
-                    size="titlebar"
-                    iconOnly
-                    onClick={(e) => {
-                      e.currentTarget.blur();
-                      openCommandSearch();
-                    }}
-                    aria-label="Search"
-                  >
-                    <SearchIcon className="size-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent shortcut={["mod", "K"]} />
-              </Tooltip>
               <SidebarActionSlot
                 visible={sidebarActionVisible("bulk-run", tab, hasStories)}
               >
