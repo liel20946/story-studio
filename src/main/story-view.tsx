@@ -659,7 +659,7 @@ export function StoryView() {
           ) : null}
 
           {(isEditingThisStory && draft) || story.steps.length > 0 ? (
-            <StoryDetailPanelSection title="Steps" className="story-detail-section--steps">
+            <StoryDetailPanelSection title="Steps">
               <StorySteps
                 steps={isEditingThisStory && draft ? draft.steps : story.steps}
                 colorMap={varColors.chip}

@@ -1233,8 +1233,8 @@
 }
 
 .generate-draft-card-preview {
-  margin: 0.75rem 0 0;
-  padding: 0.625rem 0.75rem;
+  margin: 0.5rem 0 0;
+  padding: 0.375rem 0.5rem 0.5rem;
   min-width: 0;
   overflow: hidden;
   transition:
@@ -1245,10 +1245,12 @@
 
 .generate-draft-card-preview .story-detail-layout {
   max-width: none;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .generate-draft-card-preview--collapsed {
-  max-height: 7.5rem;
+  max-height: 6.25rem;
   -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 65%, transparent 100%);
 }
@@ -2380,9 +2382,70 @@
   margin-bottom: 0.625rem;
 }
 
-.story-detail-section--steps .story-steps-workflow {
-  max-width: 20rem;
-  margin: 0 auto;
+.story-detail-layout--compact {
+  gap: 0.625rem;
+  max-width: 19rem;
+}
+
+.story-detail-layout--compact .story-detail-section .section-label {
+  margin-bottom: 0.375rem;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.story-detail-layout--compact .story-var-table {
+  border-radius: 6px;
+}
+
+.story-detail-layout--compact .story-var-table-head,
+.story-detail-layout--compact .story-var-table-row {
+  padding: 0.3125rem 0.5rem;
+  column-gap: 0.5rem;
+}
+
+.story-detail-layout--compact .story-var-table-head {
+  font-size: 9px;
+}
+
+.story-detail-layout--compact .story-var-table-row {
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.story-detail-layout--compact .story-steps-workflow-card {
+  padding: 0.3125rem 0.5rem;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.story-detail-layout--compact .story-step-num {
+  width: 14px;
+  height: 14px;
+  font-size: 8px;
+}
+
+.story-detail-layout--compact .story-steps-workflow-connector {
+  height: 0.375rem;
+  margin: 0.0625rem 0;
+}
+
+.story-detail-layout--compact .story-assertion-block {
+  border-radius: 6px;
+}
+
+.story-detail-layout--compact .story-assertion-block-row {
+  padding: 0.3125rem 0.5rem;
+}
+
+.story-detail-layout--compact .story-assertion-text {
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.story-detail-layout--compact .story-assertion-text code,
+.story-detail-layout--compact .story-assertion-text [class*="inline-code"] {
+  font-size: 9px;
 }
 
 .story-var-table {

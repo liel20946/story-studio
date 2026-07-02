@@ -47,7 +47,7 @@ export function DraftStoryPreview({
         expanded ? "generate-draft-card-preview--expanded" : "generate-draft-card-preview--collapsed",
       )}
     >
-      <StoryDetailPanel>
+      <StoryDetailPanel className="story-detail-layout--compact">
         {parsed.variables.length > 0 ? (
           <StoryDetailPanelSection title="Variables">
             <StoryVariableTable
@@ -58,7 +58,7 @@ export function DraftStoryPreview({
         ) : null}
 
         {parsed.steps.length > 0 ? (
-          <StoryDetailPanelSection title="Steps" className="story-detail-section--steps">
+          <StoryDetailPanelSection title="Steps">
             <StorySteps steps={parsed.steps} colorMap={varColors.chip} />
           </StoryDetailPanelSection>
         ) : null}
