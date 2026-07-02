@@ -17,6 +17,14 @@ function findArtifact(pattern) {
   return fs.readdirSync(releaseDir).find((name) => pattern.test(name));
 }
 
+// GitHub Releases rewrites spaces in uploaded asset filenames to dots
+// (e.g. "Story Studio-1.5.1-arm64-mac.zip" is served as
+// "Story.Studio-1.5.1-arm64-mac.zip"). latest-mac.yml must reference the
+// served name or electron-updater can never fetch/validate the download.
+function githubAssetName(localName) {
+  return localName.replace(/ /g, ".");
+}
+
 export function generateLatestMacYml(version) {
   const zipName = findArtifact(new RegExp(`^Story[.\\s-]Studio-${version}-arm64-mac\\.zip$`));
   if (!zipName) {
@@ -32,7 +40,7 @@ export function generateLatestMacYml(version) {
 
   const files = [
     {
-      url: zipName,
+      url: githubAssetName(zipName),
       sha512: zipSha512,
       size: zipSize,
     },
@@ -41,7 +49,7 @@ export function generateLatestMacYml(version) {
   if (dmgName) {
     const dmgPath = path.join(releaseDir, dmgName);
     files.push({
-      url: dmgName,
+      url: githubAssetName(dmgName),
       sha512: sha512Base64(dmgPath),
       size: fs.statSync(dmgPath).size,
     });
@@ -55,7 +63,7 @@ export function generateLatestMacYml(version) {
       `    sha512: ${file.sha512}`,
       `    size: ${file.size}`,
     ]),
-    `path: ${zipName}`,
+    `path: ${githubAssetName(zipName)}`,
     `sha512: ${zipSha512}`,
     `releaseDate: '${new Date().toISOString()}'`,
     "",

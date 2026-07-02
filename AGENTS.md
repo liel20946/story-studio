@@ -21,10 +21,17 @@ Read this before shipping a new version.
 
 ### Non-negotiable rule
 
-`latest-mac.yml` must reference the **exact** uploaded asset filenames, sizes, and hashes.
-Never rename artifacts between building and publishing. In particular, do **not** rewrite
-`Story-Studio-*` to `Story.Studio-*` (or vice versa) in the metadata — the `url`/`path` must be the
-literal filenames present on the release.
+`latest-mac.yml` must reference the **exact asset filenames as served by GitHub**, plus matching
+`sha512` and `size`.
+
+Important GitHub quirk: the local artifact is named with a space — `Story Studio-<ver>-arm64-mac.zip`
+— but GitHub **rewrites the space to a dot** when the asset is uploaded, serving it as
+`Story.Studio-<ver>-arm64-mac.zip`. Therefore `latest-mac.yml` must use the **dotted** name
+(`Story.Studio-*`), not the space or dash form. `scripts/generate-latest-mac-yml.mjs` handles this via
+`githubAssetName()` (replaces spaces with dots) — keep that transform.
+
+Ground truth: a working release (e.g. v1.4.8) has both the asset and the yml `url` as
+`Story.Studio-1.4.8-arm64-mac.zip` with identical sizes. Match that shape.
 
 ## Prerequisites
 
@@ -101,8 +108,12 @@ gh release delete v<VERSION> --yes --cleanup-tag
 ## Common pitfalls
 
 - **Manual GitHub UI uploads** skip `latest-mac.yml` and break auto-update. Use the scripts.
-- **Renaming artifacts** after build desyncs metadata from assets. Don't.
+- **Wrong asset name form in the yml.** GitHub serves the space-named artifact with a dot
+  (`Story Studio` -> `Story.Studio`). The yml must use the dotted name. A dash form (`Story-Studio`)
+  does not exist as a normal upload and is a sign someone hand-uploaded a renamed file.
+- **Size mismatch** between the yml and the real asset is the classic "stuck download" cause
+  (this is what broke v1.5.0: yml claimed ~110 MB while the uploaded zip was ~316 MB). Always verify.
 - **Reusing a version number** with different binaries confuses `electron-updater` caches. Always bump.
-- **Duplicate/renamed zips on one release** (e.g. both `Story-Studio-*.zip` and `Story.Studio-*.zip`)
+- **Duplicate zips on one release** (e.g. both `Story-Studio-*.zip` and `Story.Studio-*.zip`)
   is a red flag — the yml can end up pointing at the wrong one. Keep one canonical artifact set.
 - Auto-update only runs in the **packaged** app (`app.isPackaged`); it's a no-op in `npm run dev`.
