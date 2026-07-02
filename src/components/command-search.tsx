@@ -269,8 +269,8 @@ export function CommandSearch({
           onOpenAutoFocus={(e) => e.preventDefault()}
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
-          <div className="command-search-input-row flex items-center gap-2.5 border-b border-separator px-3.5 py-3">
-            <SearchIcon className="size-4 shrink-0 text-tertiary" />
+          <div className="command-search-input-row flex items-center gap-2 border-b border-separator px-3 py-2.5">
+            <SearchIcon className="size-3.5 shrink-0 text-tertiary" />
             <input
               ref={inputRef}
               type="text"
@@ -279,21 +279,21 @@ export function CommandSearch({
               onKeyDown={handleKeyDown}
               placeholder="Search stories, runs, schedules, and conversations"
               aria-label="Search"
-              className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-primary outline-none placeholder:text-tertiary"
+              className="min-w-0 flex-1 border-none bg-transparent text-small text-primary outline-none placeholder:text-tertiary"
             />
           </div>
 
-          <div ref={listRef} className="command-search-results max-h-[min(420px,50vh)] overflow-y-auto p-1.5">
+          <div ref={listRef} className="command-search-results max-h-[min(420px,50vh)] overflow-y-auto p-1">
             {flatItems.length === 0 ? (
-              <div className="px-3 py-8 text-center text-[13px] text-tertiary">
+              <div className="px-3 py-6 text-center text-small text-tertiary">
                 {query.trim()
                   ? "No results match your search."
                   : "Nothing to search yet."}
               </div>
             ) : (
               sections.map((section) => (
-                  <div key={section.id} className="pb-1">
-                    <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-tertiary">
+                  <div key={section.id} className="pb-0.5">
+                    <div className="px-2 pb-0.5 pt-1.5 text-mini font-medium text-tertiary">
                       {section.label}
                     </div>
                     {section.items.map((item) => {
@@ -307,7 +307,7 @@ export function CommandSearch({
                           type="button"
                           data-command-index={currentIndex}
                           className={cn(
-                            "command-search-item flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left transition-colors",
+                            "command-search-item flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left transition-colors",
                             selected
                               ? "bg-surface-hover"
                               : "hover:bg-surface-hover/70",
@@ -315,15 +315,15 @@ export function CommandSearch({
                           onMouseEnter={() => setActiveIndex(currentIndex)}
                           onClick={() => activateItem(item)}
                         >
-                          <span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-surface-control text-secondary">
-                            <ItemIcon className="size-3.5" />
+                          <span className="flex size-6 shrink-0 items-center justify-center rounded-[6px] bg-surface-control text-secondary">
+                            <ItemIcon className="size-3" />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] text-primary">
+                            <span className="block truncate text-[12px] leading-4 text-primary">
                               {item.title}
                             </span>
                             {item.subtitle ? (
-                              <span className="block truncate text-[11px] text-tertiary">
+                              <span className="block truncate text-[10px] leading-[13px] text-tertiary">
                                 {item.subtitle}
                               </span>
                             ) : null}
@@ -331,7 +331,7 @@ export function CommandSearch({
                           {item.meta ? (
                             <span
                               className={cn(
-                                "shrink-0 text-[11px] tabular-nums",
+                                "shrink-0 text-[10px] leading-[13px] tabular-nums",
                                 item.running ? "text-accent" : "text-tertiary",
                               )}
                             >
