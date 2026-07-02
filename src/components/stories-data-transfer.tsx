@@ -214,6 +214,22 @@ export function useStoriesDataTransfer() {
   const [importPaths, setImportPaths] = useState<string[]>([]);
   const [exportDestDir, setExportDestDir] = useState("");
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const onDevShow = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        preview: ImportPreview;
+        paths: string[];
+      }>).detail;
+      if (!detail?.preview || !detail.paths?.length) return;
+      setImportPaths(detail.paths);
+      setImportPreview(detail.preview);
+      setImportDialogOpen(true);
+    };
+    window.addEventListener("dev:show-import-dialog", onDevShow);
+    return () => window.removeEventListener("dev:show-import-dialog", onDevShow);
+  }, []);
+
   const startImport = async () => {
     if (isImporting || isExporting) return;
     setIsImporting(true);
