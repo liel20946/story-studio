@@ -16,6 +16,8 @@ const CLAUDE_CODE_HOST_AUTH_VARS = [
   "CLAUDE_INTERNAL_FC_OVERRIDES",
   "CLAUDE_AGENT_SDK_VERSION",
   "CLAUDE_CODE_EXECPATH",
+  // Stale bearer tokens from other tools / shells override ~/.claude credentials.
+  "ANTHROPIC_AUTH_TOKEN",
   // Nesting/session vars — also strip so children don't think they're nested.
   "CLAUDECODE",
   "CLAUDE_CODE_ENTRYPOINT",
@@ -30,6 +32,10 @@ export function sanitizeClaudeHostAuthEnv(
   const next = { ...env };
   for (const key of CLAUDE_CODE_HOST_AUTH_VARS) {
     delete next[key];
+  }
+  // Empty API key env (common in GUI-launched apps) blocks OAuth fallback.
+  if (!next["ANTHROPIC_API_KEY"]?.trim()) {
+    delete next["ANTHROPIC_API_KEY"];
   }
   return next;
 }

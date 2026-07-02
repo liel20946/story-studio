@@ -13,6 +13,7 @@ import {
   buildBaseAgentSpawnEnv,
   buildClaudeSpawnEnv,
 } from "./agent-spawn-env.js";
+import { ensureClaudeOAuthFresh } from "./claude-oauth.js";
 
 const GENERATE_TIMEOUT_MS = 8 * 60_000;
 const REVISION_TIMEOUT_MS = 2 * 60_000;
@@ -375,6 +376,8 @@ async function invokeClaude(
   }
 
   onProgress?.(exploring ? "Planning next moves" : "Reviewing your draft");
+
+  await ensureClaudeOAuthFresh();
 
   return spawnTracked(
     invocationId,

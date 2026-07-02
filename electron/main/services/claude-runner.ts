@@ -48,6 +48,7 @@ import {
   settleRunningEvents,
 } from "./run-event-settle.js";
 import { buildClaudeSpawnEnv } from "./agent-spawn-env.js";
+import { ensureClaudeOAuthFresh } from "./claude-oauth.js";
 
 interface RunState {
   runId: string;
@@ -444,6 +445,8 @@ export async function startClaudeRun(
     };
     return finalizeRun(cancelledResult, events);
   }
+
+  await ensureClaudeOAuthFresh();
 
   const runPromise = new Promise<RunResult>((resolve) => {
     let tokenUsage: { inputTokens: number; outputTokens: number } | undefined;
