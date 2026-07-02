@@ -991,11 +991,12 @@
 .generate-assistant-markdown {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: 0;
 }
 
 .generate-assistant-markdown-p {
   margin: 0;
+  white-space: pre-wrap;
 }
 
 .generate-assistant-markdown-list {

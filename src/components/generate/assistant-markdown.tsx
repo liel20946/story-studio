@@ -157,7 +157,7 @@ function parseBlock(block: string, blockIndex: number): React.ReactNode {
           <p key={`${blockIndex}-p-${segmentIndex}`} className="generate-assistant-markdown-p">
             {segment.lines.map((line, lineIndex) => (
               <React.Fragment key={lineIndex}>
-                {lineIndex > 0 ? <br /> : null}
+                {lineIndex > 0 ? "\n" : null}
                 {parseInline(line, `b${blockIndex}-p${segmentIndex}-l${lineIndex}`)}
               </React.Fragment>
             ))}
