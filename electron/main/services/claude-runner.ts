@@ -1,6 +1,5 @@
 import * as fs from "fs/promises";
 import * as path from "path";
-import * as os from "os";
 import { spawn, type ChildProcess } from "child_process";
 import { broadcast } from "../broadcast.js";
 import type {
@@ -48,6 +47,7 @@ import {
   markRunCancelled,
   settleRunningEvents,
 } from "./run-event-settle.js";
+import { buildClaudeSpawnEnv } from "./agent-spawn-env.js";
 
 interface RunState {
   runId: string;
@@ -76,16 +76,6 @@ export function listActiveClaudeRuns(): ActiveRunSnapshot[] {
     agentModel: state.agentModel,
     events: [...state.events],
   }));
-}
-
-function buildEnv(): NodeJS.ProcessEnv {
-  const extraPath = `/opt/homebrew/bin:${path.dirname(process.execPath)}`;
-  const existingPath = process.env.PATH ?? "";
-  return {
-    ...process.env,
-    HOME: os.homedir(),
-    PATH: `${extraPath}:${existingPath}`,
-  };
 }
 
 function syncRunTimeline(runId: string, events: RunEvent[]): void {
@@ -465,7 +455,7 @@ export async function startClaudeRun(
 
     const child = spawn(claudeBinary, args, {
       cwd: runOutputDir,
-      env: buildEnv(),
+      env: buildClaudeSpawnEnv(),
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
