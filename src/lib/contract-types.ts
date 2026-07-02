@@ -4,6 +4,27 @@
 
 export type BowserStoryMode = "recorded" | "generated";
 
+export type ImportMode = "overwrite" | "add";
+
+export interface ImportPreviewFile {
+  path: string;
+  siteSlug: string;
+  storyCount: number;
+}
+
+export interface ImportPreview {
+  storyCount: number;
+  fileCount: number;
+  files: ImportPreviewFile[];
+  errors: string[];
+  valid: boolean;
+}
+
+export interface ExportPreview {
+  storyCount: number;
+  fileCount: number;
+}
+
 export interface StorySummary {
   name: string;
   title: string;

@@ -16,6 +16,9 @@ import type {
   GenerateConversationSummary,
   GenerateConversationDetail,
   AgentModelOverride,
+  ImportMode,
+  ImportPreview,
+  ExportPreview,
 } from "./contract-types";
 
 export function ipcInvoke<Res>(channel: string, req?: unknown): Promise<Res> {
@@ -31,11 +34,30 @@ export const storiesGet = (name: string): Promise<StoryDetail> =>
 export const storiesDelete = (name: string): Promise<{ ok: true }> =>
   ipcInvoke("stories:delete", { name });
 
-export const storiesImport = (paths?: string[]): Promise<StorySummary[]> =>
-  ipcInvoke("stories:import", { paths });
+export const storiesPickImportFiles = (): Promise<{
+  paths: string[];
+  canceled: boolean;
+}> => ipcInvoke("stories:pickImportFiles");
+
+export const storiesPreviewImport = (
+  paths: string[],
+): Promise<ImportPreview> => ipcInvoke("stories:previewImport", { paths });
+
+export const storiesImport = (
+  paths: string[],
+  mode: ImportMode,
+): Promise<StorySummary[]> => ipcInvoke("stories:import", { paths, mode });
+
+export const storiesExportPreview = (): Promise<ExportPreview> =>
+  ipcInvoke("stories:exportPreview");
+
+export const storiesPickExportFolder = (): Promise<{
+  destDir: string;
+  canceled: boolean;
+}> => ipcInvoke("stories:pickExportFolder");
 
 export const storiesExport = (
-  destDir?: string,
+  destDir: string,
 ): Promise<{ fileCount: number; canceled: boolean }> =>
   ipcInvoke("stories:export", { destDir });
 
