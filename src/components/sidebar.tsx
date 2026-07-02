@@ -9,7 +9,6 @@ import {
   SettingsIcon,
   Loader2Icon,
   SearchIcon,
-  XIcon,
   ChevronLeftIcon,
   BookOpenIcon,
   HistoryIcon,
@@ -48,6 +47,7 @@ import {
   TooltipContent,
 } from "@/components/ui";
 import { MacTitlebarRow } from "./mac-traffic-lights";
+import { CommandSearch, useCommandSearchShortcut } from "./command-search";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type { RunStatus, StorySummary, RunResult, GenerateConversationSummary } from "../lib/contract-types";
@@ -806,7 +806,13 @@ export function AppSidebar() {
           ? "runs"
           : "stories",
   );
-  const [searchQuery, setSearchQuery] = React.useState("");
+  const [commandSearchOpen, setCommandSearchOpen] = React.useState(false);
+
+  const openCommandSearch = React.useCallback(() => {
+    setCommandSearchOpen(true);
+  }, []);
+
+  useCommandSearchShortcut(openCommandSearch);
 
   React.useEffect(() => {
     if (activeSelection.onGenerateRoute) {
@@ -981,62 +987,14 @@ export function AppSidebar() {
     return { bySection: grouped, unassigned: rest };
   }, [stories, sections, assignments]);
 
-  const normalizedSearch = searchQuery.trim().toLowerCase();
-  const matchesSearch = React.useCallback(
-    (text: string) =>
-      !normalizedSearch || text.toLowerCase().includes(normalizedSearch),
-    [normalizedSearch],
-  );
-
-  const filteredUnassigned = React.useMemo(
-    () =>
-      unassigned.filter(
-        (s) => matchesSearch(s.title) || matchesSearch(s.name),
-      ),
-    [unassigned, matchesSearch],
-  );
-
-  const filteredBySection = React.useMemo(() => {
-    const next = new Map<string, StorySummary[]>();
-    for (const [sectionId, sectionStories] of bySection) {
-      const filtered = sectionStories.filter(
-        (s) => matchesSearch(s.title) || matchesSearch(s.name),
-      );
-      if (filtered.length > 0) next.set(sectionId, filtered);
-    }
-    return next;
-  }, [bySection, matchesSearch]);
-
-  const filteredRuns = React.useMemo(
-    () =>
-      recentRuns.filter(
-        (r) =>
-          matchesSearch(r.storyTitle) || matchesSearch(r.storyName),
-      ),
-    [recentRuns, matchesSearch],
-  );
-
   const schedules = React.useMemo(
     () => schedulesQuery.data ?? [],
     [schedulesQuery.data],
   );
 
-  const filteredSchedules = React.useMemo(
-    () =>
-      schedules.filter(
-        (s) => matchesSearch(s.name) || s.storyNames.some((n) => matchesSearch(n)),
-      ),
-    [schedules, matchesSearch],
-  );
-
   const generations = React.useMemo(
     () => generateQuery.data ?? [],
     [generateQuery.data],
-  );
-
-  const filteredGenerations = React.useMemo(
-    () => generations.filter((g) => matchesSearch(g.title)),
-    [generations, matchesSearch],
   );
 
   function handleNewGeneration() {
@@ -1272,6 +1230,23 @@ export function AppSidebar() {
           <ToolbarRow className="sidebar-actions-row h-auto min-h-0 pt-3 pb-0">
             <SegmentControl value={tab} onChange={handleTabChange} />
             <ToolbarActions className="sidebar-action-buttons ml-auto">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="transparent"
+                    size="titlebar"
+                    iconOnly
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      openCommandSearch();
+                    }}
+                    aria-label="Search"
+                  >
+                    <SearchIcon className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent shortcut={["mod", "K"]} />
+              </Tooltip>
               <SidebarActionSlot
                 visible={sidebarActionVisible("bulk-run", tab, hasStories)}
               >
@@ -1341,44 +1316,6 @@ export function AppSidebar() {
               </SidebarActionSlot>
             </ToolbarActions>
           </ToolbarRow>
-          <ToolbarRow className="h-auto min-h-0 px-2 py-2">
-            <label className="sidebar-search w-full">
-              <SearchIcon className="size-3.5 shrink-0 text-tertiary" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={
-                  tab === "stories"
-                    ? "Filter stories…"
-                    : tab === "runs"
-                      ? "Filter runs…"
-                      : tab === "generate"
-                        ? "Filter conversations…"
-                        : "Filter schedules…"
-                }
-                aria-label={
-                  tab === "stories"
-                    ? "Filter stories"
-                    : tab === "runs"
-                      ? "Filter runs"
-                      : tab === "generate"
-                        ? "Filter conversations"
-                        : "Filter schedules"
-                }
-              />
-              {searchQuery ? (
-                <button
-                  type="button"
-                  className="flex shrink-0 items-center text-tertiary transition-colors hover:text-secondary"
-                  onClick={() => setSearchQuery("")}
-                  aria-label="Clear search"
-                >
-                  <XIcon className="size-3.5" />
-                </button>
-              ) : null}
-            </label>
-          </ToolbarRow>
         </Toolbar>
       }
     >
@@ -1392,9 +1329,8 @@ export function AppSidebar() {
               sections={sections}
               collapsed={collapsed}
               setCollapsed={setCollapsed}
-              bySection={filteredBySection}
-              unassigned={filteredUnassigned}
-              searchActive={!!normalizedSearch}
+              bySection={bySection}
+              unassigned={unassigned}
               renderStoryRow={renderStoryRow}
               onRenameSection={(section) =>
                 setDialog({
@@ -1408,8 +1344,7 @@ export function AppSidebar() {
             />
           ) : tab === "runs" ? (
             <RunsTab
-              runs={filteredRuns}
-              searchActive={!!normalizedSearch}
+              runs={recentRuns}
               activeRunId={
                 activeSelection.historyRunId ?? activeSelection.liveRunId
               }
@@ -1424,8 +1359,7 @@ export function AppSidebar() {
             />
           ) : tab === "generate" ? (
             <GenerateTab
-              conversations={filteredGenerations}
-              searchActive={!!normalizedSearch}
+              conversations={generations}
               activeConversationId={activeSelection.generateConversationId}
               onPrefetch={prefetchGeneration}
               onOpen={(id) => {
@@ -1444,8 +1378,7 @@ export function AppSidebar() {
             />
           ) : (
             <ScheduledTab
-              schedules={filteredSchedules}
-              searchActive={!!normalizedSearch}
+              schedules={schedules}
               activeScheduleId={activeSelection.scheduledId}
               onOpen={(id) =>
                 navigate({ to: "/scheduled/$id", params: { id } })
@@ -1475,6 +1408,36 @@ export function AppSidebar() {
         onSubmit={handleDialogSubmit}
         onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
       />
+
+      <CommandSearch
+        open={commandSearchOpen}
+        onOpenChange={setCommandSearchOpen}
+        stories={stories}
+        runs={recentRuns}
+        schedules={schedules}
+        conversations={generations}
+        onSelectStory={(storyName) => {
+          const story = stories.find((s) => s.name === storyName);
+          if (story) openStory(story);
+        }}
+        onSelectRun={(runId, running) =>
+          navigate(
+            running
+              ? { to: "/run/$runId", params: { runId } }
+              : { to: "/history/$runId", params: { runId } },
+          )
+        }
+        onSelectSchedule={(scheduleId) =>
+          navigate({ to: "/scheduled/$id", params: { id: scheduleId } })
+        }
+        onSelectConversation={(conversationId) => {
+          prefetchGeneration(conversationId);
+          navigate({
+            to: "/generate/$conversationId",
+            params: { conversationId },
+          });
+        }}
+      />
     </Sidebar>
   );
 }
@@ -1487,7 +1450,6 @@ function StoriesTab({
   setCollapsed,
   bySection,
   unassigned,
-  searchActive,
   renderStoryRow,
   onRenameSection,
   onDeleteSection,
@@ -1498,19 +1460,10 @@ function StoriesTab({
   setCollapsed: (id: string, value: boolean) => void;
   bySection: Map<string, StorySummary[]>;
   unassigned: StorySummary[];
-  searchActive?: boolean;
   renderStoryRow: (story: StorySummary) => React.ReactNode;
   onRenameSection: (section: StorySection) => void;
   onDeleteSection: (id: string) => void;
 }) {
-  const hasVisibleStories =
-    unassigned.length > 0 ||
-    sections.some((s) => (bySection.get(s.id) ?? []).length > 0);
-
-  const visibleSections = sections.filter(
-    (section) => (bySection.get(section.id) ?? []).length > 0 || !searchActive,
-  );
-  const showDefaultStories = hasStories && (!searchActive || unassigned.length > 0);
   let isFirstSection = true;
 
   return (
@@ -1523,16 +1476,8 @@ function StoriesTab({
         </div>
       )}
 
-      {hasStories && searchActive && !hasVisibleStories && (
-        <div className="px-3 py-6 text-center">
-          <Text variant="small" color="tertiary">
-            No stories match your search.
-          </Text>
-        </div>
-      )}
-
       {/* User-created sections (right-click header → Rename / Delete) */}
-      {visibleSections.map((section) => {
+      {sections.map((section) => {
         const leading = isFirstSection;
         isFirstSection = false;
         return (
@@ -1575,7 +1520,7 @@ function StoriesTab({
       })}
 
       {/* Default "Stories" group for unassigned stories */}
-      {showDefaultStories && (
+      {hasStories && (
         <CollapsibleSection
           title="Stories"
           leading={isFirstSection}
@@ -1677,14 +1622,12 @@ function ScheduledRow({
 
 function ScheduledTab({
   schedules,
-  searchActive,
   activeScheduleId,
   onOpen,
   onRename,
   onDelete,
 }: {
   schedules: ScheduledRun[];
-  searchActive?: boolean;
   activeScheduleId?: string;
   onOpen: (id: string) => void;
   onRename: (schedule: ScheduledRun) => void;
@@ -1694,9 +1637,7 @@ function ScheduledTab({
     return (
       <div className="px-3 py-6 text-center">
         <Text variant="small" color="tertiary">
-          {searchActive
-            ? "No schedules match your search."
-            : "No schedules yet."}
+          No schedules yet.
         </Text>
       </div>
     );
@@ -1771,7 +1712,6 @@ function GenerateConversationRow({
 // ---------- Generate tab ----------
 function GenerateTab({
   conversations,
-  searchActive,
   activeConversationId,
   onPrefetch,
   onOpen,
@@ -1779,7 +1719,6 @@ function GenerateTab({
   onArchive,
 }: {
   conversations: GenerateConversationSummary[];
-  searchActive?: boolean;
   activeConversationId?: string;
   onPrefetch: (id: string) => void;
   onOpen: (id: string) => void;
@@ -1790,7 +1729,7 @@ function GenerateTab({
     return (
       <div className="px-3 py-6 text-center">
         <Text variant="small" color="tertiary">
-          {searchActive ? "No generations match your search." : "No generations yet."}
+          No generations yet.
         </Text>
       </div>
     );
@@ -1816,13 +1755,11 @@ function GenerateTab({
 // ---------- Runs tab: flat list of recent run history ----------
 function RunsTab({
   runs,
-  searchActive,
   activeRunId,
   onOpen,
   onDelete,
 }: {
   runs: (RunResult & { isRunning?: boolean })[];
-  searchActive?: boolean;
   activeRunId?: string;
   onOpen: (runId: string, running: boolean) => void;
   onDelete: (runId: string) => void;
@@ -1831,9 +1768,7 @@ function RunsTab({
     return (
       <div className="px-3 py-6 text-center">
         <Text variant="small" color="tertiary">
-          {searchActive
-            ? "No runs match your search."
-            : "No runs yet."}
+          No runs yet.
         </Text>
       </div>
     );
