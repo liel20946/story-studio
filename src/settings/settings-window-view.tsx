@@ -213,12 +213,8 @@ export function SettingsWindowView() {
                 onClick={handleExport}
                 disabled={isImporting || isExporting}
               >
-                {isExporting ? (
-                  <Loader2Icon className="size-4 animate-spin text-accent" />
-                ) : (
-                  <FolderDownIcon className="size-4" />
-                )}
-                {isExporting ? "Exporting…" : "Export…"}
+                <FolderDownIcon className="size-4" />
+                Export
               </Button>
             </Field>
           </FieldGroup>
