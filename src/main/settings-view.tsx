@@ -9,7 +9,7 @@ import {
   toast,
   Switch,
 } from "@/components/ui";
-import { settingsGet, settingsSet, storiesImport, storiesExport } from "../lib/ipc";
+import { settingsGet, settingsSet } from "../lib/ipc";
 import type { AppSettings, AgentCapabilities } from "../lib/contract-types";
 import { useAgentCapabilities } from "../lib/agent-capabilities-store";
 import { FolderDownIcon, FolderOpenIcon, Loader2Icon } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   SETTINGS_SECTION_LABELS,
 } from "../components/settings-sections";
 import { ProviderSegment } from "../components/provider-segment";
+import { useStoriesDataTransfer } from "../components/stories-data-transfer";
 import { LabeledSegment } from "../components/labeled-segment";
 import type {
   AgentProvider,
@@ -418,7 +419,7 @@ function DataPanel({
             ) : (
               <FolderDownIcon className="size-3.5" />
             )}
-            {isExporting ? "Exporting…" : "Choose folder"}
+            {isExporting ? "Exporting…" : "Export…"}
           </Button>
         </SettingsRow>
       </SettingsGroup>
@@ -434,9 +435,8 @@ export function SettingsView() {
   );
   const [startingUrl, setStartingUrl] = useState<string>("");
   const [runHook, setRunHook] = useState<string>("");
-  const [isImporting, setIsImporting] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const storiesDataTransfer = useStoriesDataTransfer();
 
   const resolvedSettings = normalizeAppSettings(appSettings);
   const agentProvider = resolvedSettings.agentProvider;
@@ -714,42 +714,9 @@ export function SettingsView() {
     return () => clearTimeout(t);
   }, [runHook, appSettings]);
 
-  const handleImport = async () => {
-    setIsImporting(true);
-    try {
-      const imported = await storiesImport();
-      toast.success(
-        imported.length === 1
-          ? "Imported 1 story."
-          : `Imported ${imported.length} stories.`,
-      );
-    } catch (err) {
-      reportAppErrorFromUnknown("Import failed", err);
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const handleExport = async () => {
-    setIsExporting(true);
-    try {
-      const result = await storiesExport();
-      if (result.canceled) return;
-      if (result.fileCount === 0) {
-        reportAppError("No .yaml files to export.");
-        return;
-      }
-      toast.success(
-        result.fileCount === 1
-          ? "Exported 1 .yaml file."
-          : `Exported ${result.fileCount} .yaml files.`,
-      );
-    } catch (err) {
-      reportAppErrorFromUnknown("Export failed", err);
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  const handleImport = storiesDataTransfer.startImport;
+  const handleExport = storiesDataTransfer.startExport;
+  const { isImporting, isExporting } = storiesDataTransfer;
 
   const pageTitle = SETTINGS_SECTION_LABELS[activeSection];
 
@@ -817,6 +784,8 @@ export function SettingsView() {
           ) : null}
         </div>
       </div>
+      {storiesDataTransfer.importDialog}
+      {storiesDataTransfer.exportDialog}
     </ScrollArea>
   );
 }

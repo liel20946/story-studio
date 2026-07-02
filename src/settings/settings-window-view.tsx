@@ -14,19 +14,17 @@ import {
   Input,
   Textarea,
   Button,
-  toast,
 } from "@/components/ui";
 import { applyTheme } from "../lib/theme";
 import {
   settingsGet,
   settingsSet,
-  storiesImport,
-  storiesExport,
   closeSettings,
 } from "../lib/ipc";
+import { useStoriesDataTransfer } from "../components/stories-data-transfer";
 import type { AppSettings, ThemePreference } from "../lib/contract-types";
 import { shouldIgnoreEscapeKey } from "../lib/escape-key";
-import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
+import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import { FolderDownIcon, FolderOpenIcon, Loader2Icon } from "lucide-react";
 
 /** Standalone settings window (legacy). Main app uses `main/settings-view.tsx`. */
@@ -34,8 +32,8 @@ export function SettingsWindowView() {
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [startingUrl, setStartingUrl] = useState<string>("");
   const [runHook, setRunHook] = useState<string>("");
-  const [isImporting, setIsImporting] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const storiesDataTransfer = useStoriesDataTransfer();
+  const { isImporting, isExporting } = storiesDataTransfer;
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -111,42 +109,8 @@ export function SettingsWindowView() {
     return () => clearTimeout(t);
   }, [runHook, appSettings]);
 
-  const handleImport = async () => {
-    setIsImporting(true);
-    try {
-      const imported = await storiesImport();
-      toast.success(
-        imported.length === 1
-          ? "Imported 1 story."
-          : `Imported ${imported.length} stories.`,
-      );
-    } catch (err) {
-      reportAppErrorFromUnknown("Import failed", err);
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const handleExport = async () => {
-    setIsExporting(true);
-    try {
-      const result = await storiesExport();
-      if (result.canceled) return;
-      if (result.fileCount === 0) {
-        reportAppError("No .yaml files to export.");
-        return;
-      }
-      toast.success(
-        result.fileCount === 1
-          ? "Exported 1 .yaml file."
-          : `Exported ${result.fileCount} .yaml files.`,
-      );
-    } catch (err) {
-      reportAppErrorFromUnknown("Export failed", err);
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  const handleImport = storiesDataTransfer.startImport;
+  const handleExport = storiesDataTransfer.startExport;
 
   return (
     <ScrollArea
@@ -254,12 +218,14 @@ export function SettingsWindowView() {
                 ) : (
                   <FolderDownIcon className="size-4" />
                 )}
-                {isExporting ? "Exporting…" : "Choose folder"}
+                {isExporting ? "Exporting…" : "Export…"}
               </Button>
             </Field>
           </FieldGroup>
         </FieldSet>
       </div>
+      {storiesDataTransfer.importDialog}
+      {storiesDataTransfer.exportDialog}
     </ScrollArea>
   );
 }

@@ -6,9 +6,12 @@ import {
   deleteStory,
   importStories,
   exportStories,
+  previewImportStories,
+  getExportPreview,
   updateStoryVariables,
   updateStoryContent,
   renameStory,
+  type ImportMode,
 } from "../services/stories-service.js";
 import {
   listRuns,
@@ -137,31 +140,70 @@ export function registerStoriesHandlers(): void {
     return { ok: true as const };
   });
 
+  ipcMain.handle("stories:pickImportFiles", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Import Stories",
+      defaultPath: os.homedir(),
+      filters: [{ name: "YAML Files", extensions: ["yaml", "yml"] }],
+      properties: ["openFile", "multiSelections"],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { paths: [] as string[], canceled: true as const };
+    }
+    return { paths: result.filePaths, canceled: false as const };
+  });
+
+  ipcMain.handle("stories:previewImport", async (_event, params: unknown) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      !Array.isArray((params as Record<string, unknown>)["paths"])
+    ) {
+      throw new Error("stories:previewImport requires { paths: string[] }");
+    }
+    const paths = (params as { paths: unknown[] }).paths.filter(
+      (x): x is string => typeof x === "string",
+    );
+    return previewImportStories(paths);
+  });
+
   ipcMain.handle("stories:import", async (_event, params: unknown) => {
     let filePaths: string[] | undefined;
+    let mode: ImportMode = "overwrite";
 
     if (typeof params === "object" && params !== null) {
       const p = params as Record<string, unknown>;
       if (Array.isArray(p["paths"])) {
         filePaths = p["paths"].filter((x): x is string => typeof x === "string");
       }
+      if (p["mode"] === "add" || p["mode"] === "overwrite") {
+        mode = p["mode"];
+      }
     }
 
     if (!filePaths || filePaths.length === 0) {
-      // Open file dialog defaulting to the user's home directory
-      const defaultPath = os.homedir();
-      const result = await dialog.showOpenDialog({
-        title: "Import Stories",
-        defaultPath,
-        filters: [{ name: "YAML Files", extensions: ["yaml", "yml"] }],
-        properties: ["openFile", "multiSelections"],
-      });
-      if (result.canceled || result.filePaths.length === 0) return [];
-      filePaths = result.filePaths;
+      throw new Error("stories:import requires { paths: string[], mode?: 'overwrite' | 'add' }");
     }
 
     const lastRunMap = await getLastRunMap();
-    return importStories(filePaths, lastRunMap);
+    return importStories(filePaths, lastRunMap, mode);
+  });
+
+  ipcMain.handle("stories:exportPreview", async () => {
+    return getExportPreview();
+  });
+
+  ipcMain.handle("stories:pickExportFolder", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Export Stories",
+      defaultPath: os.homedir(),
+      buttonLabel: "Export here",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { destDir: "", canceled: true as const };
+    }
+    return { destDir: result.filePaths[0], canceled: false as const };
   });
 
   ipcMain.handle("stories:export", async (_event, params: unknown) => {
@@ -175,16 +217,7 @@ export function registerStoriesHandlers(): void {
     }
 
     if (!destDir) {
-      const result = await dialog.showOpenDialog({
-        title: "Export Stories",
-        defaultPath: os.homedir(),
-        buttonLabel: "Export here",
-        properties: ["openDirectory", "createDirectory"],
-      });
-      if (result.canceled || result.filePaths.length === 0) {
-        return { fileCount: 0, canceled: true as const };
-      }
-      destDir = result.filePaths[0];
+      throw new Error("stories:export requires { destDir: string }");
     }
 
     const { fileCount } = await exportStories(destDir);

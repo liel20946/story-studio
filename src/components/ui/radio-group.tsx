@@ -28,10 +28,13 @@ export function RadioGroupItem({
   return (
     <RadioGroupPrimitive.Item
       className={cn(
-        "size-4 rounded-full border border-separator bg-control outline-none data-[state=checked]:border-accent data-[state=checked]:bg-accent",
+        "relative box-border h-4 w-4 shrink-0 rounded-full border-2 border-separator bg-transparent p-0 outline-none",
+        "data-[state=checked]:border-accent",
         className,
       )}
       {...props}
-    />
+    >
+      <RadioGroupPrimitive.Indicator className="absolute top-1/2 left-1/2 block h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent" />
+    </RadioGroupPrimitive.Item>
   );
 }
