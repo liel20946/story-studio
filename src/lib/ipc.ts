@@ -159,20 +159,12 @@ export const settingsSet = (
       | "colorThemePaletteDark"
       | "colorThemeContrastLight"
       | "colorThemeContrastDark"
-      | "colorThemeOpacityLight"
-      | "colorThemeOpacityDark"
       | "usePointerCursors"
       | "startingUrl"
       | "runHook"
     >
   >,
 ): Promise<AppSettings> => ipcInvoke("settings:set", patch);
-
-export const settingsPreviewOpacity = (opacity: number): Promise<void> =>
-  ipcInvoke("settings:preview-opacity", { opacity });
-
-export const settingsTransitionOpacity = (opacity: number): Promise<void> =>
-  ipcInvoke("settings:transition-opacity", { opacity });
 
 export const openSettings = (): Promise<void> =>
   ipcInvoke("window:openSettings");

@@ -159,8 +159,6 @@ export interface AppSettings {
   colorThemePaletteDark: ColorThemePalette | null;
   colorThemeContrastLight: number;
   colorThemeContrastDark: number;
-  colorThemeOpacityLight: number;
-  colorThemeOpacityDark: number;
   usePointerCursors: boolean;
   startingUrl: string; // pre-filled Start URL when recording a new story
   runHook: string;

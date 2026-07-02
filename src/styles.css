@@ -84,7 +84,7 @@
 
 /* Main pane — full height, square edges */
 .main-pane {
-  background: rgb(from var(--bg) r g b / var(--window-bg-opacity));
+  background: var(--bg);
   border: 1px solid var(--color-border-separator);
   border-right: none;
   overflow: hidden;
