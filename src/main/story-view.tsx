@@ -36,6 +36,7 @@ import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type { StoryDetail } from "../lib/contract-types";
 import { InlineCode, stripCode } from "../components/inline-code";
 import { RailAssertionLine } from "../components/rail-assertion-line";
+import { StorySteps } from "../components/story-steps";
 import { useActiveRunForStory, useRegisterRun } from "../lib/run-store";
 import { buildVarColors } from "../lib/story-var-colors";
 
@@ -817,46 +818,32 @@ export function StoryView() {
         <div className="detail-view-main story-sections">
           {(isEditingThisStory && draft) || story.steps.length > 0 ? (
             <Section title="Steps">
-              <ol className="flex flex-col">
-                {(isEditingThisStory && draft ? draft.steps : story.steps).map((step, i) => (
-                  <li key={i} className="story-step-row">
-                    <span className="story-step-num">{i + 1}</span>
-                    {isEditingThisStory && draft ? (
-                      <input
-                        ref={(el) => {
-                          stepInputRefs.current[i] = el;
-                        }}
-                        aria-label={`Step ${i + 1}`}
-                        value={step}
-                        onChange={(e) =>
-                          updateTextRow(
-                            i,
-                            e.target.value,
-                            draft.steps,
-                            (steps) => updateDraftSteps(steps),
-                          )
-                        }
-                        onBlur={commitCheckpoint}
-                        onKeyDown={(e) =>
-                          handleTextRowKeyDown(
-                            e,
-                            i,
-                            step,
-                            draft.steps,
-                            (steps, immediate) => updateDraftSteps(steps, immediate),
-                            stepInputRefs,
-                          )
-                        }
-                        className={cn(storyEditInputClass, "text-[12px] leading-[16px] text-secondary")}
-                      />
-                    ) : (
-                      <Text variant="small" color="secondary">
-                        <InlineCode text={step} colorMap={varColors.chip} />
-                      </Text>
-                    )}
-                  </li>
-                ))}
-              </ol>
+              <StorySteps
+                steps={isEditingThisStory && draft ? draft.steps : story.steps}
+                colorMap={varColors.chip}
+                editable={Boolean(isEditingThisStory && draft)}
+                stepInputRefs={stepInputRefs}
+                inputClassName={cn(storyEditInputClass, "text-[12px] leading-[16px] text-secondary")}
+                onStepChange={(i, value) =>
+                  updateTextRow(
+                    i,
+                    value,
+                    draft!.steps,
+                    (steps) => updateDraftSteps(steps),
+                  )
+                }
+                onStepKeyDown={(e, i, step) =>
+                  handleTextRowKeyDown(
+                    e,
+                    i,
+                    step,
+                    draft!.steps,
+                    (steps, immediate) => updateDraftSteps(steps, immediate),
+                    stepInputRefs,
+                  )
+                }
+                onCommit={commitCheckpoint}
+              />
             </Section>
           ) : (
             <EmptyState placement="inline" title="No steps yet." />

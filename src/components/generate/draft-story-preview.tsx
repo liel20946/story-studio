@@ -2,9 +2,8 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { parseDraftMd } from "@/lib/parse-draft-md";
 import { buildVarColors } from "@/lib/story-var-colors";
-import { InlineCode } from "@/components/inline-code";
 import { RailAssertionLine } from "@/components/rail-assertion-line";
-import { Text } from "@/components/ui";
+import { StorySteps } from "@/components/story-steps";
 
 function PreviewSection({
   title,
@@ -90,16 +89,7 @@ export function DraftStoryPreview({
 
       {parsed.steps.length > 0 ? (
         <PreviewSection title="Steps">
-          <ol className="flex flex-col">
-            {parsed.steps.map((step, i) => (
-              <li key={i} className="story-step-row">
-                <span className="story-step-num">{i + 1}</span>
-                <Text variant="small" color="secondary">
-                  <InlineCode text={step} colorMap={varColors.chip} />
-                </Text>
-              </li>
-            ))}
-          </ol>
+          <StorySteps steps={parsed.steps} colorMap={varColors.chip} />
         </PreviewSection>
       ) : null}
 
