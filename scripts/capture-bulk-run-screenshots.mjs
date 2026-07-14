@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Launch Story Studio with mock runs, exercise bulk-run UI, capture screenshots.
+ * Launch Story Studio with mock runs, exercise bulk-run UI, capture full-window screenshots.
  * Run from repo root after `npm run build` and `npm run seed:demo`.
  *   STORY_STUDIO_MOCK_RUNS=1 node scripts/capture-bulk-run-screenshots.mjs
  */
@@ -31,9 +31,20 @@ function electronExec() {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function shot(page, name) {
+async function shot(app, name) {
   const file = path.join(outDir, `${name}.png`);
-  await page.screenshot({ path: file, fullPage: false });
+  const png = await app.evaluate(async ({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    if (!w) return null;
+    w.setBounds({ x: 20, y: 20, width: 1440, height: 900 });
+    w.show();
+    w.focus();
+    await new Promise((r) => setTimeout(r, 150));
+    const img = await w.capturePage();
+    return img.toPNG().toString("base64");
+  });
+  if (!png) throw new Error("capturePage failed");
+  fs.writeFileSync(file, Buffer.from(png, "base64"));
   console.log("wrote", file);
 }
 
@@ -50,9 +61,19 @@ async function main() {
   });
 
   const page = await app.firstWindow();
-  page.setDefaultTimeout(20_000);
+  page.setDefaultTimeout(25_000);
   await page.waitForLoadState("domcontentloaded");
   await wait(3000);
+
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    if (!w) return;
+    w.setMinimumSize(1200, 800);
+    w.setSize(1440, 900);
+    w.center();
+    w.show();
+  });
+  await wait(500);
 
   await page.evaluate(() => {
     try {
@@ -79,40 +100,47 @@ async function main() {
   await page.getByPlaceholder(/stop on first failure/i).fill("stop on first failure");
   await page.getByRole("button", { name: /^Select all$/i }).click({ force: true });
   await page.getByRole("button", { name: /^Run 4$/i }).waitFor();
-  await shot(page, "01-bulk-run-config");
+  await shot(app, "01-bulk-run-config");
 
   await page.getByRole("button", { name: /^Run 4$/i }).click({ force: true });
   await page.getByText(/queued|running/i).first().waitFor();
-  await wait(200);
-  await shot(page, "02-bulk-run-running");
+  await wait(250);
+  await shot(app, "02-bulk-run-running");
 
-  // Let the first wave finish so the stopped view shows Finished + Not run yet.
-  await page.getByText("Passed").first().waitFor({ timeout: 10_000 });
-  await wait(400);
-  // Prefer stopping while stories are still queued/not started.
-  const stopBtn = page.getByRole("button", { name: /^Stop$/i });
-  if (await stopBtn.isVisible().catch(() => false)) {
-    await stopBtn.click({ force: true });
-  }
-  await page.getByRole("button", { name: /^Resume$/i }).waitFor({ timeout: 10_000 });
-  await page.getByText("Not run yet").waitFor({ timeout: 5_000 }).catch(() => {});
-  await wait(400);
-  await shot(page, "03-bulk-run-stopped-resume");
+  await page.getByText("Passed").first().waitFor({ timeout: 15_000 });
+  await wait(500);
+  await page.getByRole("button", { name: /^Stop$/i }).click({ force: true });
+  await page.getByRole("button", { name: /^Resume$/i }).waitFor();
+  await wait(500);
+  await shot(app, "03-bulk-run-stopped-by-user");
 
   await page.getByRole("button", { name: /^Resume$/i }).click({ force: true });
-  await wait(800);
-  await shot(page, "04-bulk-run-resumed");
+  await wait(900);
+  await shot(app, "04-bulk-run-resumed");
 
-  const deadline = Date.now() + 25_000;
+  const deadline = Date.now() + 40_000;
   while (Date.now() < deadline) {
-    const running = await page.getByText(/Running \d+ stories/i).isVisible().catch(() => false);
-    const resume = await page.getByRole("button", { name: /^Resume$/i }).isVisible().catch(() => false);
-    const runMoreEnabled = await page.getByRole("button", { name: /Run more/i }).isEnabled().catch(() => false);
-    if ((!running && runMoreEnabled) || resume) break;
-    await wait(350);
+    const condition = await page
+      .getByText(/Stopped by condition/i)
+      .isVisible()
+      .catch(() => false);
+    const resume = await page
+      .getByRole("button", { name: /^Resume$/i })
+      .isVisible()
+      .catch(() => false);
+    const running = await page
+      .getByText(/Running \d+ stories/i)
+      .isVisible()
+      .catch(() => false);
+    const runMoreEnabled = await page
+      .getByRole("button", { name: /Run more/i })
+      .isEnabled()
+      .catch(() => false);
+    if (condition || (!running && (resume || runMoreEnabled))) break;
+    await wait(400);
   }
-  await wait(500);
-  await shot(page, "05-bulk-run-final");
+  await wait(1000);
+  await shot(app, "05-bulk-run-final");
 
   await app.close();
   console.log("done", outDir);
