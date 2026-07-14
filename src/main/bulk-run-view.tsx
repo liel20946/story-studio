@@ -194,7 +194,8 @@ function BulkRunOptionsPanel({
           <span className="ml-1.5 font-normal text-tertiary">(optional)</span>
         </label>
         <Text variant="small" color="tertiary">
-          When a finished story matches this text, remaining stories are not run.
+          When a finished story matches this text, no more stories are started.
+          Ones already running are left to finish.
         </Text>
         <Textarea
           id="bulk-stop-condition"
@@ -373,9 +374,11 @@ function DashboardSection({
 function Dashboard({
   launched,
   status,
+  stopCause,
 }: {
   launched: BulkLaunchedItem[];
   status?: string;
+  stopCause?: "user" | "condition";
 }) {
   const runs = useAllRuns();
 
@@ -414,7 +417,12 @@ function Dashboard({
           {failed > 0 && <Badge color="red">{failed} failed</Badge>}
           {cancelled > 0 && <Badge color="neutral">{cancelled} cancelled</Badge>}
           {notRun > 0 && <Badge color="neutral">{notRun} not run</Badge>}
-          {stopped && <Badge color="orange">Stopped</Badge>}
+          {stopped && stopCause === "condition" && (
+            <Badge color="orange">Stopped by condition</Badge>
+          )}
+          {stopped && stopCause !== "condition" && (
+            <Badge color="orange">Stopped by user</Badge>
+          )}
         </div>
       </div>
 
@@ -538,6 +546,7 @@ export function BulkRunView() {
           stopCondition: snapshot.stopCondition,
           status: snapshot.status,
           stopReason: snapshot.stopReason,
+          stopCause: snapshot.stopCause,
         };
       });
     });
@@ -730,6 +739,7 @@ export function BulkRunView() {
         stopCondition: snapshot.stopCondition,
         status: snapshot.status,
         stopReason: snapshot.stopReason,
+        stopCause: snapshot.stopCause,
       });
     } catch (err) {
       reportAppErrorFromUnknown("Failed to stop bulk run", err);
@@ -777,6 +787,7 @@ export function BulkRunView() {
         stopCondition: result.stopCondition,
         status: "running",
         stopReason: undefined,
+        stopCause: undefined,
       });
     } catch (err) {
       reportAppErrorFromUnknown("Failed to resume bulk run", err);
@@ -853,6 +864,7 @@ export function BulkRunView() {
         <Dashboard
           launched={displayLaunched}
           status={displaySession?.status}
+          stopCause={displaySession?.stopCause}
         />
       </ScrollArea>
     );

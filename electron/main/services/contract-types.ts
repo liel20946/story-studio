@@ -188,6 +188,7 @@ export interface BulkRunOptions {
 
 export type BulkSessionStatus = "running" | "stopped" | "completed";
 export type BulkItemPhase = "pending" | "running" | "done" | "skipped";
+export type BulkStopCause = "user" | "condition";
 
 export interface BulkSessionSnapshot {
   bulkId: string;
@@ -195,6 +196,8 @@ export interface BulkSessionSnapshot {
   maxParallel: number;
   stopCondition: string;
   stopReason?: string;
+  /** Why the bulk stopped — drives the status pill in the UI. */
+  stopCause?: BulkStopCause;
   items: Array<{
     storyName: string;
     storyTitle: string;

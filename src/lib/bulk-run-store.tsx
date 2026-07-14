@@ -7,7 +7,7 @@
 // ============================================================================
 
 import * as React from "react";
-import type { BulkItemPhase, BulkSessionStatus } from "./contract-types";
+import type { BulkItemPhase, BulkSessionStatus, BulkStopCause } from "./contract-types";
 
 const STORAGE_KEY = "story-studio:bulk-session";
 
@@ -28,6 +28,7 @@ export interface BulkSessionState {
   stopCondition: string;
   status: BulkSessionStatus;
   stopReason?: string;
+  stopCause?: BulkStopCause;
 }
 
 export function readPersistedSession(): BulkSessionState | null {
@@ -46,6 +47,7 @@ export function readPersistedSession(): BulkSessionState | null {
       stopCondition: typeof obj.stopCondition === "string" ? obj.stopCondition : "",
       status: (obj.status as BulkSessionStatus) ?? "running",
       stopReason: obj.stopReason,
+      stopCause: obj.stopCause as BulkStopCause | undefined,
     };
   } catch {
     return null;
@@ -116,6 +118,7 @@ export function BulkRunProvider({ children }: { children: React.ReactNode }) {
           stopCondition: prev?.stopCondition ?? "",
           status: prev?.status ?? "running",
           stopReason: prev?.stopReason,
+          stopCause: prev?.stopCause,
         };
       });
     },

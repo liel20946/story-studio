@@ -9,6 +9,7 @@ import type {
   BulkRunOptions,
   BulkSessionSnapshot,
   BulkSessionStatus,
+  BulkStopCause,
   RunResult,
 } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
@@ -33,6 +34,7 @@ interface BulkSession {
   maxParallel: number;
   stopCondition: string;
   stopReason?: string;
+  stopCause?: BulkStopCause;
   items: BulkItemState[];
   provider: AgentProvider;
   agentBinary: string;
@@ -59,6 +61,7 @@ function toSnapshot(session: BulkSession): BulkSessionSnapshot {
     maxParallel: session.maxParallel,
     stopCondition: session.stopCondition,
     stopReason: session.stopReason,
+    stopCause: session.stopCause,
     items: session.items.map((item) => ({
       storyName: item.storyName,
       storyTitle: item.storyTitle,
@@ -84,6 +87,7 @@ async function persistPlan(session: BulkSession): Promise<void> {
         provider: session.provider,
         status: session.status,
         stopReason: session.stopReason,
+        stopCause: session.stopCause,
         maxParallel: session.maxParallel,
         stopCondition: session.stopCondition,
         startedAt: Date.now(),
@@ -153,6 +157,7 @@ export async function stopBulkRun(
 
   session.abort = true;
   session.status = "stopped";
+  session.stopCause = "user";
   session.stopReason = reason;
 
   for (const item of session.items) {
@@ -204,6 +209,7 @@ export async function resumeBulkRun(
   };
   // Clear previous skipped items that are being retried.
   session.stopReason = undefined;
+  session.stopCause = undefined;
   _sessions.set(bulkId, session);
   await persistPlan(session);
   publish(session);
@@ -264,6 +270,7 @@ async function runBulkWorkers(session: BulkSession): Promise<void> {
           // already running — let them finish naturally.
           session.abort = true;
           session.status = "stopped";
+          session.stopCause = "condition";
           session.stopReason = `Stop condition matched after “${item.storyTitle}” (${result.status})`;
           for (const other of session.items) {
             if (other.phase === "pending") other.phase = "skipped";
@@ -295,6 +302,7 @@ async function runBulkWorkers(session: BulkSession): Promise<void> {
     const anySkipped = session.items.some((i) => i.phase === "skipped");
     session.status = anySkipped ? "stopped" : "completed";
     if (anySkipped && !session.stopReason) {
+      session.stopCause = session.stopCause ?? "user";
       session.stopReason = "Bulk run stopped";
     }
   }
