@@ -372,11 +372,9 @@ function DashboardSection({
 
 function Dashboard({
   launched,
-  stopReason,
   status,
 }: {
   launched: BulkLaunchedItem[];
-  stopReason?: string;
   status?: string;
 }) {
   const runs = useAllRuns();
@@ -415,11 +413,6 @@ function Dashboard({
           {notRun > 0 && <Badge color="neutral">{notRun} not run</Badge>}
           {stopped && <Badge color="orange">Stopped</Badge>}
         </div>
-        {stopReason ? (
-          <Text variant="small" color="secondary">
-            {stopReason}
-          </Text>
-        ) : null}
       </div>
 
       {stopped ? (
@@ -849,7 +842,6 @@ export function BulkRunView() {
       >
         <Dashboard
           launched={displayLaunched}
-          stopReason={displaySession?.stopReason}
           status={displaySession?.status}
         />
       </ScrollArea>
