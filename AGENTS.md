@@ -73,9 +73,10 @@ GH_TOKEN=$(gh auth token) npm run dist:publish
 `dist:publish` (`scripts/publish-release.mjs`) does:
 
 1. `npm run build`
-2. `electron-builder --publish always` — uploads artifacts + `latest-mac.yml` to the GitHub Release.
-3. Falls back to generating `latest-mac.yml` from `release/` if electron-builder didn't, via
-   `scripts/generate-latest-mac-yml.mjs`.
+2. `electron-builder --publish always` — uploads artifacts (+ possibly a default yml) to the GitHub Release.
+3. **Always** regenerates `latest-mac.yml` from local `release/` artifacts via
+   `scripts/generate-latest-mac-yml.mjs` (dotted GitHub asset names + matching sha512/size).
+   Do not trust electron-builder's own yml as source of truth.
 4. `scripts/upload-update-metadata.mjs` — uploads/clobbers `latest-mac.yml` on the release tag.
 
 ### Always verify after publishing

@@ -26,9 +26,10 @@ run("npx", ["electron-builder", "--publish", "always"]);
 const version = readVersion();
 const ymlPath = path.join(root, "release", "latest-mac.yml");
 
-if (!fs.existsSync(ymlPath)) {
-  console.warn("electron-builder did not write latest-mac.yml; generating it from release artifacts");
-  fs.writeFileSync(ymlPath, generateLatestMacYml(version));
-}
+// Always regenerate from local artifacts so latest-mac.yml uses GitHub-served
+// filenames (spaces → dots) and matching sha512/size — electron-builder's own
+// yml can point at names that do not match uploaded assets.
+console.log("Regenerating latest-mac.yml from release artifacts");
+fs.writeFileSync(ymlPath, generateLatestMacYml(version));
 
 run("node", ["scripts/upload-update-metadata.mjs"]);
