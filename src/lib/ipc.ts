@@ -122,7 +122,35 @@ export const runBulkStart = (
   items: { storyName: string; storyTitle: string; runId: string }[];
   agentProvider: import("./contract-types").AgentProvider;
   agentModel: string;
+  maxParallel: number;
+  stopCondition: string;
 }> => ipcInvoke("run:bulkStart", { storyNames, options });
+
+export const runBulkStop = (
+  bulkId: string,
+  reason?: string,
+): Promise<import("./contract-types").BulkSessionSnapshot> =>
+  ipcInvoke("run:bulkStop", { bulkId, reason });
+
+export const runBulkResume = (
+  bulkId: string,
+  storyNames: string[],
+  options?: BulkRunOptions,
+): Promise<{
+  bulkId: string;
+  items: { storyName: string; storyTitle: string; runId: string }[];
+  agentProvider: import("./contract-types").AgentProvider;
+  agentModel: string;
+  maxParallel: number;
+  stopCondition: string;
+}> => ipcInvoke("run:bulkResume", { bulkId, storyNames, options });
+
+export const onBulkStatus = (
+  cb: (snapshot: import("./contract-types").BulkSessionSnapshot) => void,
+): (() => void) =>
+  window.electronAPI.on("bulk:status", (payload: unknown) =>
+    cb(payload as import("./contract-types").BulkSessionSnapshot),
+  );
 
 export const runCancel = (runId: string): Promise<{ ok: true }> =>
   ipcInvoke("run:cancel", { runId });

@@ -4,7 +4,7 @@ import { readFile, readdir, access } from "fs/promises";
 import * as path from "path";
 import { listRuns, getRun, deleteRun, clearRuns } from "../services/run-service.js";
 import { getStory } from "../services/stories-service.js";
-import { startBulkRun } from "../services/bulk-runner.js";
+import { startBulkRun, stopBulkRun, resumeBulkRun } from "../services/bulk-runner.js";
 import { startAgentRun, cancelAgentRun, listActiveRuns } from "../services/agent-runner.js";
 import { resolveAgentBinary } from "../services/agent-provider.js";
 import { buildLastRunMap } from "../services/run-service.js";
@@ -14,6 +14,8 @@ import { getSettingsValue } from "./settings.js";
 import { getAgentRunConfig } from "../services/agent-config.js";
 import { readRunMeta } from "../services/run-meta.js";
 import { collectLiveScreenshotPaths } from "../services/run-artifacts.js";
+import { mockRunsEnabled } from "../services/mock-runner.js";
+import type { BulkRunOptions } from "../services/contract-types.js";
 
 async function resolveScreenshotFile(requested: string): Promise<string | null> {
   const runsDir = path.resolve(getRunsDir());
@@ -54,11 +56,13 @@ export function registerRunsHandlers(): void {
     const { storyName } = params as { storyName: string };
     const settings = getSettingsValue();
 
-    const agentBinary = await resolveAgentBinary(
-      settings.agentProvider,
-      settings.codexBinaryPath,
-      settings.claudeBinaryPath,
-    );
+    const agentBinary = mockRunsEnabled()
+      ? "mock"
+      : await resolveAgentBinary(
+          settings.agentProvider,
+          settings.codexBinaryPath,
+          settings.claudeBinaryPath,
+        );
 
     // Get story detail for filePath and title
     const runs = await listRuns();
@@ -100,7 +104,7 @@ export function registerRunsHandlers(): void {
     }
     const { storyNames, options } = params as {
       storyNames: string[];
-      options?: import("../services/contract-types.js").BulkRunOptions;
+      options?: BulkRunOptions;
     };
     if (storyNames.length === 0) {
       throw new Error("run:bulkStart requires at least one story");
@@ -108,11 +112,13 @@ export function registerRunsHandlers(): void {
 
     const settings = getSettingsValue();
 
-    const agentBinary = await resolveAgentBinary(
-      settings.agentProvider,
-      settings.codexBinaryPath,
-      settings.claudeBinaryPath,
-    );
+    const agentBinary = mockRunsEnabled()
+      ? "mock"
+      : await resolveAgentBinary(
+          settings.agentProvider,
+          settings.codexBinaryPath,
+          settings.claudeBinaryPath,
+        );
 
     const runs = await listRuns();
     const lastRunMap = buildLastRunMap(runs);
@@ -164,6 +170,96 @@ export function registerRunsHandlers(): void {
       items,
       agentProvider: settings.agentProvider,
       agentModel: agentConfig.model,
+      maxParallel: options?.maxParallel ?? 3,
+      stopCondition: options?.stopCondition?.trim() ?? "",
+    };
+  });
+
+  ipcMain.handle("run:bulkStop", async (_event, params: unknown) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      typeof (params as Record<string, unknown>)["bulkId"] !== "string"
+    ) {
+      throw new Error("run:bulkStop requires { bulkId: string }");
+    }
+    const { bulkId, reason } = params as { bulkId: string; reason?: string };
+    const snapshot = await stopBulkRun(bulkId, reason?.trim() || "Stopped by user");
+    if (!snapshot) {
+      throw new Error(`No active bulk run: ${bulkId}`);
+    }
+    return snapshot;
+  });
+
+  ipcMain.handle("run:bulkResume", async (_event, params: unknown) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      typeof (params as Record<string, unknown>)["bulkId"] !== "string" ||
+      !Array.isArray((params as Record<string, unknown>)["storyNames"])
+    ) {
+      throw new Error("run:bulkResume requires { bulkId: string, storyNames: string[] }");
+    }
+    const { bulkId, storyNames, options } = params as {
+      bulkId: string;
+      storyNames: string[];
+      options?: BulkRunOptions;
+    };
+    if (storyNames.length === 0) {
+      throw new Error("run:bulkResume requires at least one story");
+    }
+
+    const settings = getSettingsValue();
+    const agentBinary = mockRunsEnabled()
+      ? "mock"
+      : await resolveAgentBinary(
+          settings.agentProvider,
+          settings.codexBinaryPath,
+          settings.claudeBinaryPath,
+        );
+    const runs = await listRuns();
+    const lastRunMap = buildLastRunMap(runs);
+    const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
+
+    const items: { storyName: string; storyTitle: string; runId: string }[] = [];
+    const bulkStories: {
+      runId: string;
+      storyName: string;
+      storyTitle: string;
+      storyContents: string;
+    }[] = [];
+
+    for (const storyName of storyNames) {
+      const story = await getStory(storyName, lastRunMap);
+      const runId = randomUUID();
+      items.push({ storyName, storyTitle: story.title, runId });
+      bulkStories.push({
+        runId,
+        storyName,
+        storyTitle: story.title,
+        storyContents: formatStoryForRun(story),
+      });
+    }
+
+    resumeBulkRun(
+      bulkId,
+      bulkStories,
+      settings.agentProvider,
+      agentBinary,
+      settings.runHook,
+      options,
+      agentConfig,
+    ).catch((err) => {
+      console.error("[bulk] unhandled bulk resume error", { bulkId, err: String(err) });
+    });
+
+    return {
+      bulkId,
+      items,
+      agentProvider: settings.agentProvider,
+      agentModel: agentConfig.model,
+      maxParallel: options?.maxParallel ?? 3,
+      stopCondition: options?.stopCondition?.trim() ?? "",
     };
   });
 

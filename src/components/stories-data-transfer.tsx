@@ -306,6 +306,8 @@ export function useStoriesDataTransfer() {
       reportAppErrorFromUnknown("Export failed", err);
     }
   };
+
+  const pickExportFolder = async () => {
     if (isPickingFolder || isExporting) return;
     setIsPickingFolder(true);
     try {

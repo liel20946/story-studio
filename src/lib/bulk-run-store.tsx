@@ -7,8 +7,9 @@
 // ============================================================================
 
 import * as React from "react";
+import type { BulkItemPhase, BulkSessionStatus } from "./contract-types";
 
-const STORAGE_KEY = "story-studio:bulk-launched";
+const STORAGE_KEY = "story-studio:bulk-session";
 
 // One story launched as part of a bulk run: the runId it was given plus the
 // minimal display info the dashboard needs (kept here, not the full summary,
@@ -17,24 +18,49 @@ export interface BulkLaunchedItem {
   storyName: string;
   storyTitle: string;
   runId: string;
+  phase?: BulkItemPhase;
 }
 
-export function readPersistedLaunched(): BulkLaunchedItem[] | null {
+export interface BulkSessionState {
+  bulkId: string;
+  items: BulkLaunchedItem[];
+  maxParallel: number;
+  stopCondition: string;
+  status: BulkSessionStatus;
+  stopReason?: string;
+}
+
+export function readPersistedSession(): BulkSessionState | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    return parsed as BulkLaunchedItem[];
+    if (!parsed || typeof parsed !== "object") return null;
+    const obj = parsed as Partial<BulkSessionState>;
+    if (!Array.isArray(obj.items) || obj.items.length === 0) return null;
+    if (typeof obj.bulkId !== "string") return null;
+    return {
+      bulkId: obj.bulkId,
+      items: obj.items as BulkLaunchedItem[],
+      maxParallel: typeof obj.maxParallel === "number" ? obj.maxParallel : 3,
+      stopCondition: typeof obj.stopCondition === "string" ? obj.stopCondition : "",
+      status: (obj.status as BulkSessionStatus) ?? "running",
+      stopReason: obj.stopReason,
+    };
   } catch {
     return null;
   }
 }
 
-function persistLaunched(items: BulkLaunchedItem[] | null): void {
+/** @deprecated prefer readPersistedSession */
+export function readPersistedLaunched(): BulkLaunchedItem[] | null {
+  return readPersistedSession()?.items ?? null;
+}
+
+function persistSession(session: BulkSessionState | null): void {
   try {
-    if (items?.length) {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    if (session?.items.length) {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
     } else {
       sessionStorage.removeItem(STORAGE_KEY);
     }
@@ -44,6 +70,14 @@ function persistLaunched(items: BulkLaunchedItem[] | null): void {
 }
 
 interface BulkRunStoreValue {
+  session: BulkSessionState | null;
+  setSession: (
+    session:
+      | BulkSessionState
+      | null
+      | ((prev: BulkSessionState | null) => BulkSessionState | null),
+  ) => void;
+  /** Convenience: launched items for dashboard rendering. */
   launched: BulkLaunchedItem[] | null;
   setLaunched: (items: BulkLaunchedItem[] | null) => void;
 }
@@ -51,18 +85,51 @@ interface BulkRunStoreValue {
 const BulkRunStoreContext = React.createContext<BulkRunStoreValue | null>(null);
 
 export function BulkRunProvider({ children }: { children: React.ReactNode }) {
-  const [launched, setLaunchedState] = React.useState<BulkLaunchedItem[] | null>(
-    readPersistedLaunched,
+  const [session, setSessionState] = React.useState<BulkSessionState | null>(
+    readPersistedSession,
   );
 
-  const setLaunched = React.useCallback((items: BulkLaunchedItem[] | null) => {
-    setLaunchedState(items);
-    persistLaunched(items);
-  }, []);
+  const setSession = React.useCallback(
+    (
+      next:
+        | BulkSessionState
+        | null
+        | ((prev: BulkSessionState | null) => BulkSessionState | null),
+    ) => {
+      setSessionState((prev) => {
+        const resolved = typeof next === "function" ? next(prev) : next;
+        persistSession(resolved);
+        return resolved;
+      });
+    },
+    [],
+  );
+
+  const setLaunched = React.useCallback(
+    (items: BulkLaunchedItem[] | null) => {
+      setSession((prev) => {
+        if (!items?.length) return null;
+        return {
+          bulkId: prev?.bulkId ?? `local-${Date.now()}`,
+          items,
+          maxParallel: prev?.maxParallel ?? 3,
+          stopCondition: prev?.stopCondition ?? "",
+          status: prev?.status ?? "running",
+          stopReason: prev?.stopReason,
+        };
+      });
+    },
+    [setSession],
+  );
 
   const value = React.useMemo<BulkRunStoreValue>(
-    () => ({ launched, setLaunched }),
-    [launched, setLaunched],
+    () => ({
+      session,
+      setSession,
+      launched: session?.items ?? null,
+      setLaunched,
+    }),
+    [session, setSession, setLaunched],
   );
 
   return (

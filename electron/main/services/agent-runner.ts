@@ -1,8 +1,14 @@
-import type { AgentProvider, ActiveRunSnapshot } from "./contract-types.js";
+import type { AgentProvider, ActiveRunSnapshot, RunResult } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
 import { startRun, cancelRun, listActiveCodexRuns } from "./codex-runner.js";
 import { startClaudeRun, cancelClaudeRun, listActiveClaudeRuns } from "./claude-runner.js";
 import { cancelRecoveredRun, isRecoveredRun, listRecoveredRuns } from "./run-recovery.js";
+import {
+  cancelMockRun,
+  listActiveMockRuns,
+  mockRunsEnabled,
+  startMockRun,
+} from "./mock-runner.js";
 
 const _runProviders = new Map<string, AgentProvider>();
 
@@ -15,8 +21,17 @@ export async function startAgentRun(
   agentBinary: string,
   runHook?: string,
   agentConfig?: AgentRunConfig,
-) {
+): Promise<RunResult> {
   _runProviders.set(runId, provider);
+  if (mockRunsEnabled()) {
+    return startMockRun(
+      provider,
+      runId,
+      storyName,
+      storyTitle,
+      agentConfig?.model ?? "mock",
+    );
+  }
   if (provider === "claude-code") {
     return startClaudeRun(
       runId,
@@ -40,6 +55,11 @@ export async function startAgentRun(
 }
 
 export async function cancelAgentRun(runId: string): Promise<boolean> {
+  if (mockRunsEnabled() && cancelMockRun(runId)) {
+    _runProviders.delete(runId);
+    return true;
+  }
+
   if (isRecoveredRun(runId)) {
     return cancelRecoveredRun(runId);
   }
@@ -69,6 +89,7 @@ export function clearAgentRunProvider(runId: string): void {
 export function listActiveRuns(): ActiveRunSnapshot[] {
   const byId = new Map<string, ActiveRunSnapshot>();
   for (const snap of [
+    ...listActiveMockRuns(),
     ...listActiveCodexRuns(),
     ...listActiveClaudeRuns(),
     ...listRecoveredRuns(),

@@ -1,7 +1,7 @@
-// Shared concurrency cap for Playwright MCP browser sessions. Each single-story
-// codex run and each bulk-run subagent holds one slot while its browser is active.
-// The bulk orchestrator itself does not use Playwright — only its subagents do.
-export const MAX_CONCURRENT_PLAYWRIGHT = 3;
+// Shared concurrency cap for Playwright MCP browser sessions. Each story agent
+// holds one slot while its browser is active. Bulk runs additionally throttle
+// with maxParallel in bulk-runner.ts; this is the hard process ceiling.
+export const MAX_CONCURRENT_PLAYWRIGHT = 8;
 
 let _activePlaywright = 0;
 const _playwrightWaiters: Array<() => void> = [];
