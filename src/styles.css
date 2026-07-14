@@ -253,6 +253,11 @@
   grid-template-columns: repeat(5, 1fr);
 }
 
+.segment-control.segment-control--labeled.segment-control--six {
+  --segment-count: 6;
+  grid-template-columns: repeat(6, 1fr);
+}
+
 .segment-control.segment-control--labeled .segment-control-thumb {
   top: var(--segment-pad);
   left: var(--segment-pad);
@@ -1594,7 +1599,7 @@
 
 .settings-page-inner {
   width: 100%;
-  max-width: 34rem;
+  max-width: 40rem;
   margin: 0 auto;
 }
 
