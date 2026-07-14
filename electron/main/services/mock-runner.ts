@@ -95,8 +95,8 @@ export async function startMockRun(
 
   return new Promise<RunResult>((resolve) => {
     state.resolve = resolve;
-    // Stagger durations so parallel workers are visible in the dashboard.
-    const delay = 600 + Math.floor(Math.random() * 900);
+    // Stagger so some stories finish before others — makes stop/resume demos clear.
+    const delay = 1400 + Math.floor(Math.random() * 900);
     state.timer = setTimeout(() => {
       void finishMockRun(runId);
     }, delay);

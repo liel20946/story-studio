@@ -63,7 +63,10 @@ async function main() {
     }
   });
 
-  await page.getByRole("button", { name: /Run stories/i }).first().click({ force: true });
+  await page
+    .getByRole("button", { name: "Run stories" })
+    .filter({ hasText: "Run stories" })
+    .click({ force: true });
   await wait(1200);
   const runMore = page.getByRole("button", { name: /Run more/i });
   if (await runMore.isVisible().catch(() => false)) {
@@ -72,7 +75,7 @@ async function main() {
   }
 
   await page.getByText("Parallel subagents").waitFor();
-  await page.getByRole("tab", { name: "2", exact: true }).click({ force: true });
+  await page.locator("#bulk-max-parallel").selectOption("2");
   await page.getByPlaceholder(/stop on first failure/i).fill("stop on first failure");
   await page.getByRole("button", { name: /^Select all$/i }).click({ force: true });
   await page.getByRole("button", { name: /^Run 4$/i }).waitFor();
@@ -80,16 +83,24 @@ async function main() {
 
   await page.getByRole("button", { name: /^Run 4$/i }).click({ force: true });
   await page.getByText(/queued|running/i).first().waitFor();
-  await wait(80);
+  await wait(200);
   await shot(page, "02-bulk-run-running");
 
-  await page.getByRole("button", { name: /^Stop$/i }).click({ force: true });
-  await page.getByRole("button", { name: /^Resume$/i }).waitFor();
+  // Let the first wave finish so the stopped view shows Finished + Not run yet.
+  await page.getByText("Passed").first().waitFor({ timeout: 10_000 });
+  await wait(400);
+  // Prefer stopping while stories are still queued/not started.
+  const stopBtn = page.getByRole("button", { name: /^Stop$/i });
+  if (await stopBtn.isVisible().catch(() => false)) {
+    await stopBtn.click({ force: true });
+  }
+  await page.getByRole("button", { name: /^Resume$/i }).waitFor({ timeout: 10_000 });
+  await page.getByText("Not run yet").waitFor({ timeout: 5_000 }).catch(() => {});
   await wait(400);
   await shot(page, "03-bulk-run-stopped-resume");
 
   await page.getByRole("button", { name: /^Resume$/i }).click({ force: true });
-  await wait(700);
+  await wait(800);
   await shot(page, "04-bulk-run-resumed");
 
   const deadline = Date.now() + 25_000;

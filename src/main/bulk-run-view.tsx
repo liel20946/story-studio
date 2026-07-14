@@ -26,9 +26,7 @@ import {
   Checkbox,
   EmptyState,
   Textarea,
-  Field,
 } from "@/components/ui";
-import { LabeledSegment } from "@/components/labeled-segment";
 import { cn } from "@/lib/utils";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
 import {
@@ -51,14 +49,7 @@ import {
   readPersistedSession,
 } from "../lib/bulk-run-store";
 
-const PARALLEL_OPTIONS = [
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-  { value: "3", label: "3" },
-  { value: "4", label: "4" },
-  { value: "5", label: "5" },
-  { value: "6", label: "6" },
-] as const;
+const PARALLEL_OPTIONS = [1, 2, 3, 4, 5, 6] as const;
 
 // A section as rendered here: built-in "Stories" group + each user section.
 interface Group {
@@ -70,6 +61,8 @@ interface Group {
 // Live status of a launched run — "running" until a result arrives.
 type LiveStatus = RunStatus | "running" | "pending" | "skipped";
 
+type DashboardRow = BulkLaunchedItem & { status: LiveStatus };
+
 function statusBadge(status: LiveStatus): React.ReactNode {
   switch (status) {
     case "passed":
@@ -80,7 +73,7 @@ function statusBadge(status: LiveStatus): React.ReactNode {
     case "cancelled":
       return <Badge color="neutral">Cancelled</Badge>;
     case "skipped":
-      return <Badge color="neutral">Skipped</Badge>;
+      return <Badge color="neutral">Not run</Badge>;
     case "pending":
       return <Badge color="neutral">Queued</Badge>;
     default:
@@ -116,6 +109,15 @@ function liveStatusForItem(
   if (resultStatus) return resultStatus;
   if (item.phase === "pending") return "pending";
   return "running";
+}
+
+function isFinishedStatus(status: LiveStatus): boolean {
+  return (
+    status === "passed" ||
+    status === "failed" ||
+    status === "error" ||
+    status === "cancelled"
+  );
 }
 
 // ---------- selection phase ----------
@@ -155,31 +157,54 @@ function BulkRunOptionsPanel({
   onStopConditionChange: (value: string) => void;
 }) {
   return (
-    <div className="mb-2 flex flex-col gap-4 rounded-control border border-border bg-surface-sunken/40 px-4 py-3">
-      <Field
-        label="Parallel subagents"
-        description="How many stories run at the same time."
-      >
-        <LabeledSegment
+    <div className="mb-1 flex flex-col gap-5">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="bulk-max-parallel" className="text-strong">
+          Parallel subagents
+        </label>
+        <Text variant="small" color="tertiary">
+          How many stories run at the same time.
+        </Text>
+        <select
+          id="bulk-max-parallel"
+          aria-label="Parallel subagents"
           value={maxParallel}
-          options={PARALLEL_OPTIONS}
-          onChange={onMaxParallelChange}
-          ariaLabel="Parallel subagents"
-          className="w-fit"
-        />
-      </Field>
-      <Field
-        label="Stop condition"
-        description="Optional. When a finished story matches this text, remaining stories are skipped."
-      >
+          onChange={(e) => onMaxParallelChange(e.target.value)}
+          className={cn(
+            "h-9 w-44 appearance-none rounded-control border border-field bg-control",
+            "bg-[length:12px] bg-[right_0.75rem_center] bg-no-repeat",
+            "px-3 pr-8 text-regular text-primary outline-none",
+            "focus:border-field",
+          )}
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
+          }}
+        >
+          {PARALLEL_OPTIONS.map((n) => (
+            <option key={n} value={String(n)}>
+              {n} at a time
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="bulk-stop-condition" className="text-strong">
+          Stop condition
+          <span className="ml-1.5 font-normal text-tertiary">(optional)</span>
+        </label>
+        <Text variant="small" color="tertiary">
+          When a finished story matches this text, remaining stories are not run.
+        </Text>
         <Textarea
+          id="bulk-stop-condition"
           value={stopCondition}
           onChange={(e) => onStopConditionChange(e.target.value)}
-          placeholder='e.g. "stop on first failure" or a phrase from a story result'
+          placeholder='e.g. "stop on first failure"'
           rows={2}
           className="min-h-[64px] resize-y"
         />
-      </Field>
+      </div>
     </div>
   );
 }
@@ -261,6 +286,90 @@ function SelectionView({
 }
 
 // ---------- running phase (dashboard) ----------
+function StoryResultRow({
+  row,
+  muted,
+}: {
+  row: DashboardRow;
+  muted?: boolean;
+}) {
+  const navigate = useNavigate();
+  const clickable = row.phase !== "pending" && row.phase !== "skipped";
+  const body = (
+    <>
+      <span className="shrink-0">{statusIcon(row.status)}</span>
+      <Text variant="regular" className="truncate">
+        {row.storyTitle}
+      </Text>
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {statusBadge(row.status)}
+        {clickable ? (
+          <ChevronRightIcon className="size-4 text-tertiary" />
+        ) : (
+          <span className="size-4" />
+        )}
+      </span>
+    </>
+  );
+
+  if (!clickable) {
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-3 rounded-control px-3 py-2 text-left",
+          muted && "opacity-80",
+        )}
+      >
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigate({ to: "/run/$runId", params: { runId: row.runId } })}
+      className="flex items-center gap-3 rounded-control px-3 py-2 text-left transition-colors hover:bg-surface-hover"
+    >
+      {body}
+    </button>
+  );
+}
+
+function DashboardSection({
+  title,
+  description,
+  rows,
+  muted,
+}: {
+  title: string;
+  description?: string;
+  rows: DashboardRow[];
+  muted?: boolean;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="px-1">
+        <Text variant="small-strong" color="secondary">
+          {title}
+          <span className="ml-1.5 font-normal text-tertiary">({rows.length})</span>
+        </Text>
+        {description ? (
+          <Text variant="small" color="tertiary" className="mt-0.5">
+            {description}
+          </Text>
+        ) : null}
+      </div>
+      <div className="flex flex-col">
+        {rows.map((row) => (
+          <StoryResultRow key={row.runId} row={row} muted={muted} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({
   launched,
   stopReason,
@@ -270,7 +379,6 @@ function Dashboard({
   stopReason?: string;
   status?: string;
 }) {
-  const navigate = useNavigate();
   const runs = useAllRuns();
 
   const rows = launched.map((item) => {
@@ -289,67 +397,56 @@ function Dashboard({
     (r) => r.status === "failed" || r.status === "error",
   ).length;
   const cancelled = rows.filter((r) => r.status === "cancelled").length;
-  const skipped = rows.filter((r) => r.status === "skipped").length;
+  const notRun = rows.filter((r) => r.status === "skipped").length;
+  const stopped = status === "stopped";
+
+  const ranRows = rows.filter((r) => isFinishedStatus(r.status));
+  const notRunRows = rows.filter((r) => r.status === "skipped");
 
   return (
-    <div className="flex flex-col gap-4 px-8 py-4 pb-8">
-      <div className="flex flex-wrap items-center gap-2">
-        {running > 0 && <Badge color="blue">{running} running</Badge>}
-        {pending > 0 && <Badge color="neutral">{pending} queued</Badge>}
-        {passed > 0 && <Badge color="green">{passed} passed</Badge>}
-        {failed > 0 && <Badge color="red">{failed} failed</Badge>}
-        {cancelled > 0 && <Badge color="neutral">{cancelled} cancelled</Badge>}
-        {skipped > 0 && <Badge color="neutral">{skipped} skipped</Badge>}
-        {status === "stopped" && <Badge color="orange">Stopped</Badge>}
+    <div className="flex flex-col gap-5 px-8 py-4 pb-8">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {running > 0 && <Badge color="blue">{running} running</Badge>}
+          {pending > 0 && <Badge color="neutral">{pending} queued</Badge>}
+          {passed > 0 && <Badge color="green">{passed} passed</Badge>}
+          {failed > 0 && <Badge color="red">{failed} failed</Badge>}
+          {cancelled > 0 && <Badge color="neutral">{cancelled} cancelled</Badge>}
+          {notRun > 0 && <Badge color="neutral">{notRun} not run</Badge>}
+          {stopped && <Badge color="orange">Stopped</Badge>}
+        </div>
+        {stopReason ? (
+          <Text variant="small" color="secondary">
+            {stopReason}
+          </Text>
+        ) : null}
       </div>
 
-      {stopReason ? (
-        <Text variant="small" color="secondary">
-          {stopReason}
-        </Text>
-      ) : null}
-
-      <div className="flex flex-col">
-        {rows.map(({ storyTitle, runId, status: rowStatus, phase }) => {
-          const clickable = phase !== "pending" && phase !== "skipped";
-          const body = (
-            <>
-              <span className="shrink-0">{statusIcon(rowStatus)}</span>
-              <Text variant="regular" className="truncate">
-                {storyTitle}
-              </Text>
-              <span className="ml-auto flex shrink-0 items-center gap-2">
-                {statusBadge(rowStatus)}
-                {clickable ? (
-                  <ChevronRightIcon className="size-4 text-tertiary" />
-                ) : (
-                  <span className="size-4" />
-                )}
-              </span>
-            </>
-          );
-          if (!clickable) {
-            return (
-              <div
-                key={runId}
-                className="flex items-center gap-3 rounded-control px-3 py-2 text-left opacity-80"
-              >
-                {body}
-              </div>
-            );
-          }
-          return (
-            <button
-              key={runId}
-              type="button"
-              onClick={() => navigate({ to: "/run/$runId", params: { runId } })}
-              className="flex items-center gap-3 rounded-control px-3 py-2 text-left transition-colors hover:bg-surface-hover"
-            >
-              {body}
-            </button>
-          );
-        })}
-      </div>
+      {stopped ? (
+        <div className="flex flex-col gap-6">
+          <DashboardSection
+            title="Finished"
+            description={
+              ranRows.length === 0
+                ? "No stories finished before the stop."
+                : undefined
+            }
+            rows={ranRows}
+          />
+          <DashboardSection
+            title="Not run yet"
+            description="These will start when you resume."
+            rows={notRunRows}
+            muted
+          />
+        </div>
+      ) : (
+        <div className="flex flex-col">
+          {rows.map((row) => (
+            <StoryResultRow key={row.runId} row={row} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
