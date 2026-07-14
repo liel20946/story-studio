@@ -73,11 +73,14 @@ GH_TOKEN=$(gh auth token) npm run dist:publish
 `dist:publish` (`scripts/publish-release.mjs`) does:
 
 1. `npm run build`
-2. `electron-builder --publish always` — uploads artifacts (+ possibly a default yml) to the GitHub Release.
-3. **Always** regenerates `latest-mac.yml` from local `release/` artifacts via
-   `scripts/generate-latest-mac-yml.mjs` (dotted GitHub asset names + matching sha512/size).
-   Do not trust electron-builder's own yml as source of truth.
-4. `scripts/upload-update-metadata.mjs` — uploads/clobbers `latest-mac.yml` on the release tag.
+2. `electron-builder --mac --publish never` — packages locally only.
+   **Do not** let electron-builder publish to GitHub: its uploader rewrites
+   `Story Studio-*` → `Story-Studio-*` (dashes). Auto-update needs the dotted
+   GitHub form `Story.Studio-*` (spaces → dots).
+3. Regenerates `latest-mac.yml` from local `release/` via
+   `scripts/generate-latest-mac-yml.mjs` (dotted names + matching sha512/size).
+4. Creates/uploads a GitHub Release with `gh` using the **space-named** local
+   files (GitHub serves them as `Story.Studio-*`), then publishes + marks latest.
 
 ### Always verify after publishing
 
@@ -90,7 +93,8 @@ gh release view v<VERSION> --json assets --jq '.assets[] | {name, size}'
 Confirm that, for the zip and dmg in `latest-mac.yml`:
 
 - the `url`/`path` filename **exists** in the release assets, and
-- the `size` in the yml **equals** the asset's size.
+- the `size` in the yml **equals** the asset's size,
+- names are the **dotted** form (`Story.Studio-*`), not `Story-Studio-*`.
 
 If they don't match, the release is broken — fix before telling anyone to update.
 
@@ -120,10 +124,12 @@ gh release delete v<VERSION> --yes --cleanup-tag
 - **Manual GitHub UI uploads** skip `latest-mac.yml` and break auto-update. Use the scripts.
 - **Wrong asset name form in the yml.** GitHub serves the space-named artifact with a dot
   (`Story Studio` -> `Story.Studio`). The yml must use the dotted name. A dash form (`Story-Studio`)
-  does not exist as a normal upload and is a sign someone hand-uploaded a renamed file.
+  is what electron-builder's built-in GitHub publisher uploads — that breaks auto-update if the
+  yml expects dots. Always publish via `scripts/publish-release.mjs` (local build + `gh` upload).
 - **Size mismatch** between the yml and the real asset is the classic "stuck download" cause
   (this is what broke v1.5.0: yml claimed ~110 MB while the uploaded zip was ~316 MB). Always verify.
 - **Reusing a version number** with different binaries confuses `electron-updater` caches. Always bump.
 - **Duplicate zips on one release** (e.g. both `Story-Studio-*.zip` and `Story.Studio-*.zip`)
-  is a red flag — the yml can end up pointing at the wrong one. Keep one canonical artifact set.
+  is a red flag — the yml can end up pointing at the wrong one. Keep one canonical artifact set
+  (`Story.Studio-*` only).
 - Auto-update only runs in the **packaged** app (`app.isPackaged`); it's a no-op in `npm run dev`.
