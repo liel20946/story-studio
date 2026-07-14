@@ -205,7 +205,30 @@ export interface BulkRunOptions {
   storyIds?: string[];
   headed?: boolean;
   baseUrlOverride?: string;
+  /** How many story agents may run at once (1–8). Defaults to 3. */
   maxParallel?: number;
+  /** Optional free-text condition; when matched against a finished story, remaining work stops. */
+  stopCondition?: string;
+}
+
+export type BulkSessionStatus = "running" | "stopped" | "completed";
+export type BulkItemPhase = "pending" | "running" | "done" | "skipped";
+export type BulkStopCause = "user" | "condition";
+
+export interface BulkSessionSnapshot {
+  bulkId: string;
+  status: BulkSessionStatus;
+  maxParallel: number;
+  stopCondition: string;
+  stopReason?: string;
+  /** Why the bulk stopped — drives the status pill in the UI. */
+  stopCause?: BulkStopCause;
+  items: Array<{
+    storyName: string;
+    storyTitle: string;
+    runId: string;
+    phase: BulkItemPhase;
+  }>;
 }
 
 export interface ScheduledRun {

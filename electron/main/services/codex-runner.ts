@@ -50,9 +50,9 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-// How many codex exec processes may run AT ONCE (single-story runs + one bulk
-// orchestrator). Playwright MCP browser sessions are capped separately — see
-// playwright-slots.ts — because the bulk orchestrator uses codex but not Playwright.
+// How many agent processes may run AT ONCE (single-story + bulk). Playwright
+// sessions share the same hard ceiling — see playwright-slots.ts. Bulk runs
+// further throttle with maxParallel in bulk-runner.ts.
 const MAX_CONCURRENT_RUNS = MAX_CONCURRENT_PLAYWRIGHT;
 let _activeRuns = 0;
 const _runWaiters: Array<() => void> = [];
