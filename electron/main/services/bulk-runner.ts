@@ -260,17 +260,13 @@ async function runBulkWorkers(session: BulkSession): Promise<void> {
           session.status === "running" &&
           shouldStopBulk(session.stopCondition, result)
         ) {
+          // Stop starting new stories, but do not cancel siblings that are
+          // already running — let them finish naturally.
           session.abort = true;
           session.status = "stopped";
           session.stopReason = `Stop condition matched after “${item.storyTitle}” (${result.status})`;
           for (const other of session.items) {
-            if (other.runId === item.runId) continue;
-            if (other.phase === "pending" || other.phase === "running") {
-              if (other.phase === "running") {
-                await cancelAgentRun(other.runId).catch(() => false);
-              }
-              other.phase = "skipped";
-            }
+            if (other.phase === "pending") other.phase = "skipped";
           }
           publish(session);
           return;

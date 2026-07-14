@@ -399,6 +399,9 @@ function Dashboard({
   const stopped = status === "stopped";
 
   const ranRows = rows.filter((r) => isFinishedStatus(r.status));
+  const inFlightRows = rows.filter(
+    (r) => r.status === "running" || r.status === "pending",
+  );
   const notRunRows = rows.filter((r) => r.status === "skipped");
 
   return (
@@ -417,10 +420,11 @@ function Dashboard({
 
       {stopped ? (
         <div className="flex flex-col gap-6">
+          <DashboardSection title="Still running" rows={inFlightRows} />
           <DashboardSection
             title="Finished"
             description={
-              ranRows.length === 0
+              ranRows.length === 0 && inFlightRows.length === 0
                 ? "No stories finished before the stop."
                 : undefined
             }
@@ -553,15 +557,21 @@ export function BulkRunView() {
     setSelected(new Set());
   }, [session, allRuns, setSession]);
 
+  const hasInFlight =
+    displaySession != null &&
+    displaySession.items.some((item) => {
+      if (item.phase === "skipped" || item.phase === "done") return false;
+      return !allRuns[item.runId]?.result;
+    });
+
   const bulkRunning =
     displaySession != null &&
     displaySession.status === "running" &&
-    displaySession.items.some(
-      (item) =>
-        item.phase !== "skipped" &&
-        item.phase !== "done" &&
-        !allRuns[item.runId]?.result,
-    );
+    hasInFlight;
+
+  // Stop condition leaves siblings running; don't treat bulk as idle yet.
+  const bulkDraining =
+    displaySession?.status === "stopped" && hasInFlight;
 
   const canResume =
     displaySession?.status === "stopped" &&
@@ -826,7 +836,7 @@ export function BulkRunView() {
                 <Button
                   variant="glass"
                   size="titlebar"
-                  disabled={bulkRunning}
+                  disabled={bulkRunning || bulkDraining}
                   onClick={() => {
                     setSession(null);
                     setSelected(new Set());

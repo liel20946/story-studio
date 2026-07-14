@@ -20,8 +20,11 @@ const STOP_WORDS = new Set([
 
 /**
  * Evaluate an optional free-text stop condition against a just-finished story.
- * Empty condition never stops. Common phrasing like "stop on first failure"
- * matches failed/error results; otherwise tokens are matched against the result.
+ * Empty condition never stops. Matching only prevents starting more stories;
+ * other in-flight stories are left alone to finish.
+ *
+ * Common phrasing like "stop on first failure" matches failed/error results;
+ * otherwise tokens are matched against the result text.
  */
 export function shouldStopBulk(
   condition: string | undefined,
