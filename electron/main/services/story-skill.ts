@@ -111,40 +111,40 @@ ${RUN_STORY_PLAYBOOK_FORM_FILL_MCP}`;
 
 const RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
 
-## Execution tool — Codex Computer Use (visible Chrome)
-- Use Codex Computer Use to operate a real desktop Chrome window. See, click, type, and scroll like a human.
-- Do NOT use the Playwright MCP server, Playwright CLI, the Codex in-app browser, or any headless/automation browser.
-- Do not use any MCP browser tools.
+## Execution tool — @Computer (Codex Computer Use)
+- Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
+- Do NOT use Playwright MCP, Playwright CLI, Chrome DevTools MCP, the Codex in-app @Browser, Cursor, or any headless/automation browser.
+- Do not invent or call any other browser-driving tool.
 
 ## Chrome window (required)
-- Before interacting, open a **new regular Google Chrome window** (not a Playwright/automation profile, not a private/incognito window unless the story requires it).
+- With @Computer, open a **new regular Google Chrome window** (not Playwright/automation, not Cursor, not a private/incognito window unless the story requires it).
 - Run this entire story inside that new Chrome window.
 - Navigate by typing/pasting the story URL into Chrome's address bar, or opening it from a new tab in that window.
 
 ${RUN_STORY_PLAYBOOK_SHARED}
 
 ## Reliable form filling (important)
-- Click into fields and type values normally via Computer Use. Clear existing text when needed before typing.
+- Click into fields and type values normally via @Computer. Clear existing text when needed before typing.
 - Prefer labels, visible text, and obvious UI affordances over pixel-perfect guessing.
 - After filling a form group, verify the values are visible in the fields before submit.`;
 
 const RUN_STORY_PLAYBOOK_COMPUTER_USE_BULK = `You are running a saved web UI "story" — an intent-level browser test as part of a bulk run. Follow these rules exactly.
 
-## Execution tool — Codex Computer Use (visible Chrome)
-- Use Codex Computer Use to operate a real desktop Chrome window. See, click, type, and scroll like a human.
-- Do NOT use the Playwright MCP server, Playwright CLI, the Codex in-app browser, or any headless/automation browser.
-- Do not use any MCP browser tools.
+## Execution tool — @Computer (Codex Computer Use)
+- Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
+- Do NOT use Playwright MCP, Playwright CLI, Chrome DevTools MCP, the Codex in-app @Browser, Cursor, or any headless/automation browser.
+- Do not invent or call any other browser-driving tool.
 
 ## Chrome window / tab (required — bulk run)
-- Use the dedicated Story Studio Chrome window for this bulk run.
-- If that window does not exist yet, open a **new regular Google Chrome window** first (not a Playwright/automation profile, not a private/incognito window unless the story requires it).
+- With @Computer, use the dedicated Story Studio Chrome window for this bulk run.
+- If that window does not exist yet, open a **new regular Google Chrome window** first (not Playwright/automation, not Cursor, not a private/incognito window unless the story requires it).
 - For this story, open a **new tab in that same Chrome window** and run the story there. Do not open a separate Chrome window per story when the bulk window already exists.
 - Navigate by typing/pasting the story URL into that tab's address bar.
 
 ${RUN_STORY_PLAYBOOK_SHARED}
 
 ## Reliable form filling (important)
-- Click into fields and type values normally via Computer Use. Clear existing text when needed before typing.
+- Click into fields and type values normally via @Computer. Clear existing text when needed before typing.
 - Prefer labels, visible text, and obvious UI affordances over pixel-perfect guessing.
 - After filling a form group, verify the values are visible in the fields before submit.`;
 
@@ -228,9 +228,9 @@ ${GENERATE_STORY_TASK}`;
 const GENERATE_STORY_PLAYBOOK_COMPUTER_USE = `You are generating a Bowser YAML v2 UI story by exploring a website with Codex Computer Use.
 
 ## Browser tool
-- Use Codex Computer Use to operate a real desktop Chrome window. See, click, type, and scroll like a human.
-- Do NOT use Playwright MCP, Chrome DevTools MCP, Playwright CLI, the Codex in-app browser, or any headless/automation browser.
-- Before exploring, open a **new regular Google Chrome window** and work only in that window.
+- Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
+- Do NOT use Playwright MCP, Chrome DevTools MCP, Playwright CLI, the Codex in-app @Browser, Cursor, or any headless/automation browser.
+- Before exploring, open a **new regular Google Chrome window** with @Computer and work only in that window.
 
 ${GENERATE_STORY_TASK}`;
 

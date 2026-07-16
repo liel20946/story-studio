@@ -367,12 +367,15 @@ export async function startRun(
 
   const effort = agentConfig?.effort ?? DEFAULT_CODEX_EFFORT;
 
+  // Computer Use needs the user's Codex plugins/config (@Computer). Keep
+  // --ignore-user-config for MCP modes so only app-injected Playwright /
+  // Chrome DevTools MCP is available.
   const args = [
     "exec",
     "--dangerously-bypass-approvals-and-sandbox",
     "--json",
     "--skip-git-repo-check",
-    "--ignore-user-config",
+    ...(computerUse ? [] : ["--ignore-user-config"]),
     "-C",
     runOutputDir,
     // Pin model + reasoning effort so runs are deterministic regardless of the
