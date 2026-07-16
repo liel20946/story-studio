@@ -119,12 +119,32 @@ export const runBulkStart = (
   options?: BulkRunOptions,
 ): Promise<{
   bulkId: string;
-  items: { storyName: string; storyTitle: string; runId: string }[];
+  items: {
+    storyName: string;
+    storyTitle: string;
+    runId: string;
+    runLabel?: string;
+    variableOverrides?: Record<string, string>;
+  }[];
   agentProvider: import("./contract-types").AgentProvider;
   agentModel: string;
   maxParallel: number;
   stopCondition: string;
 }> => ipcInvoke("run:bulkStart", { storyNames, options });
+
+export const bulkGenerateVariables = (
+  storyName: string,
+  description: string,
+  invocationId?: string,
+): Promise<{
+  invocationId: string;
+  runs: import("./contract-types").BulkVariableRun[];
+}> => ipcInvoke("bulk:generateVariables", { storyName, description, invocationId });
+
+export const bulkCancelGenerateVariables = (
+  invocationId: string,
+): Promise<{ ok: boolean }> =>
+  ipcInvoke("bulk:cancelGenerateVariables", { invocationId });
 
 export const runBulkStop = (
   bulkId: string,
@@ -138,7 +158,13 @@ export const runBulkResume = (
   options?: BulkRunOptions,
 ): Promise<{
   bulkId: string;
-  items: { storyName: string; storyTitle: string; runId: string }[];
+  items: {
+    storyName: string;
+    storyTitle: string;
+    runId: string;
+    runLabel?: string;
+    variableOverrides?: Record<string, string>;
+  }[];
   agentProvider: import("./contract-types").AgentProvider;
   agentModel: string;
   maxParallel: number;

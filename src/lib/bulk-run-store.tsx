@@ -19,6 +19,8 @@ export interface BulkLaunchedItem {
   storyTitle: string;
   runId: string;
   phase?: BulkItemPhase;
+  runLabel?: string;
+  variableOverrides?: Record<string, string>;
 }
 
 export interface BulkSessionState {

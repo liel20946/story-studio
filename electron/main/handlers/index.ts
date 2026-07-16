@@ -22,6 +22,7 @@ import { registerAgentHandlers } from "./agent.js";
 import { registerDraftHandlers } from "./drafts.js";
 import { registerSchedulesHandlers } from "./schedules.js";
 import { registerGenerateHandlers } from "./generate.js";
+import { registerBulkVariablesHandlers } from "./bulk-variables.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -92,6 +93,7 @@ export function registerHandlers(): void {
   registerDraftHandlers();
   registerSchedulesHandlers();
   registerGenerateHandlers();
+  registerBulkVariablesHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 }

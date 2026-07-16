@@ -9,6 +9,10 @@ import { startAgentRun, cancelAgentRun, listActiveRuns } from "../services/agent
 import { resolveAgentBinary } from "../services/agent-provider.js";
 import { buildLastRunMap } from "../services/run-service.js";
 import { formatStoryForRun } from "../services/bowser-stories-service.js";
+import {
+  buildBulkStoryInputs,
+  expandBulkRunRequests,
+} from "../services/bulk-story-expand.js";
 import { getRunsDir } from "../services/paths.js";
 import { getSettingsValue } from "./settings.js";
 import { getAgentRunConfig } from "../services/agent-config.js";
@@ -124,28 +128,23 @@ export function registerRunsHandlers(): void {
     const lastRunMap = buildLastRunMap(runs);
 
     const bulkId = randomUUID();
-    const items: { storyName: string; storyTitle: string; runId: string }[] = [];
-    const bulkStories: {
-      runId: string;
-      storyName: string;
-      storyTitle: string;
-      storyContents: string;
-    }[] = [];
-
+    const storyMap = new Map<string, Awaited<ReturnType<typeof getStory>>>();
     for (const storyName of storyNames) {
-      const story = await getStory(storyName, lastRunMap);
-      if (options?.storyIds?.length && story.storyId && !options.storyIds.includes(story.storyId)) {
-        continue;
+      if (!storyMap.has(storyName)) {
+        storyMap.set(storyName, await getStory(storyName, lastRunMap));
       }
-      const runId = randomUUID();
-      items.push({ storyName, storyTitle: story.title, runId });
-      bulkStories.push({
-        runId,
-        storyName,
-        storyTitle: story.title,
-        storyContents: formatStoryForRun(story),
-      });
     }
+
+    const runRequests =
+      options?.resumeItems?.length
+        ? options.resumeItems
+        : expandBulkRunRequests(storyNames, options?.variablePlans);
+
+    const { items, bulkStories } = buildBulkStoryInputs(
+      runRequests,
+      storyMap,
+      options,
+    );
 
     if (bulkStories.length === 0) {
       throw new Error("No stories matched the selected filters");
@@ -192,21 +191,26 @@ export function registerRunsHandlers(): void {
   });
 
   ipcMain.handle("run:bulkResume", async (_event, params: unknown) => {
-    if (
-      typeof params !== "object" ||
-      params === null ||
-      typeof (params as Record<string, unknown>)["bulkId"] !== "string" ||
-      !Array.isArray((params as Record<string, unknown>)["storyNames"])
-    ) {
-      throw new Error("run:bulkResume requires { bulkId: string, storyNames: string[] }");
+    if (typeof params !== "object" || params === null) {
+      throw new Error("run:bulkResume requires { bulkId: string }");
+    }
+    const record = params as Record<string, unknown>;
+    if (typeof record["bulkId"] !== "string") {
+      throw new Error("run:bulkResume requires { bulkId: string }");
     }
     const { bulkId, storyNames, options } = params as {
       bulkId: string;
-      storyNames: string[];
+      storyNames?: string[];
       options?: BulkRunOptions;
     };
-    if (storyNames.length === 0) {
-      throw new Error("run:bulkResume requires at least one story");
+
+    const resumeItems =
+      options?.resumeItems ??
+      (Array.isArray(storyNames) && storyNames.length > 0
+        ? storyNames.map((storyName) => ({ storyName }))
+        : null);
+    if (!resumeItems?.length) {
+      throw new Error("run:bulkResume requires resume items");
     }
 
     const settings = getSettingsValue();
@@ -221,25 +225,14 @@ export function registerRunsHandlers(): void {
     const lastRunMap = buildLastRunMap(runs);
     const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
 
-    const items: { storyName: string; storyTitle: string; runId: string }[] = [];
-    const bulkStories: {
-      runId: string;
-      storyName: string;
-      storyTitle: string;
-      storyContents: string;
-    }[] = [];
-
-    for (const storyName of storyNames) {
-      const story = await getStory(storyName, lastRunMap);
-      const runId = randomUUID();
-      items.push({ storyName, storyTitle: story.title, runId });
-      bulkStories.push({
-        runId,
-        storyName,
-        storyTitle: story.title,
-        storyContents: formatStoryForRun(story),
-      });
+    const storyMap = new Map<string, Awaited<ReturnType<typeof getStory>>>();
+    for (const request of resumeItems) {
+      if (!storyMap.has(request.storyName)) {
+        storyMap.set(request.storyName, await getStory(request.storyName, lastRunMap));
+      }
     }
+
+    const { items, bulkStories } = buildBulkStoryInputs(resumeItems, storyMap, options);
 
     resumeBulkRun(
       bulkId,
