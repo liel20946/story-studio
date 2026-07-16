@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowUpIcon, Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
+import { Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,21 @@ export function BulkVariablesModal({
     invocationRef.current = null;
   }, [open, story?.name, initialRuns]);
 
+  function cancelInFlightGenerate() {
+    const id = invocationRef.current;
+    if (id) void bulkCancelGenerateVariables(id);
+    invocationRef.current = null;
+  }
+
+  function handleDialogOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      cancelInFlightGenerate();
+      setPhase(initialRuns?.length ? "review" : "chat");
+      setStatusText("");
+    }
+    onOpenChange(nextOpen);
+  }
+
   async function handleGenerate() {
     if (!story || !prompt.trim() || phase === "generating") return;
     const invocationId = crypto.randomUUID();
@@ -61,24 +76,26 @@ export function BulkVariablesModal({
         prompt.trim(),
         invocationId,
       );
+      if (invocationRef.current !== invocationId) return;
       setRuns(result.runs);
       setPhase("review");
       setStatusText("");
     } catch (err) {
+      if (invocationRef.current !== invocationId) return;
       reportAppErrorFromUnknown("Failed to generate variable runs", err);
       setPhase("chat");
       setStatusText("");
     } finally {
-      invocationRef.current = null;
+      if (invocationRef.current === invocationId) {
+        invocationRef.current = null;
+      }
     }
   }
 
   function handleCancelGenerate() {
-    const id = invocationRef.current;
-    if (id) void bulkCancelGenerateVariables(id);
+    cancelInFlightGenerate();
     setPhase("chat");
     setStatusText("");
-    invocationRef.current = null;
   }
 
   function updateRunLabel(index: number, label: string) {
@@ -121,9 +138,12 @@ export function BulkVariablesModal({
     story.variables.length > 0
       ? story.variables.map((v) => v.key)
       : Array.from(new Set(runs.flatMap((run) => Object.keys(run.variables))));
+  const secretKeys = new Set(
+    story.variables.filter((v) => v.secret).map((v) => v.key),
+  );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent size="large" className="max-h-[min(88vh,760px)]">
         <DialogHeader>
           <DialogTitle>Variable runs — {story.title}</DialogTitle>
@@ -178,9 +198,6 @@ export function BulkVariablesModal({
               <Text variant="regular" color="secondary">
                 {statusText || "Generating variable sets…"}
               </Text>
-              <Button variant="glass" size="small" onClick={handleCancelGenerate}>
-                Cancel
-              </Button>
             </div>
           )}
 
@@ -217,6 +234,8 @@ export function BulkVariablesModal({
                         </Text>
                         <Input
                           aria-label={`${run.label} ${key}`}
+                          type={secretKeys.has(key) ? "password" : "text"}
+                          autoComplete="off"
                           value={run.variables[key] ?? ""}
                           onChange={(e) => updateRunVariable(index, key, e.target.value)}
                           className="h-8 font-mono text-[12px]"
@@ -244,9 +263,15 @@ export function BulkVariablesModal({
         </DialogBody>
 
         <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="filled">Cancel</Button>
-          </DialogClose>
+          {phase === "generating" ? (
+            <Button variant="filled" onClick={handleCancelGenerate}>
+              Cancel
+            </Button>
+          ) : (
+            <DialogClose asChild>
+              <Button variant="filled">Cancel</Button>
+            </DialogClose>
+          )}
           {phase === "review" ? (
             <>
               <Button variant="glass" onClick={() => setPhase("chat")}>
@@ -256,15 +281,6 @@ export function BulkVariablesModal({
                 Save for bulk
               </Button>
             </>
-          ) : phase === "chat" ? (
-            <Button
-              variant="accent"
-              disabled={!prompt.trim()}
-              onClick={() => void handleGenerate()}
-            >
-              <ArrowUpIcon className="size-4" />
-              Generate
-            </Button>
           ) : null}
         </DialogFooter>
       </DialogContent>

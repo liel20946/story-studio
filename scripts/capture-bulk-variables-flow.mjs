@@ -123,7 +123,7 @@ async function main() {
   await composer.fill("Run as admin and guest with 2 different emails");
   await wait(250);
   await shot(app, "03b-variables-chat-filled");
-  await page.getByRole("button", { name: /^Generate$/i }).click({ force: true });
+  await page.getByRole("button", { name: /^Send$/i }).click({ force: true });
   await page.getByText(/Talking with the agent|Generating variable/i).waitFor({ timeout: 5_000 }).catch(() => {});
   await wait(200);
   await shot(app, "03c-variables-generating");
