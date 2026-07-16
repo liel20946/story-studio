@@ -20,6 +20,7 @@ import {
 import { ProviderSegment } from "../components/provider-segment";
 import { useStoriesDataTransfer } from "../components/stories-data-transfer";
 import { LabeledSegment } from "../components/labeled-segment";
+import { SettingsSelect } from "../components/settings-select";
 import type {
   AgentProvider,
   BrowserMcp,
@@ -32,9 +33,8 @@ import type {
 } from "../lib/contract-types";
 import {
   getEffortSegmentOptions,
-  getModelSegmentOptions,
+  getModelOptions,
   effortSegmentClass,
-  modelSegmentClass,
 } from "../lib/agent-config";
 import { applyAppearance, activeColorThemeForMode, resolveTheme } from "../lib/theme";
 import { ColorThemePicker } from "../components/color-theme-picker";
@@ -160,7 +160,7 @@ function AgentPanel({
     provider === "claude-code" ? claudeModel : codexModel;
   const effort =
     provider === "claude-code" ? claudeEffort : codexEffort;
-  const modelOptions = getModelSegmentOptions(provider, capabilities);
+  const modelOptions = getModelOptions(provider, capabilities);
   const effortOptions = getEffortSegmentOptions(provider, model, capabilities);
   const modelDescription =
     provider === "claude-code"
@@ -184,10 +184,9 @@ function AgentPanel({
           label="Model"
           description={modelDescription}
         >
-          <LabeledSegment
+          <SettingsSelect
             value={model}
             options={modelOptions}
-            segmentClass={modelSegmentClass(provider, capabilities)}
             ariaLabel="Model"
             onChange={(next) => {
               if (provider === "claude-code") {

@@ -53,12 +53,17 @@ function buildCodexModelConfigArgs(agentConfig: AgentRunConfig): string[] {
   ];
 }
 
-function buildCodexSharedFlags(agentConfig: AgentRunConfig): string[] {
+function buildCodexSharedFlags(
+  agentConfig: AgentRunConfig,
+  options?: { ignoreUserConfig?: boolean },
+): string[] {
+  // Computer Use needs the user's Codex plugins/config (@Computer).
+  const ignoreUserConfig = options?.ignoreUserConfig !== false;
   return [
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
     "--json",
-    "--ignore-user-config",
+    ...(ignoreUserConfig ? ["--ignore-user-config"] : []),
     ...buildCodexModelConfigArgs(agentConfig),
   ];
 }
@@ -274,11 +279,17 @@ async function invokeCodex(
     return parseAgentMessageFromCodexStdout(stdout);
   };
 
+  const computerUse = Boolean(options.computerUse);
+  const sharedFlags = buildCodexSharedFlags(agentConfig, {
+    // Keep user Codex plugins (Computer Use / @Computer) when that mode is on.
+    ignoreUserConfig: !computerUse,
+  });
+
   if (resumeSession && sessionId) {
     const args = [
       "exec",
       "resume",
-      ...buildCodexSharedFlags(agentConfig),
+      ...sharedFlags,
       "-o",
       lastMessagePath,
       sessionId,
@@ -300,7 +311,6 @@ async function invokeCodex(
 
   const browserMcp =
     options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
-  const computerUse = Boolean(options.computerUse);
   const mcpArgs = exploring
     ? computerUse
       ? buildCodexComputerUseConfigArgs()
@@ -309,7 +319,7 @@ async function invokeCodex(
 
   const args = [
     "exec",
-    ...buildCodexSharedFlags(agentConfig),
+    ...sharedFlags,
     "-C",
     outputDir,
     ...mcpArgs,
