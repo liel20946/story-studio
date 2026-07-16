@@ -202,7 +202,7 @@ function StoryRow({
         variant="transparent"
         size="small"
         iconOnly
-        className="opacity-0 transition-opacity group-hover/row:opacity-100"
+        className="opacity-70 transition-opacity group-hover/row:opacity-100"
         aria-label={`Configure variable runs for ${story.title}`}
         onClick={(e) => {
           e.preventDefault();

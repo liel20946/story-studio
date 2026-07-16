@@ -165,6 +165,7 @@ export function BulkVariablesModal({
                   onChange={setPrompt}
                   onSubmit={() => void handleGenerate()}
                   showSkill
+                  skillLabel="bulk-variables"
                   placeholder='e.g. "Run as admin and guest with different emails"'
                 />
               </div>
