@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
 import {
   recordingCheck,
+  recordingFixPrerequisites,
   recordingInstallBrowser,
   settingsGet,
 } from "../lib/ipc";
@@ -101,6 +102,7 @@ export function RecordView() {
   const [prepMessage, setPrepMessage] = React.useState("");
   const [_availability, setAvailability] =
     React.useState<RecordingAvailability | null>(null);
+  const [isFixing, setIsFixing] = React.useState(false);
 
   // While a recording session is active the visible phase/message come from the
   // store; otherwise from the local prep state.
@@ -209,6 +211,35 @@ export function RecordView() {
     }
   }
 
+  async function handleFixPrerequisites() {
+    setIsFixing(true);
+    setPrepPhase("installing");
+    setPrepMessage("Fixing recording prerequisites…");
+    try {
+      const res = await recordingFixPrerequisites();
+      if (res.ok) {
+        setPrepPhase("ready");
+        setPrepMessage(res.message);
+        setAvailability((prev) =>
+          prev
+            ? { ...prev, playwrightAvailable: true, browserInstalled: true, agentAvailable: true }
+            : prev,
+        );
+      } else {
+        setPrepPhase("error");
+        setPrepMessage(res.message);
+        reportAppError("Can't record", res.message);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPrepPhase("error");
+      setPrepMessage(`Fix failed: ${msg}`);
+      reportAppErrorFromUnknown("Can't record", err);
+    } finally {
+      setIsFixing(false);
+    }
+  }
+
   function handleStart() {
     if (!storyName.trim() || !url.trim()) return;
     void rec.start(storyName.trim(), url.trim(), overwriteStoryKey);
@@ -230,6 +261,7 @@ export function RecordView() {
   const needsInstall = prepPhase === "install-browser" && !rec.active;
   const isInstalling = prepPhase === "installing";
   const isChecking = prepPhase === "checking";
+  const showFixButton = !rec.active && (prepPhase === "install-browser" || prepPhase === "error");
 
   const canRetry = rec.active && isError;
   const canStart =
@@ -329,6 +361,17 @@ export function RecordView() {
           >
             <DownloadIcon className="size-4.5" />
             Install Chromium
+          </Button>
+        )}
+
+        {showFixButton && (
+          <Button
+            variant="filled"
+            onClick={handleFixPrerequisites}
+            disabled={isInstalling || isFixing}
+          >
+            <DownloadIcon className="size-4.5" />
+            Fix it
           </Button>
         )}
       </DialogBody>

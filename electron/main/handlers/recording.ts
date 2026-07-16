@@ -2,6 +2,7 @@ import { ipcMain } from "../electron-api.js";
 import {
   checkRecordingAvailability,
   installBrowser,
+  autoFixRecordingPrerequisites,
   startRecording,
   cancelRecording,
   abortRecording,
@@ -16,6 +17,11 @@ export function registerRecordingHandlers(): void {
 
   ipcMain.handle("recording:installBrowser", async () => {
     return installBrowser();
+  });
+
+  ipcMain.handle("recording:fixPrerequisites", async () => {
+    const settings = getSettingsValue();
+    return autoFixRecordingPrerequisites(settings);
   });
 
   ipcMain.handle("recording:start", async (_event, params: unknown) => {

@@ -89,6 +89,12 @@ export const recordingInstallBrowser = (): Promise<{
   error?: string;
 }> => ipcInvoke("recording:installBrowser");
 
+export const recordingFixPrerequisites = (): Promise<{
+  ok: boolean;
+  message: string;
+  error?: string;
+}> => ipcInvoke("recording:fixPrerequisites");
+
 export const recordingStart = (params: {
   name: string;
   url: string;

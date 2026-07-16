@@ -251,6 +251,48 @@ export async function installBrowser(): Promise<{ ok: boolean; error?: string }>
   }
 }
 
+export async function autoFixRecordingPrerequisites(
+  settings: RecordingAgentSettings,
+): Promise<{ ok: boolean; message: string; error?: string }> {
+  const providerLabel = agentCliLabel(settings.agentProvider);
+  try {
+    await resolveAgentBinary(
+      settings.agentProvider,
+      settings.codexBinaryPath,
+      settings.claudeBinaryPath,
+    );
+  } catch {
+    const msg = `${providerLabel} CLI is missing. Install it (or set its path in Settings), then try again.`;
+    return { ok: false, message: msg, error: msg };
+  }
+
+  try {
+    const playwright = resolvePlaywrightInvocation();
+    await execFileAsync(playwright.command, [...playwright.prefixArgs, "--version"], {
+      env: buildEnv({ electronAsNode: playwright.useElectronAsNode }),
+      timeout: 60_000,
+      maxBuffer: 1024 * 64,
+    });
+  } catch (err) {
+    const msg = `Playwright CLI is unavailable: ${err instanceof Error ? err.message : String(err)}`;
+    return { ok: false, message: msg, error: msg };
+  }
+
+  const installRes = await installBrowser();
+  if (!installRes.ok) {
+    const msg = installRes.error ?? "Failed to install Chromium.";
+    return { ok: false, message: msg, error: msg };
+  }
+
+  const browser = await resolveRecordingBrowser();
+  if (!browser.ready) {
+    const msg = "Chromium installation finished, but no runnable browser was found.";
+    return { ok: false, message: msg, error: msg };
+  }
+
+  return { ok: true, message: "Recording prerequisites fixed. Ready to record." };
+}
+
 export async function cancelRecording(): Promise<void> {
   if (_recordingProcess) {
     try {
