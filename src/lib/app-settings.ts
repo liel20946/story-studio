@@ -1,10 +1,18 @@
-import type { AppSettings } from "./contract-types";
+import type { AppSettings, BrowserMcp } from "./contract-types";
 import {
   DEFAULT_COLOR_THEME_CONTRAST,
   parseColorThemeContrast,
   parseColorThemePalette,
 } from "./color-theme-config";
 import { parseColorThemeId, type ColorThemeId } from "./color-themes";
+
+export function parseBrowserMcp(
+  value: unknown,
+  fallback: BrowserMcp = "playwright",
+): BrowserMcp {
+  if (value === "playwright" || value === "chrome-devtools") return value;
+  return fallback;
+}
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   agentProvider: "codex",
@@ -24,6 +32,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
   colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
   usePointerCursors: false,
+  browserMcp: "playwright",
   codexComputerUse: false,
   startingUrl: "https://example.com",
   runHook: "",
@@ -90,6 +99,7 @@ export function normalizeAppSettings(
       typeof base.usePointerCursors === "boolean"
         ? base.usePointerCursors
         : DEFAULT_APP_SETTINGS.usePointerCursors,
+    browserMcp: parseBrowserMcp(base.browserMcp, DEFAULT_APP_SETTINGS.browserMcp),
     codexComputerUse:
       typeof base.codexComputerUse === "boolean"
         ? base.codexComputerUse

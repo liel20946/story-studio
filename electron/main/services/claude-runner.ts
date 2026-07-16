@@ -14,7 +14,7 @@ import type {
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
 import { writeRunMeta, deleteRunMeta } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
-import { RUN_STORY_PLAYBOOK, buildRunPromptSuffix } from "./story-skill.js";
+import { getRunStoryPlaybook, buildRunPromptSuffix } from "./story-skill.js";
 import {
   ensureRunOutputDir,
   getHeroScreenshotPath,
@@ -42,7 +42,9 @@ import {
   DEFAULT_CLAUDE_EFFORT,
   DEFAULT_CLAUDE_MODEL,
   type AgentRunConfig,
+  type StoryRunOptions,
 } from "./agent-config.js";
+import { buildClaudeMcpConfigJson } from "./browser-mcp-config.js";
 import {
   markRunCancelled,
   settleRunningEvents,
@@ -299,8 +301,12 @@ export async function startClaudeRun(
   claudeBinary: string,
   runHook?: string,
   agentConfig?: AgentRunConfig,
+  runOptions?: StoryRunOptions,
 ): Promise<RunResult> {
   const startedAt = Date.now();
+  const browserMcp = runOptions?.browserMcp === "chrome-devtools"
+    ? "chrome-devtools"
+    : "playwright";
   const model = agentConfig?.model ?? DEFAULT_CLAUDE_MODEL;
   const state: RunState = {
     runId,
@@ -337,7 +343,7 @@ export async function startClaudeRun(
     : await fs.readFile(storyFilePath, "utf-8").catch(() => "");
 
   const prompt =
-    RUN_STORY_PLAYBOOK +
+    getRunStoryPlaybook({ browserMcp }) +
     buildRunPromptSuffix({
       runOutputDir,
       screenshotsDir,
@@ -347,14 +353,7 @@ export async function startClaudeRun(
       runHook,
     });
 
-  const mcpConfig = JSON.stringify({
-    mcpServers: {
-      playwright: {
-        command: "npx",
-        args: ["@playwright/mcp@latest", "--headless", "--isolated", "--viewport-size=1920x1080"],
-      },
-    },
-  });
+  const mcpConfig = buildClaudeMcpConfigJson(browserMcp);
 
   const effort = agentConfig?.effort ?? DEFAULT_CLAUDE_EFFORT;
 
@@ -380,7 +379,13 @@ export async function startClaudeRun(
     mcpConfig,
   ];
 
-  console.log("[claude:run]", { runId, storyName, claudeBinary, args: args.slice(0, 6) });
+  console.log("[claude:run]", {
+    runId,
+    storyName,
+    browserMcp,
+    claudeBinary,
+    args: args.slice(0, 6),
+  });
 
   const events = state.events;
 

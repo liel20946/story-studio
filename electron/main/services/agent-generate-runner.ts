@@ -1,9 +1,13 @@
 import { spawn, type ChildProcess } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
-import type { AgentProvider } from "./contract-types.js";
+import type { AgentProvider, BrowserMcp } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
-import { buildCodexMcpConfigArgs } from "./codex-mcp-config.js";
+import {
+  buildCodexComputerUseConfigArgs,
+  buildCodexMcpConfigArgs,
+} from "./codex-mcp-config.js";
+import { buildClaudeMcpConfigJson } from "./browser-mcp-config.js";
 import {
   extractYamlFromAgentMessage,
   parseAgentMessageFromCodexStdout,
@@ -210,6 +214,9 @@ export interface GenerateInvokeOptions {
   systemPrompt?: string;
   /** One-off runs (e.g. title suggestion) that must not join the conversation session. */
   ephemeral?: boolean;
+  browserMcp?: BrowserMcp;
+  /** Codex only — overrides browserMcp and skips Playwright/Chrome DevTools MCP. */
+  computerUse?: boolean;
   onProgress?: (message: string) => void;
 }
 
@@ -291,12 +298,21 @@ async function invokeCodex(
     return { message };
   }
 
+  const browserMcp =
+    options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
+  const computerUse = Boolean(options.computerUse);
+  const mcpArgs = exploring
+    ? computerUse
+      ? buildCodexComputerUseConfigArgs()
+      : buildCodexMcpConfigArgs(browserMcp)
+    : [];
+
   const args = [
     "exec",
     ...buildCodexSharedFlags(agentConfig),
     "-C",
     outputDir,
-    ...(exploring ? buildCodexMcpConfigArgs() : []),
+    ...mcpArgs,
     ...(ephemeral ? ["--ephemeral"] : []),
     "-o",
     lastMessagePath,
@@ -362,16 +378,10 @@ async function invokeClaude(
     }
   }
 
-  if (exploring && !resumeSession) {
-    const mcpConfig = JSON.stringify({
-      mcpServers: {
-        playwright: {
-          command: "npx",
-          args: ["-y", "@playwright/mcp@latest", "--headless", "--isolated"],
-        },
-      },
-    });
-    args.push("--mcp-config", mcpConfig);
+  if (exploring && !resumeSession && !options.computerUse) {
+    const browserMcp =
+      options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
+    args.push("--mcp-config", buildClaudeMcpConfigJson(browserMcp));
   }
 
   onProgress?.(exploring ? "Planning next moves" : "Reviewing your draft");

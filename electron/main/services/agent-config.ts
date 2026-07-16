@@ -37,9 +37,11 @@ export interface AgentRunConfig {
   effort: string;
 }
 
-/** Optional story-run behavior flags (Codex Computer Use, bulk Chrome tabs, …). */
+/** Optional story-run behavior flags (browser MCP, Computer Use, bulk Chrome tabs, …). */
 export interface StoryRunOptions {
-  /** Use Codex Computer Use instead of Playwright MCP (Codex only). */
+  /** Headless browser MCP when Computer Use is off. */
+  browserMcp?: "playwright" | "chrome-devtools";
+  /** Use Codex Computer Use instead of browser MCP (Codex only; overrides browserMcp). */
   computerUse?: boolean;
   /** Part of a bulk run — Computer Use should open a new tab in the shared Chrome window. */
   bulk?: boolean;

@@ -82,19 +82,32 @@ const RUN_STORY_PLAYBOOK_SHARED = `## How to run the story
 - Do not create real customer-facing side effects unless the story explicitly requires them.
 - Work silently during execution — do not narrate your plan in chat.`;
 
+const RUN_STORY_PLAYBOOK_FORM_FILL_MCP = `## Reliable form filling (important)
+Many web apps are React SPAs with controlled inputs. Fill tools and type tools frequently fail. Prefer evaluating in the page with the native value setter and dispatching input + change events:
+  const set = (el, value) => { const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value'); d.set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+Locate inputs by name / type / placeholder / aria-label. Verify values before submit.`;
+
 export const RUN_STORY_PLAYBOOK = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
 
 ## Execution tool — headless, no visible browser
 - Use ONLY the Playwright MCP server named "playwright". It runs headless.
-- Do NOT use the Codex Browser plugin, the in-app browser, the Chrome backend, computer use, or any other browser-driving tool.
+- Do NOT use the Codex Browser plugin, the in-app browser, the Chrome backend, computer use, Chrome DevTools MCP, or any other browser-driving tool.
 - Do not use any MCP server other than "playwright".
 
 ${RUN_STORY_PLAYBOOK_SHARED}
 
-## Reliable form filling (important)
-Many web apps are React SPAs with controlled inputs. browser_fill_form and browser_type frequently fail. Fill form fields with browser_evaluate using the native value setter and dispatch input + change events:
-  const set = (el, value) => { const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value'); d.set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
-Locate inputs by name / type / placeholder / aria-label. Verify values before submit.`;
+${RUN_STORY_PLAYBOOK_FORM_FILL_MCP}`;
+
+const RUN_STORY_PLAYBOOK_CHROME_DEVTOOLS = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
+
+## Execution tool — headless Chrome DevTools MCP
+- Use ONLY the Chrome DevTools MCP server named "chrome-devtools". It runs headless Google Chrome.
+- Do NOT use the Playwright MCP server, Playwright CLI, the Codex Browser plugin, the in-app browser, computer use, or any other browser-driving tool.
+- Do not use any MCP server other than "chrome-devtools".
+
+${RUN_STORY_PLAYBOOK_SHARED}
+
+${RUN_STORY_PLAYBOOK_FORM_FILL_MCP}`;
 
 const RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
 
@@ -136,18 +149,25 @@ ${RUN_STORY_PLAYBOOK_SHARED}
 - After filling a form group, verify the values are visible in the fields before submit.`;
 
 export interface RunPlaybookOptions {
-  /** Use Codex Computer Use instead of Playwright MCP. */
+  /** Use Codex Computer Use instead of any browser MCP (overrides browserMcp). */
   computerUse?: boolean;
-  /** Bulk run: open a new tab in the shared Chrome window. */
+  /** Headless browser MCP when Computer Use is off. */
+  browserMcp?: "playwright" | "chrome-devtools";
+  /** Bulk run: open a new tab in the shared Chrome window (Computer Use). */
   bulk?: boolean;
 }
 
-/** Resolve the run playbook for Playwright MCP vs Codex Computer Use. */
+/** Resolve the run playbook for Playwright MCP, Chrome DevTools MCP, or Computer Use. */
 export function getRunStoryPlaybook(options?: RunPlaybookOptions): string {
-  if (!options?.computerUse) return RUN_STORY_PLAYBOOK;
-  return options.bulk
-    ? RUN_STORY_PLAYBOOK_COMPUTER_USE_BULK
-    : RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE;
+  if (options?.computerUse) {
+    return options.bulk
+      ? RUN_STORY_PLAYBOOK_COMPUTER_USE_BULK
+      : RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE;
+  }
+  if (options?.browserMcp === "chrome-devtools") {
+    return RUN_STORY_PLAYBOOK_CHROME_DEVTOOLS;
+  }
+  return RUN_STORY_PLAYBOOK;
 }
 
 export interface RunPromptPaths {
@@ -159,14 +179,7 @@ export interface RunPromptPaths {
   runHook?: string;
 }
 
-export const GENERATE_STORY_PLAYBOOK = `You are generating a Bowser YAML v2 UI story by exploring a website with Playwright MCP.
-
-## Browser tool
-- Use ONLY the Playwright MCP server named "playwright". It runs headless.
-- Do NOT use the Codex Browser plugin, the in-app browser, computer use, or any other browser-driving tool.
-- Do not use any MCP server other than "playwright".
-
-## Your task
+const GENERATE_STORY_TASK = `## Your task
 1. Use the target URL from the user's request (required).
 2. Explore ONE focused user flow matching the user's intent.
 3. Prefer stable, user-facing flows: navigation, search/filter, forms, article/detail pages.
@@ -194,6 +207,47 @@ ${BOWSER_STORY_FORMAT}
 - When login is required but credentials are missing, reply with plain prose only — no YAML.
 - When the story is complete, return ONLY the YAML document — no markdown fences, no explanation.`;
 
+export const GENERATE_STORY_PLAYBOOK = `You are generating a Bowser YAML v2 UI story by exploring a website with Playwright MCP.
+
+## Browser tool
+- Use ONLY the Playwright MCP server named "playwright". It runs headless.
+- Do NOT use the Codex Browser plugin, the in-app browser, computer use, Chrome DevTools MCP, or any other browser-driving tool.
+- Do not use any MCP server other than "playwright".
+
+${GENERATE_STORY_TASK}`;
+
+const GENERATE_STORY_PLAYBOOK_CHROME_DEVTOOLS = `You are generating a Bowser YAML v2 UI story by exploring a website with Chrome DevTools MCP.
+
+## Browser tool
+- Use ONLY the Chrome DevTools MCP server named "chrome-devtools". It runs headless Google Chrome.
+- Do NOT use the Playwright MCP server, the Codex Browser plugin, the in-app browser, computer use, or any other browser-driving tool.
+- Do not use any MCP server other than "chrome-devtools".
+
+${GENERATE_STORY_TASK}`;
+
+const GENERATE_STORY_PLAYBOOK_COMPUTER_USE = `You are generating a Bowser YAML v2 UI story by exploring a website with Codex Computer Use.
+
+## Browser tool
+- Use Codex Computer Use to operate a real desktop Chrome window. See, click, type, and scroll like a human.
+- Do NOT use Playwright MCP, Chrome DevTools MCP, Playwright CLI, the Codex in-app browser, or any headless/automation browser.
+- Before exploring, open a **new regular Google Chrome window** and work only in that window.
+
+${GENERATE_STORY_TASK}`;
+
+export interface GeneratePlaybookOptions {
+  computerUse?: boolean;
+  browserMcp?: "playwright" | "chrome-devtools";
+}
+
+/** Resolve the generate-exploration playbook for the selected browser backend. */
+export function getGenerateStoryPlaybook(options?: GeneratePlaybookOptions): string {
+  if (options?.computerUse) return GENERATE_STORY_PLAYBOOK_COMPUTER_USE;
+  if (options?.browserMcp === "chrome-devtools") {
+    return GENERATE_STORY_PLAYBOOK_CHROME_DEVTOOLS;
+  }
+  return GENERATE_STORY_PLAYBOOK;
+}
+
 export const DRAFT_REVISION_PLAYBOOK = `IMPORTANT: This is a TEXT-ONLY revision. Do NOT open a browser, run shell commands, install packages, or use any MCP/tools.
 
 ${BOWSER_STORY_FORMAT}
@@ -212,11 +266,18 @@ export interface GeneratePromptContext {
   isFirstTurn: boolean;
   /** True while no draft YAML exists yet — browser exploration is allowed. */
   exploring: boolean;
+  computerUse?: boolean;
+  browserMcp?: "playwright" | "chrome-devtools";
 }
 
 /** Build the full prompt for a generate conversation turn. */
 export function buildGeneratePrompt(ctx: GeneratePromptContext): string {
-  const base = ctx.exploring ? GENERATE_STORY_PLAYBOOK : DRAFT_REVISION_PLAYBOOK;
+  const base = ctx.exploring
+    ? getGenerateStoryPlaybook({
+        computerUse: ctx.computerUse,
+        browserMcp: ctx.browserMcp,
+      })
+    : DRAFT_REVISION_PLAYBOOK;
   const parts = [base, "\n\n## User request\n", ctx.userMessage.trim()];
   if (ctx.transcript.trim()) {
     parts.push("\n\n## Conversation so far\n", ctx.transcript.trim());

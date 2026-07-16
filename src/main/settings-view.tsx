@@ -22,6 +22,7 @@ import { useStoriesDataTransfer } from "../components/stories-data-transfer";
 import { LabeledSegment } from "../components/labeled-segment";
 import type {
   AgentProvider,
+  BrowserMcp,
   ThemePreference,
   ColorThemeId,
   CodexModel,
@@ -126,6 +127,7 @@ function AgentPanel({
   codexEffort,
   claudeModel,
   claudeEffort,
+  browserMcp,
   codexComputerUse,
   capabilities,
   capabilitiesError,
@@ -134,6 +136,7 @@ function AgentPanel({
   onCodexEffortChange,
   onClaudeModelChange,
   onClaudeEffortChange,
+  onBrowserMcpChange,
   onCodexComputerUseChange,
 }: {
   provider: AgentProvider;
@@ -141,6 +144,7 @@ function AgentPanel({
   codexEffort: CodexEffort;
   claudeModel: ClaudeModel;
   claudeEffort: ClaudeEffort;
+  browserMcp: BrowserMcp;
   codexComputerUse: boolean;
   capabilities: AgentCapabilities | null;
   capabilitiesError?: string;
@@ -149,6 +153,7 @@ function AgentPanel({
   onCodexEffortChange: (effort: CodexEffort) => void;
   onClaudeModelChange: (model: ClaudeModel) => void;
   onClaudeEffortChange: (effort: ClaudeEffort) => void;
+  onBrowserMcpChange: (browserMcp: BrowserMcp) => void;
   onCodexComputerUseChange: (enabled: boolean) => void;
 }) {
   const model =
@@ -163,6 +168,7 @@ function AgentPanel({
       : capabilities?.source === "codex-catalog"
         ? "Codex model used when running stories."
         : "Codex model used when running stories.";
+  const mcpOverridden = provider === "codex" && codexComputerUse;
 
   return (
     <div className="settings-panel">
@@ -216,10 +222,30 @@ function AgentPanel({
           />
         </SettingsRow>
 
+        <SettingsRow
+          label="Browser MCP"
+          description={
+            mcpOverridden
+              ? "Overridden by Computer Use while that toggle is on."
+              : "Headless browser MCP used when running and generating stories."
+          }
+        >
+          <select
+            className="settings-select"
+            aria-label="Browser MCP"
+            value={browserMcp}
+            disabled={mcpOverridden}
+            onChange={(e) => onBrowserMcpChange(e.target.value as BrowserMcp)}
+          >
+            <option value="playwright">Playwright MCP</option>
+            <option value="chrome-devtools">Chrome DevTools MCP</option>
+          </select>
+        </SettingsRow>
+
         {provider === "codex" ? (
           <SettingsRow
             label="Computer Use"
-            description="Run stories with Codex Computer Use in a real Chrome window instead of headless Playwright."
+            description="Override Browser MCP and drive a real Chrome window with Codex Computer Use."
           >
             <Switch
               checked={codexComputerUse}
@@ -545,6 +571,18 @@ export function SettingsView() {
     }
   };
 
+  const handleBrowserMcpChange = async (browserMcp: BrowserMcp) => {
+    if (browserMcp === resolvedSettings.browserMcp) return;
+    setAppSettings((prev) => (prev ? { ...prev, browserMcp } : prev));
+    try {
+      const updated = await settingsSet({ browserMcp });
+      commitAppSettings(updated);
+    } catch (error) {
+      void refreshAppSettings();
+      reportAppErrorFromUnknown("Failed to set Browser MCP", error);
+    }
+  };
+
   const handleCodexComputerUseChange = async (codexComputerUse: boolean) => {
     if (codexComputerUse === resolvedSettings.codexComputerUse) return;
     setAppSettings((prev) => (prev ? { ...prev, codexComputerUse } : prev));
@@ -778,6 +816,7 @@ export function SettingsView() {
               codexEffort={resolvedSettings.codexEffort}
               claudeModel={resolvedSettings.claudeModel}
               claudeEffort={resolvedSettings.claudeEffort}
+              browserMcp={resolvedSettings.browserMcp}
               codexComputerUse={resolvedSettings.codexComputerUse}
               capabilities={agentCapabilities}
               capabilitiesError={capabilitiesError ?? settingsError ?? undefined}
@@ -786,6 +825,7 @@ export function SettingsView() {
               onCodexEffortChange={handleCodexEffortChange}
               onClaudeModelChange={handleClaudeModelChange}
               onClaudeEffortChange={handleClaudeEffortChange}
+              onBrowserMcpChange={handleBrowserMcpChange}
               onCodexComputerUseChange={handleCodexComputerUseChange}
             />
           ) : null}

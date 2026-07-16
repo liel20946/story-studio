@@ -307,6 +307,9 @@ export async function startRun(
 ): Promise<RunResult> {
   const startedAt = Date.now();
   const computerUse = Boolean(runOptions?.computerUse);
+  const browserMcp = runOptions?.browserMcp === "chrome-devtools"
+    ? "chrome-devtools"
+    : "playwright";
   const model = agentConfig?.model ?? DEFAULT_CODEX_MODEL;
   const state: RunState = {
     runId,
@@ -341,14 +344,18 @@ export async function startRun(
 
   // codex --output-schema reads this file; it must exist before spawn.
   await fs.writeFile(schemaPath, JSON.stringify(RUN_OUTPUT_SCHEMA), "utf-8");
-  await ensureCodexProjectConfig(runOutputDir, { computerUse });
+  await ensureCodexProjectConfig(runOutputDir, { computerUse, browserMcp });
 
   const storyContents = storyFilePath.includes("\n")
     ? storyFilePath
     : await fs.readFile(storyFilePath, "utf-8").catch(() => "");
 
   const prompt =
-    getRunStoryPlaybook({ computerUse, bulk: runOptions?.bulk }) +
+    getRunStoryPlaybook({
+      computerUse,
+      browserMcp,
+      bulk: runOptions?.bulk,
+    }) +
     buildRunPromptSuffix({
       runOutputDir,
       screenshotsDir,
@@ -374,7 +381,9 @@ export async function startRun(
     `model="${state.agentModel}"`,
     "-c",
     `model_reasoning_effort="${effort}"`,
-    ...(computerUse ? buildCodexComputerUseConfigArgs() : buildCodexMcpConfigArgs()),
+    ...(computerUse
+      ? buildCodexComputerUseConfigArgs()
+      : buildCodexMcpConfigArgs(browserMcp)),
     "--output-schema",
     schemaPath,
     "-o",
@@ -386,6 +395,7 @@ export async function startRun(
     runId,
     storyName,
     computerUse,
+    browserMcp,
     bulk: Boolean(runOptions?.bulk),
     codexBinary,
     args: args.slice(0, 8),
@@ -402,7 +412,9 @@ export async function startRun(
     label: "Starting",
     detail: computerUse
       ? `Loading codex (Computer Use) for story: ${storyTitle}`
-      : `Loading codex for story: ${storyTitle}`,
+      : browserMcp === "chrome-devtools"
+        ? `Loading codex (Chrome DevTools MCP) for story: ${storyTitle}`
+        : `Loading codex for story: ${storyTitle}`,
     status: "running",
   };
   events.push(startEvent);

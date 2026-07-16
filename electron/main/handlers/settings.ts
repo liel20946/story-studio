@@ -2,11 +2,16 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { ipcMain, app, nativeTheme } from "../electron-api.js";
 import { broadcast } from "../broadcast.js";
-import type { AppSettings } from "../services/contract-types.js";
+import type { AppSettings, BrowserMcp } from "../services/contract-types.js";
 import {
   DEFAULT_AGENT_PROVIDER,
   parseAgentProvider,
 } from "../services/agent-provider.js";
+
+function parseBrowserMcp(value: unknown, fallback: BrowserMcp): BrowserMcp {
+  if (value === "playwright" || value === "chrome-devtools") return value;
+  return fallback;
+}
 import {
   defaultAgentModelSettings,
   parseAgentModelSettings,
@@ -106,6 +111,7 @@ function toAppSettings(
       typeof parsed.usePointerCursors === "boolean"
         ? parsed.usePointerCursors
         : defaults.usePointerCursors,
+    browserMcp: parseBrowserMcp(parsed.browserMcp, defaults.browserMcp),
     codexComputerUse:
       typeof parsed.codexComputerUse === "boolean"
         ? parsed.codexComputerUse
@@ -137,6 +143,7 @@ async function loadSettings(): Promise<AppSettings> {
     colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
     colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
     usePointerCursors: false,
+    browserMcp: "playwright",
     codexComputerUse: false,
     startingUrl: DEFAULT_STARTING_URL,
     runHook: "",
@@ -198,6 +205,7 @@ export function getSettingsValue(): AppSettings {
       colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
       colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
       usePointerCursors: false,
+      browserMcp: "playwright",
       codexComputerUse: false,
       startingUrl: DEFAULT_STARTING_URL,
       runHook: "",
@@ -370,6 +378,14 @@ export function registerSettingsHandlers(): void {
         throw new Error("settings:set usePointerCursors must be boolean");
       }
       current.usePointerCursors = val;
+    }
+
+    if ("browserMcp" in p) {
+      const val = p["browserMcp"];
+      if (val !== "playwright" && val !== "chrome-devtools") {
+        throw new Error("settings:set browserMcp must be 'playwright' | 'chrome-devtools'");
+      }
+      current.browserMcp = val;
     }
 
     if ("codexComputerUse" in p) {

@@ -53,6 +53,8 @@ export interface StoryDetail extends StorySummary {
 
 export type RunStatus = "passed" | "failed" | "cancelled" | "error" | "blocked";
 export type AgentProvider = "codex" | "claude-code";
+/** Headless browser MCP used for runs/generate when Computer Use is off. */
+export type BrowserMcp = "playwright" | "chrome-devtools";
 
 export interface RunStep {
   index: number;
@@ -141,7 +143,12 @@ export interface RecordingProgress {
 export interface RecordingAvailability {
   agentAvailable: boolean;
   playwrightAvailable: boolean;
+  /** Playwright Chromium or system Chrome — enough to record via codegen. */
   browserInstalled: boolean;
+  /** Google Chrome (not Chromium) — required for Chrome DevTools MCP / Computer Use. */
+  chromeInstalled: boolean;
+  /** Selected run backend needs Google Chrome. */
+  needsChrome: boolean;
 }
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -181,7 +188,9 @@ export interface AppSettings {
   colorThemeContrastLight: number;
   colorThemeContrastDark: number;
   usePointerCursors: boolean;
-  /** When true and provider is Codex, runs use Computer Use instead of Playwright MCP. */
+  /** Headless browser MCP for runs (Playwright or Chrome DevTools). */
+  browserMcp: BrowserMcp;
+  /** When true and provider is Codex, Computer Use overrides browserMcp. */
   codexComputerUse: boolean;
   startingUrl: string;
   runHook: string;

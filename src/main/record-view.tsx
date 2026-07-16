@@ -159,6 +159,15 @@ export function RecordView() {
           setPrepMessage(
             "Playwright browser not found. Install Chromium below, or install Google Chrome.",
           );
+        } else if (avail.needsChrome && !avail.chromeInstalled) {
+          const settings = normalizeAppSettings(getCachedAppSettings());
+          const message =
+            settings.agentProvider === "codex" && settings.codexComputerUse
+              ? "Google Chrome is required for Codex Computer Use. Install Google Chrome, then click Fix it."
+              : "Google Chrome is required for Chrome DevTools MCP. Install Google Chrome, then click Fix it.";
+          setPrepPhase("error");
+          setPrepMessage(message);
+          reportAppError("Can't record", message);
         } else {
           setPrepPhase("ready");
           setPrepMessage("Ready to record.");
@@ -222,7 +231,13 @@ export function RecordView() {
         setPrepMessage(res.message);
         setAvailability((prev) =>
           prev
-            ? { ...prev, playwrightAvailable: true, browserInstalled: true, agentAvailable: true }
+            ? {
+                ...prev,
+                playwrightAvailable: true,
+                browserInstalled: true,
+                agentAvailable: true,
+                chromeInstalled: prev.needsChrome ? true : prev.chromeInstalled,
+              }
             : prev,
         );
       } else {

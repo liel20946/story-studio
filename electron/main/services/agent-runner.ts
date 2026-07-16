@@ -42,6 +42,7 @@ export async function startAgentRun(
       agentBinary,
       runHook,
       agentConfig,
+      runOptions,
     );
   }
   return startRun(

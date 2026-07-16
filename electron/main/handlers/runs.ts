@@ -73,6 +73,7 @@ export function registerRunsHandlers(): void {
 
     const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
     const runOptions = {
+      browserMcp: settings.browserMcp,
       computerUse:
         settings.agentProvider === "codex" && settings.codexComputerUse,
     };
@@ -158,6 +159,7 @@ export function registerRunsHandlers(): void {
 
     const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
     const runOptions = {
+      browserMcp: settings.browserMcp,
       computerUse:
         settings.agentProvider === "codex" && settings.codexComputerUse,
       bulk: true as const,
@@ -232,6 +234,7 @@ export function registerRunsHandlers(): void {
     const lastRunMap = buildLastRunMap(runs);
     const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
     const runOptions = {
+      browserMcp: settings.browserMcp,
       computerUse:
         settings.agentProvider === "codex" && settings.codexComputerUse,
       bulk: true as const,
