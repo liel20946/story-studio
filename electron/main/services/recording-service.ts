@@ -145,9 +145,7 @@ function resolvePlaywrightInvocation(): PlaywrightInvocation {
   }
   return {
     command: "npx",
-    // MCP availability does not guarantee local Playwright CLI/codegen exists.
-    // Use an auto-installing npx form for first-run environments.
-    prefixArgs: ["-y", "playwright@latest"],
+    prefixArgs: ["playwright"],
     useElectronAsNode: false,
   };
 }
