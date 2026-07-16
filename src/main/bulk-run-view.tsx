@@ -12,6 +12,7 @@ import {
   SquareIcon,
   RotateCcwIcon,
   SkipForwardIcon,
+  Layers2Icon,
 } from "lucide-react";
 import {
   ScrollArea,
@@ -31,12 +32,19 @@ import { cn } from "@/lib/utils";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
 import {
   storiesList,
+  storiesGet,
   runBulkStart,
   runBulkStop,
   runBulkResume,
   onBulkStatus,
 } from "../lib/ipc";
-import type { StorySummary, RunStatus, BulkItemPhase } from "../lib/contract-types";
+import type {
+  StorySummary,
+  StoryDetail,
+  RunStatus,
+  BulkItemPhase,
+  BulkVariableRun,
+} from "../lib/contract-types";
 import {
   useSections,
   DEFAULT_SECTION_ID,
@@ -48,6 +56,46 @@ import {
   type BulkLaunchedItem,
   readPersistedSession,
 } from "../lib/bulk-run-store";
+import { BulkVariablesModal } from "@/components/bulk/bulk-variables-modal";
+
+const VARIABLE_PLANS_KEY = "story-studio:bulk-variable-plans";
+
+function readVariablePlans(): Record<string, BulkVariableRun[]> {
+  try {
+    const raw = sessionStorage.getItem(VARIABLE_PLANS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, BulkVariableRun[]>;
+  } catch {
+    return {};
+  }
+}
+
+function persistVariablePlans(plans: Record<string, BulkVariableRun[]>): void {
+  try {
+    const hasAny = Object.values(plans).some((runs) => runs.length > 0);
+    if (hasAny) {
+      sessionStorage.setItem(VARIABLE_PLANS_KEY, JSON.stringify(plans));
+    } else {
+      sessionStorage.removeItem(VARIABLE_PLANS_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function expandedRunCount(
+  selected: Set<string>,
+  plans: Record<string, BulkVariableRun[]>,
+): number {
+  let count = 0;
+  for (const name of selected) {
+    const runs = plans[name];
+    count += runs?.length ? runs.length : 1;
+  }
+  return count;
+}
 
 const PARALLEL_OPTIONS = [1, 2, 3, 4, 5, 6] as const;
 
@@ -124,24 +172,46 @@ function isFinishedStatus(status: LiveStatus): boolean {
 function StoryRow({
   story,
   checked,
+  variableRunCount,
   onToggle,
+  onConfigureVariables,
 }: {
   story: StorySummary;
   checked: boolean;
+  variableRunCount: number;
   onToggle: () => void;
+  onConfigureVariables: () => void;
 }) {
   return (
-    <label
+    <div
       className={cn(
-        "flex cursor-pointer items-center gap-3 rounded-control px-3 py-2",
+        "group/row flex items-center gap-2 rounded-control px-3 py-2",
         "hover:bg-surface-hover",
       )}
     >
-      <Checkbox checked={checked} onCheckedChange={onToggle} />
-      <Text variant="regular" className="truncate">
-        {story.title}
-      </Text>
-    </label>
+      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+        <Checkbox checked={checked} onCheckedChange={onToggle} />
+        <Text variant="regular" className="truncate">
+          {story.title}
+        </Text>
+        {variableRunCount > 1 ? (
+          <Badge color="blue">{variableRunCount} runs</Badge>
+        ) : null}
+      </label>
+      <Button
+        variant="transparent"
+        size="small"
+        iconOnly
+        className="opacity-70 transition-opacity group-hover/row:opacity-100"
+        aria-label={`Configure variable runs for ${story.title}`}
+        onClick={(e) => {
+          e.preventDefault();
+          onConfigureVariables();
+        }}
+      >
+        <Layers2Icon className="size-4" />
+      </Button>
+    </div>
   );
 }
 
@@ -214,20 +284,24 @@ function SelectionView({
   groups,
   total,
   selected,
+  variablePlans,
   maxParallel,
   stopCondition,
   onToggleStory,
   onToggleGroup,
+  onConfigureVariables,
   onMaxParallelChange,
   onStopConditionChange,
 }: {
   groups: Group[];
   total: number;
   selected: Set<string>;
+  variablePlans: Record<string, BulkVariableRun[]>;
   maxParallel: string;
   stopCondition: string;
   onToggleStory: (name: string) => void;
   onToggleGroup: (group: Group, select: boolean) => void;
+  onConfigureVariables: (storyName: string) => void;
   onMaxParallelChange: (value: string) => void;
   onStopConditionChange: (value: string) => void;
 }) {
@@ -272,7 +346,9 @@ function SelectionView({
                   key={story.name}
                   story={story}
                   checked={selected.has(story.name)}
+                  variableRunCount={variablePlans[story.name]?.length ?? 0}
                   onToggle={() => onToggleStory(story.name)}
+                  onConfigureVariables={() => onConfigureVariables(story.name)}
                 />
               ))}
             </div>
@@ -469,6 +545,39 @@ export function BulkRunView() {
   const [isResuming, setIsResuming] = React.useState(false);
   const [maxParallel, setMaxParallel] = React.useState("3");
   const [stopCondition, setStopCondition] = React.useState("");
+  const [variablePlans, setVariablePlans] = React.useState(readVariablePlans);
+  const [variablesModalStory, setVariablesModalStory] = React.useState<string | null>(
+    null,
+  );
+  const [variablesModalDetail, setVariablesModalDetail] =
+    React.useState<StoryDetail | null>(null);
+
+  const updateVariablePlans = React.useCallback(
+    (next: Record<string, BulkVariableRun[]>) => {
+      setVariablePlans(next);
+      persistVariablePlans(next);
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    if (!variablesModalStory) {
+      setVariablesModalDetail(null);
+      return;
+    }
+    let cancelled = false;
+    void storiesGet(variablesModalStory)
+      .then((detail) => {
+        if (!cancelled) setVariablesModalDetail(detail);
+      })
+      .catch((err) => {
+        reportAppErrorFromUnknown("Failed to load story", err);
+        if (!cancelled) setVariablesModalStory(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [variablesModalStory]);
 
   // Keep showing the dashboard while any bulk story is still running or
   // skipped after a stop. Recover from sessionStorage if provider state was lost.
@@ -633,6 +742,7 @@ export function BulkRunView() {
 
   const total = stories.length;
   const allSelected = total > 0 && selected.size === total;
+  const selectedRunCount = expandedRunCount(selected, variablePlans);
 
   function toggleStory(name: string) {
     setSelected((prev) => {
@@ -667,7 +777,8 @@ export function BulkRunView() {
       const alreadyRunning: BulkLaunchedItem[] = [];
       const toBulk: typeof chosen = [];
       for (const story of chosen) {
-        const existing = activeRuns.get(story.name);
+        const hasVariableRuns = (variablePlans[story.name]?.length ?? 0) > 0;
+        const existing = hasVariableRuns ? undefined : activeRuns.get(story.name);
         if (existing) {
           alreadyRunning.push({
             storyName: story.name,
@@ -680,9 +791,13 @@ export function BulkRunView() {
         }
       }
 
+      const planEntries = chosen
+        .map((story) => [story.name, variablePlans[story.name]] as const)
+        .filter(([, runs]) => runs?.length);
       const options = {
         maxParallel: Number(maxParallel) || 3,
         stopCondition: stopCondition.trim() || undefined,
+        variablePlans: planEntries.length ? Object.fromEntries(planEntries) : undefined,
       };
 
       let bulkLaunched: BulkLaunchedItem[] = [];
@@ -750,10 +865,10 @@ export function BulkRunView() {
 
   async function handleResume() {
     if (!session || isResuming) return;
-    const pendingNames = session.items
-      .filter((item) => item.phase === "skipped" || item.phase === "pending")
-      .map((item) => item.storyName);
-    if (pendingNames.length === 0) {
+    const pendingItems = session.items.filter(
+      (item) => item.phase === "skipped" || item.phase === "pending",
+    );
+    if (pendingItems.length === 0) {
       reportAppError("Nothing left to resume");
       return;
     }
@@ -763,8 +878,13 @@ export function BulkRunView() {
         maxParallel: session.maxParallel || Number(maxParallel) || 3,
         stopCondition:
           session.stopCondition.trim() || stopCondition.trim() || undefined,
+        resumeItems: pendingItems.map((item) => ({
+          storyName: item.storyName,
+          runLabel: item.runLabel,
+          variableOverrides: item.variableOverrides,
+        })),
       };
-      const result = await runBulkResume(session.bulkId, pendingNames, options);
+      const result = await runBulkResume(session.bulkId, [], options);
       for (const item of result.items) {
         registerRun(item.runId, item.storyName, item.storyTitle, {
           agentProvider: result.agentProvider,
@@ -897,7 +1017,11 @@ export function BulkRunView() {
                 ) : (
                   <PlayIcon className="size-4" />
                 )}
-                {selected.size > 0 ? `Run ${selected.size}` : "Run"}
+                {selected.size > 0
+                  ? selectedRunCount > selected.size
+                    ? `Run ${selectedRunCount}`
+                    : `Run ${selected.size}`
+                  : "Run"}
               </Button>
             </ToolbarActions>
           </ToolbarRow>
@@ -908,12 +1032,36 @@ export function BulkRunView() {
         groups={groups}
         total={total}
         selected={selected}
+        variablePlans={variablePlans}
         maxParallel={maxParallel}
         stopCondition={stopCondition}
         onToggleStory={toggleStory}
         onToggleGroup={toggleGroup}
+        onConfigureVariables={setVariablesModalStory}
         onMaxParallelChange={setMaxParallel}
         onStopConditionChange={setStopCondition}
+      />
+      <BulkVariablesModal
+        open={variablesModalStory != null}
+        onOpenChange={(open) => {
+          if (!open) setVariablesModalStory(null);
+        }}
+        story={variablesModalDetail}
+        initialRuns={
+          variablesModalStory ? variablePlans[variablesModalStory] : undefined
+        }
+        onSave={(runs) => {
+          if (!variablesModalStory) return;
+          updateVariablePlans({
+            ...variablePlans,
+            [variablesModalStory]: runs,
+          });
+          setSelected((prev) => {
+            const next = new Set(prev);
+            next.add(variablesModalStory);
+            return next;
+          });
+        }}
       />
     </ScrollArea>
   );

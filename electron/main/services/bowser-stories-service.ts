@@ -676,7 +676,10 @@ export function storyEntryToMarkdown(entry: BowserStoryEntry): string {
 }
 
 /** Format a story for agent run prompts (inline markdown). */
-export function formatStoryForRun(story: StoryDetail): string {
+export function formatStoryForRun(
+  story: StoryDetail,
+  variableOverrides?: Record<string, string>,
+): string {
   const steps = story.steps.length > 0 ? story.steps : story.workflow.filter((l) => !/^verify\b/i.test(l));
   const assertionLines =
     story.assertions.length > 0
@@ -685,9 +688,16 @@ export function formatStoryForRun(story: StoryDetail): string {
   const execution = story.workflow.length > 0 ? story.workflow : [...steps, ...assertionLines];
   const lastStep = execution[execution.length - 1] ?? "";
   const lastIndex = execution.length;
-  const vars =
+  const resolvedVariables =
     story.variables.length > 0
-      ? `\n## Variables\n${story.variables.map((v) => `- ${v.key}: ${v.value}`).join("\n")}\n`
+      ? story.variables.map((v) => ({
+          ...v,
+          value: variableOverrides?.[v.key] ?? v.value,
+        }))
+      : [];
+  const vars =
+    resolvedVariables.length > 0
+      ? `\n## Variables\n${resolvedVariables.map((v) => `- ${v.key}: ${v.value}`).join("\n")}\n`
       : "";
   return (
     `# ${story.title}\n\n` +

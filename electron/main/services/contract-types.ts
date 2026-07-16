@@ -176,6 +176,19 @@ export interface StoryDraft {
 }
 
 // ---------- Bulk run options ----------
+/** One variant of a story with its own variable values for bulk runs. */
+export interface BulkVariableRun {
+  id: string;
+  label: string;
+  variables: Record<string, string>;
+}
+
+export interface BulkStoryRunRequest {
+  storyName: string;
+  variableOverrides?: Record<string, string>;
+  runLabel?: string;
+}
+
 export interface BulkRunOptions {
   storyIds?: string[];
   headed?: boolean;
@@ -184,6 +197,10 @@ export interface BulkRunOptions {
   maxParallel?: number;
   /** Optional free-text condition; when matched against a finished story, remaining work stops. */
   stopCondition?: string;
+  /** Per-story variable run plans — expands each story into multiple bulk items. */
+  variablePlans?: Record<string, BulkVariableRun[]>;
+  /** Explicit run list for resume (supports duplicate story names). */
+  resumeItems?: BulkStoryRunRequest[];
 }
 
 export type BulkSessionStatus = "running" | "stopped" | "completed";

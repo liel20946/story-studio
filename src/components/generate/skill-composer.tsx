@@ -48,6 +48,7 @@ export function SkillComposer({
   autoFocus,
   layout = "docked",
   showSkill = true,
+  skillLabel = SKILL_LABEL,
   placeholder,
   below,
 }: {
@@ -61,6 +62,7 @@ export function SkillComposer({
   /** `inline` — pill only (home / empty stage). `docked` — bottom footer chrome + pill. */
   layout?: "inline" | "docked";
   showSkill?: boolean;
+  skillLabel?: string;
   placeholder?: string;
   /** Model / effort controls — right side inside the bar, before the send button. */
   below?: React.ReactNode;
@@ -162,7 +164,7 @@ export function SkillComposer({
       <div className="generate-composer-input-viewport">
         {showSkill ? (
           <span ref={prefixRef} className="generate-skill-prefix" aria-hidden>
-            {SKILL_LABEL}
+            {skillLabel}
           </span>
         ) : null}
         {!value ? (
