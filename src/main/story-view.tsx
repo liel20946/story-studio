@@ -6,8 +6,6 @@ import {
   Loader2Icon,
   PencilIcon,
   CircleDotIcon,
-  CopyIcon,
-  CheckIcon,
   HistoryIcon,
 } from "lucide-react";
 import {
@@ -28,69 +26,38 @@ import {
   storiesGet,
   storiesList,
   storiesUpdate,
-  clipboardWriteText,
   runStart,
 } from "../lib/ipc";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type { StoryDetail } from "../lib/contract-types";
-import { InlineCode, stripCode } from "../components/inline-code";
-import { RailAssertionLine } from "../components/rail-assertion-line";
+import { stripCode } from "../components/inline-code";
+import {
+  StoryDetailPanel,
+  StoryDetailPanelSection,
+  StoryVariableTable,
+  StoryAssertionList,
+  storyEditInputClass,
+} from "../components/story-detail-panel";
+import { StorySteps } from "../components/story-steps";
 import { useActiveRunForStory, useRegisterRun } from "../lib/run-store";
 import { buildVarColors } from "../lib/story-var-colors";
 
-// ---------- section (Steps on the left; Variables / Assertions on the rail) ----------
+// ---------- section (loading shell) ----------
 function Section({
   title,
   children,
+  className,
 }: {
   title: React.ReactNode;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="codex-section">
+    <div className={cn("codex-section", className)}>
       <span className="section-label">{title}</span>
       {children}
     </div>
-  );
-}
-
-// ---------- copy-to-clipboard button (with transient "copied" check) ----------
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = React.useState(false);
-  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  React.useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
-
-  async function handleCopy() {
-    try {
-      await clipboardWriteText(value);
-      setCopied(true);
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1200);
-    } catch (err) {
-      reportAppErrorFromUnknown("Failed to copy variable", err);
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={handleCopy}
-      className="flex items-center text-tertiary transition-colors hover:text-secondary"
-    >
-      {copied ? (
-        <CheckIcon className="size-3.5 text-support-green" />
-      ) : (
-        <CopyIcon className="size-3.5" />
-      )}
-    </button>
   );
 }
 
@@ -306,9 +273,6 @@ function isUndoShortcut(e: KeyboardEvent) {
   return (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !e.altKey;
 }
 
-const storyEditInputClass =
-  "min-w-0 w-full bg-transparent border-0 outline-none p-0 text-inherit font-inherit leading-inherit focus:ring-1 focus:ring-field/60 rounded-sm";
-
 function focusInputAt(refs: React.RefObject<(HTMLInputElement | null)[]>, index: number) {
   requestAnimationFrame(() => {
     refs.current[index]?.focus();
@@ -358,149 +322,6 @@ function updateTextRow(
   const next = [...rows];
   next[index] = value;
   onRowsChange(next);
-}
-
-function isBlankVariable(row: { key: string; value: string }) {
-  return row.key.trim() === "" && row.value.trim() === "";
-}
-
-function EditableVariables({
-  draft,
-  onChange,
-  onChangeNow,
-  onCommitCheckpoint,
-  nameColors,
-  keyInputRefs,
-  valueInputRefs,
-}: {
-  draft: StoryEditDraft;
-  onChange: (variables: StoryEditDraft["variables"]) => void;
-  onChangeNow: (variables: StoryEditDraft["variables"]) => void;
-  onCommitCheckpoint: () => void;
-  nameColors: Record<string, string>;
-  keyInputRefs: React.RefObject<(HTMLInputElement | null)[]>;
-  valueInputRefs: React.RefObject<(HTMLInputElement | null)[]>;
-}) {
-  function updateVariable(
-    index: number,
-    patch: Partial<{ key: string; value: string }>,
-  ) {
-    const next = [...draft.variables];
-    next[index] = { ...next[index], ...patch };
-    onChange(next);
-  }
-
-  function handleVariableKeyDown(
-    e: React.KeyboardEvent<HTMLInputElement>,
-    index: number,
-    field: "key" | "value",
-  ) {
-    if (isUndoShortcut(e.nativeEvent)) return;
-
-    const row = draft.variables[index];
-    const value = field === "key" ? row.key : row.value;
-    const refs = field === "key" ? keyInputRefs : valueInputRefs;
-
-    if (e.key === "Enter") {
-      e.preventDefault();
-      onChangeNow(insertRow(draft.variables, index, { key: "", value: "" }));
-      focusInputAt(keyInputRefs, index + 1);
-      return;
-    }
-
-    if (e.key === "Backspace" && value === "" && isBlankVariable(row) && draft.variables.length > 1) {
-      e.preventDefault();
-      onChangeNow(removeRow(draft.variables, index));
-      focusInputAt(refs, Math.max(0, index - 1));
-    }
-  }
-
-  return (
-    <div className="flex flex-col">
-      {draft.variables.map((v, i) => (
-        <div
-          key={i}
-          className="flex items-center gap-1.5 py-0.5 min-w-0 rounded-control"
-        >
-          <input
-            ref={(el) => {
-              keyInputRefs.current[i] = el;
-            }}
-            aria-label={`Variable name ${i + 1}`}
-            value={v.key}
-            onChange={(e) => updateVariable(i, { key: e.target.value })}
-            onKeyDown={(e) => handleVariableKeyDown(e, i, "key")}
-            onBlur={onCommitCheckpoint}
-            className={cn(
-              storyEditInputClass,
-              "w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px]",
-              nameColors[v.key] ?? "text-tertiary",
-            )}
-          />
-          <input
-            ref={(el) => {
-              valueInputRefs.current[i] = el;
-            }}
-            aria-label={`Variable value ${v.key || i + 1}`}
-            value={v.value}
-            onChange={(e) => updateVariable(i, { value: e.target.value })}
-            onKeyDown={(e) => handleVariableKeyDown(e, i, "value")}
-            onBlur={onCommitCheckpoint}
-            className={cn(
-              storyEditInputClass,
-              "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px] text-secondary",
-            )}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Read-only variables: key on the left, value beside it, and a copy button
-// that fades in on row hover. Secrets stay masked.
-function ReadOnlyVariables({
-  story,
-  nameColors,
-}: {
-  story: StoryDetail;
-  nameColors: Record<string, string>;
-}) {
-  return (
-    <div className="flex flex-col">
-      {story.variables.map((v) => {
-        const key = stripCode(v.key);
-        const value = stripCode(v.value);
-        const show = !v.secret;
-        return (
-          <div
-            key={v.key}
-            className="group/var flex items-center gap-1.5 py-0.5 min-w-0 rounded-control transition-colors hover:bg-surface-hover"
-          >
-            <span
-              className={cn(
-                "w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px]",
-                nameColors[key] ?? "text-tertiary",
-              )}
-            >
-              {key}
-            </span>
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px]",
-                value ? "text-secondary" : "text-quaternary",
-              )}
-            >
-              {value ? (show ? value : "••••••") : "empty"}
-            </span>
-            <span className="shrink-0 opacity-0 transition-opacity group-hover/var:opacity-100">
-              <CopyButton value={value} label={`Copy ${key}`} />
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function StoryLoadingShell({ title }: { title: string }) {
@@ -811,132 +632,102 @@ export function StoryView() {
         </Toolbar>
       }
     >
-      {/* Two-column detail: steps on the left; variables + assertions on the
-          right rail card (matches run view layout and typography). */}
-      <div className="detail-view">
-        <div className="detail-view-main story-sections">
+      <div className="detail-view detail-view--story">
+        <StoryDetailPanel>
+          {(isEditingThisStory && draft) || story.variables.length > 0 ? (
+            <StoryDetailPanelSection title="Variables">
+              <StoryVariableTable
+                variables={
+                  isEditingThisStory && draft
+                    ? draft.variables
+                    : story.variables.map((v) => ({
+                        key: v.key,
+                        value: v.value,
+                        secret: v.secret,
+                      }))
+                }
+                nameColors={varColors.text}
+                editable={Boolean(isEditingThisStory && draft)}
+                showCopy={!isEditingThisStory}
+                keyInputRefs={variableKeyInputRefs}
+                valueInputRefs={variableValueInputRefs}
+                onVariableChange={(variables) => updateDraftVariables(variables)}
+                onVariablesChangeNow={(variables) => updateDraftVariables(variables, true)}
+                onCommit={commitCheckpoint}
+              />
+            </StoryDetailPanelSection>
+          ) : null}
+
           {(isEditingThisStory && draft) || story.steps.length > 0 ? (
-            <Section title="Steps">
-              <ol className="flex flex-col">
-                {(isEditingThisStory && draft ? draft.steps : story.steps).map((step, i) => (
-                  <li key={i} className="story-step-row">
-                    <span className="story-step-num">{i + 1}</span>
-                    {isEditingThisStory && draft ? (
-                      <input
-                        ref={(el) => {
-                          stepInputRefs.current[i] = el;
-                        }}
-                        aria-label={`Step ${i + 1}`}
-                        value={step}
-                        onChange={(e) =>
-                          updateTextRow(
-                            i,
-                            e.target.value,
-                            draft.steps,
-                            (steps) => updateDraftSteps(steps),
-                          )
-                        }
-                        onBlur={commitCheckpoint}
-                        onKeyDown={(e) =>
-                          handleTextRowKeyDown(
-                            e,
-                            i,
-                            step,
-                            draft.steps,
-                            (steps, immediate) => updateDraftSteps(steps, immediate),
-                            stepInputRefs,
-                          )
-                        }
-                        className={cn(storyEditInputClass, "text-[12px] leading-[16px] text-secondary")}
-                      />
-                    ) : (
-                      <Text variant="small" color="secondary">
-                        <InlineCode text={step} colorMap={varColors.chip} />
-                      </Text>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </Section>
+            <StoryDetailPanelSection title="Steps">
+              <StorySteps
+                steps={isEditingThisStory && draft ? draft.steps : story.steps}
+                colorMap={varColors.chip}
+                editable={Boolean(isEditingThisStory && draft)}
+                stepInputRefs={stepInputRefs}
+                inputClassName={cn(storyEditInputClass, "text-[12px] leading-[16px] text-secondary")}
+                onStepChange={(i, value) =>
+                  updateTextRow(
+                    i,
+                    value,
+                    draft!.steps,
+                    (steps) => updateDraftSteps(steps),
+                  )
+                }
+                onStepKeyDown={(e, i, step) =>
+                  handleTextRowKeyDown(
+                    e,
+                    i,
+                    step,
+                    draft!.steps,
+                    (steps, immediate) => updateDraftSteps(steps, immediate),
+                    stepInputRefs,
+                  )
+                }
+                onCommit={commitCheckpoint}
+              />
+            </StoryDetailPanelSection>
           ) : (
             <EmptyState placement="inline" title="No steps yet." />
           )}
-        </div>
 
-        {((isEditingThisStory && draft) ||
-          story.variables.length > 0 ||
-          story.assertions.length > 0) && (
-          <div className="detail-rail detail-rail--card">
-            {(isEditingThisStory && draft) || story.variables.length > 0 ? (
-              <Section title="Variables">
-                {isEditingThisStory && draft ? (
-                  <EditableVariables
-                    draft={draft}
-                    nameColors={varColors.text}
-                    keyInputRefs={variableKeyInputRefs}
-                    valueInputRefs={variableValueInputRefs}
-                    onChange={(variables) => updateDraftVariables(variables)}
-                    onChangeNow={(variables) => updateDraftVariables(variables, true)}
-                    onCommitCheckpoint={commitCheckpoint}
-                  />
-                ) : (
-                  <ReadOnlyVariables story={story} nameColors={varColors.text} />
+          {(isEditingThisStory && draft) || story.assertions.length > 0 ? (
+            <StoryDetailPanelSection title="Assertions">
+              <StoryAssertionList
+                assertions={
+                  isEditingThisStory && draft ? draft.assertions : story.assertions
+                }
+                colorMap={varColors.chip}
+                editable={Boolean(isEditingThisStory && draft)}
+                inputRefs={assertionInputRefs}
+                inputClassName={cn(
+                  storyEditInputClass,
+                  "text-[11px] leading-[15px] text-secondary text-center",
                 )}
-              </Section>
-            ) : null}
-
-            {(isEditingThisStory && draft) || story.assertions.length > 0 ? (
-              <Section title="Assertions">
-                <div className="flex flex-col">
-                  {(isEditingThisStory && draft ? draft.assertions : story.assertions).map(
-                    (assertion, i) =>
-                      isEditingThisStory && draft ? (
-                        <div key={i} className="flex items-center gap-1.5 py-0.5 min-w-0">
-                          <input
-                            ref={(el) => {
-                              assertionInputRefs.current[i] = el;
-                            }}
-                            aria-label={`Assertion ${i + 1}`}
-                            value={assertion}
-                            onChange={(e) =>
-                              updateTextRow(
-                                i,
-                                e.target.value,
-                                draft.assertions,
-                                (assertions) => updateDraftAssertions(assertions),
-                              )
-                            }
-                            onBlur={commitCheckpoint}
-                            onKeyDown={(e) =>
-                              handleTextRowKeyDown(
-                                e,
-                                i,
-                                assertion,
-                                draft.assertions,
-                                (assertions, immediate) =>
-                                  updateDraftAssertions(assertions, immediate),
-                                assertionInputRefs,
-                              )
-                            }
-                            className={cn(
-                              storyEditInputClass,
-                              "text-[11px] leading-[15px] text-secondary",
-                            )}
-                          />
-                        </div>
-                      ) : (
-                        <RailAssertionLine
-                          key={i}
-                          text={assertion}
-                          colorMap={varColors.chip}
-                        />
-                      ),
-                  )}
-                </div>
-              </Section>
-            ) : null}
-          </div>
-        )}
+                onAssertionChange={(i, value) =>
+                  updateTextRow(
+                    i,
+                    value,
+                    draft!.assertions,
+                    (assertions) => updateDraftAssertions(assertions),
+                  )
+                }
+                onAssertionKeyDown={(e, i, assertion) =>
+                  handleTextRowKeyDown(
+                    e,
+                    i,
+                    assertion,
+                    draft!.assertions,
+                    (assertions, immediate) =>
+                      updateDraftAssertions(assertions, immediate),
+                    assertionInputRefs,
+                  )
+                }
+                onCommit={commitCheckpoint}
+              />
+            </StoryDetailPanelSection>
+          ) : null}
+        </StoryDetailPanel>
       </div>
     </ScrollArea>
   );

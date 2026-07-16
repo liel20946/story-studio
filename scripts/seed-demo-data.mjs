@@ -314,6 +314,10 @@ const activeDraftYaml = `stories:
 
 const activeDraftMd = `# Issue Gift Card
 
+## Variables
+- \`amount\`: 50
+- \`recipient\`: dashboard-user
+
 ## Steps
 1. Open dashboard
 2. Click **Issue Gift Card**
