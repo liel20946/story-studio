@@ -342,7 +342,6 @@ export async function autoFixRecordingPrerequisites(
   }
 
   const needsChrome = needsGoogleChrome({
-    agentProvider: settings.agentProvider,
     browserMcp: settings.browserMcp,
     computerUse:
       settings.agentProvider === "codex" && Boolean(settings.codexComputerUse),
