@@ -39,22 +39,42 @@ function parseRunsFromAgentMessage(raw: string): BulkVariableRun[] {
   }));
 }
 
+function varyEmailLike(value: string, index: number): string {
+  const at = value.indexOf("@");
+  if (at <= 0) return value;
+  const local = value.slice(0, at);
+  const domain = value.slice(at);
+  if (index === 0) return value;
+  if (local.includes("+")) return `${local}.r${index}${domain}`;
+  return `${local}+${index + 1}${domain}`;
+}
+
 function mockRunsForStory(story: StoryDetail, description: string): BulkVariableRun[] {
-  const keys =
+  const storyVars =
     story.variables.length > 0
-      ? story.variables.map((v) => v.key)
-      : ["email", "password"];
+      ? story.variables
+      : [
+          { key: "email", value: "", secret: false },
+          { key: "password", value: "", secret: true },
+        ];
   const countMatch = description.match(/\b(\d+)\b/);
   const count = Math.min(4, Math.max(2, countMatch ? Number(countMatch[1]) : 2));
   const labels = ["Admin", "Guest", "Editor", "Viewer"];
+  const wantsEmailVariation = /email|user|login|account/i.test(description);
   const runs: BulkVariableRun[] = [];
   for (let i = 0; i < count; i++) {
     const variables: Record<string, string> = {};
-    for (const key of keys) {
-      const base = story.variables.find((v) => v.key === key)?.value ?? "";
-      variables[key] = base
-        ? `${base.replace(/@/, `+${i + 1}@`)}`
-        : `${key}-${i + 1}@example.com`;
+    for (const variable of storyVars) {
+      const base = variable.value ?? "";
+      if (variable.secret || !base) {
+        variables[variable.key] = base;
+        continue;
+      }
+      if (wantsEmailVariation && base.includes("@")) {
+        variables[variable.key] = varyEmailLike(base, i);
+      } else {
+        variables[variable.key] = base;
+      }
     }
     runs.push({
       id: randomUUID(),
@@ -109,15 +129,51 @@ export async function generateBulkVariableRuns(
   });
 
   const parsedRuns = parseRunsFromAgentMessage(message);
-  ensureAllStoryKeys(story, parsedRuns);
+  applyStoryVariableDefaults(story, parsedRuns);
   return { runs: parsedRuns };
 }
 
-function ensureAllStoryKeys(story: StoryDetail, runs: BulkVariableRun[]): void {
+function isCredentialKey(key: string): boolean {
+  return /password|secret|token|user|email|login|account/i.test(key);
+}
+
+function looksInventedCredential(agentValue: string, original: string): boolean {
+  if (!original || agentValue === original) return false;
+  if (original.includes("@")) {
+    const domain = original.slice(original.indexOf("@") + 1).toLowerCase();
+    if (domain && agentValue.toLowerCase().includes(domain)) return false;
+    if (
+      /example\.com|email\.com|test\.com|placeholder/i.test(agentValue) &&
+      !/example\.com|email\.com|test\.com/i.test(original)
+    ) {
+      return true;
+    }
+  }
+  if (/^(user|admin|guest|test)\d*$/i.test(agentValue) && !/^(user|admin|guest|test)\d*$/i.test(original)) {
+    return true;
+  }
+  return false;
+}
+
+function applyStoryVariableDefaults(story: StoryDetail, runs: BulkVariableRun[]): void {
   if (story.variables.length === 0) return;
   for (const run of runs) {
     for (const variable of story.variables) {
-      if (!(variable.key in run.variables)) {
+      const current = run.variables[variable.key];
+      // Secrets always keep the story default so the agent cannot invent them.
+      if (variable.secret) {
+        run.variables[variable.key] = variable.value;
+        continue;
+      }
+      if (current === undefined || current === "") {
+        run.variables[variable.key] = variable.value;
+        continue;
+      }
+      if (
+        variable.value &&
+        isCredentialKey(variable.key) &&
+        looksInventedCredential(current, variable.value)
+      ) {
         run.variables[variable.key] = variable.value;
       }
     }
