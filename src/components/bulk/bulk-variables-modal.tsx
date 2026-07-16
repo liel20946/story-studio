@@ -154,14 +154,14 @@ export function BulkVariablesModal({
         </DialogHeader>
 
         <DialogBody>
-          <div className="min-h-0 flex max-h-[min(52vh,480px)] flex-col overflow-hidden">
+          <div className="flex min-h-0 max-h-[min(52vh,480px)] flex-col overflow-hidden">
           {phase === "chat" && (
-            <div className="flex h-full min-h-[280px] flex-col gap-4">
+            <div className="flex flex-col gap-3">
               <div className="rounded-control border border-separator bg-surface px-3 py-2">
                 <Text variant="small-strong" color="secondary">
                   Story variables
                 </Text>
-                <div className="mt-1 flex flex-wrap gap-1.5">
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {story.variables.length > 0 ? (
                     story.variables.map((v) => (
                       <span
@@ -178,22 +178,20 @@ export function BulkVariablesModal({
                   )}
                 </div>
               </div>
-              <div className="mt-auto">
-                <SkillComposer
-                  layout="inline"
-                  value={prompt}
-                  onChange={setPrompt}
-                  onSubmit={() => void handleGenerate()}
-                  showSkill
-                  skillLabel="bulk-variables"
-                  placeholder='e.g. "Run as admin and guest with different emails"'
-                />
-              </div>
+              <SkillComposer
+                layout="inline"
+                value={prompt}
+                onChange={setPrompt}
+                onSubmit={() => void handleGenerate()}
+                showSkill
+                skillLabel="bulk-variables"
+                placeholder='e.g. "Run as admin and guest with different emails"'
+              />
             </div>
           )}
 
           {phase === "generating" && (
-            <div className="flex min-h-[240px] flex-col items-center justify-center gap-3">
+            <div className="flex min-h-[160px] flex-col items-center justify-center gap-3">
               <Loader2Icon className="size-8 animate-spin text-accent" />
               <Text variant="regular" color="secondary">
                 {statusText || "Generating variable sets…"}
