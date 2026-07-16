@@ -276,6 +276,10 @@ async function fireSchedule(schedule: ScheduledRun): Promise<void> {
     settings.agentProvider,
     settings.codexBinaryPath,
     settings.claudeBinaryPath,
+    {
+      computerUse:
+        settings.agentProvider === "codex" && settings.codexComputerUse,
+    },
   );
   const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
   const computerUse =

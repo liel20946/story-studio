@@ -66,6 +66,10 @@ export function registerRunsHandlers(): void {
           settings.agentProvider,
           settings.codexBinaryPath,
           settings.claudeBinaryPath,
+          {
+            computerUse:
+              settings.agentProvider === "codex" && settings.codexComputerUse,
+          },
         );
 
     // Get story detail for filePath and title
@@ -128,6 +132,10 @@ export function registerRunsHandlers(): void {
           settings.agentProvider,
           settings.codexBinaryPath,
           settings.claudeBinaryPath,
+          {
+            computerUse:
+              settings.agentProvider === "codex" && settings.codexComputerUse,
+          },
         );
 
     const runs = await listRuns();
@@ -233,6 +241,10 @@ export function registerRunsHandlers(): void {
           settings.agentProvider,
           settings.codexBinaryPath,
           settings.claudeBinaryPath,
+          {
+            computerUse:
+              settings.agentProvider === "codex" && settings.codexComputerUse,
+          },
         );
     const runs = await listRuns();
     const lastRunMap = buildLastRunMap(runs);

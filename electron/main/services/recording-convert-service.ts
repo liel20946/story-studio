@@ -66,18 +66,20 @@ export function buildObservedRecordingConversionPrompt(
   const toolBlock =
     tool === "computer-use"
       ? `## Observation tool — @Computer\n` +
-        `- Start with @Computer. Inspect the open Google Chrome window from this recording session.\n` +
+        `- Start with @Computer. Inspect the **already open** Google Chrome tab from this recording.\n` +
+        `- Do NOT open a new Chrome window or a new tab. Use the existing tab the user just finished in.\n` +
         `- Reconstruct the user's flow from the final page, URL, visible UI, and back/forward history when available.\n` +
         `- Do NOT use Playwright MCP, Chrome DevTools MCP, Playwright CLI, the Codex in-app @Browser, Cursor, or headless browsers.\n`
       : `## Observation tool — Chrome DevTools MCP\n` +
-        `- Use Chrome DevTools MCP attached to the headed Chrome recording session.\n` +
+        `- Use Chrome DevTools MCP connected to the user's **already running** Google Chrome (autoConnect).\n` +
+        `- Find the existing tab for this recording (started at the URL below). Do NOT open a new Chrome window or a fresh browser.\n` +
         `- Inspect the current page, navigation history, and DOM to reconstruct the user's flow.\n` +
         `- Do NOT use Playwright MCP, Computer Use, Cursor, or headless browsers.\n`;
 
   return (
     `You are converting a just-finished manual browser recording into an intent-level Bowser YAML v2 story.\n\n` +
     `${toolBlock}\n` +
-    `The user started at ${url} and performed actions in a visible Chrome window, ending on the page they want as the final screenshot.\n` +
+    `The user started at ${url} and performed actions in their existing Google Chrome, ending on the page they want as the final screenshot.\n` +
     `Reconstruct the workflow they performed — do not invent unrelated steps.\n\n` +
     `${BOWSER_STORY_FORMAT}\n\n` +
     `${RECORDING_YAML_REQUIREMENTS}` +
@@ -190,6 +192,7 @@ async function invokeConversionAgent(
     browserMcp?: "playwright" | "chrome-devtools";
     computerUse?: boolean;
     chromeBrowserUrl?: string;
+    chromeAutoConnect?: boolean;
   },
   onProgress?: (message: string) => void,
 ): Promise<string> {
@@ -202,6 +205,7 @@ async function invokeConversionAgent(
     exploring: options.exploring,
     computerUse: options.computerUse,
     browserMcp: options.browserMcp,
+    chromeAutoConnect: options.chromeAutoConnect,
   });
 
   onProgress?.("Converting recording using AI…");
@@ -220,6 +224,7 @@ async function invokeConversionAgent(
       browserMcp: options.browserMcp,
       computerUse: options.computerUse,
       chromeBrowserUrl: options.chromeBrowserUrl,
+      chromeAutoConnect: options.chromeAutoConnect,
       onProgress: (message) => onProgress?.(message),
     });
     return invokeResult.message;
@@ -316,6 +321,7 @@ export async function convertObservedRecordingWithAgent(
       browserMcp: computerUse ? undefined : "chrome-devtools",
       computerUse,
       chromeBrowserUrl: options.chromeBrowserUrl,
+      chromeAutoConnect: !computerUse && !options.chromeBrowserUrl,
     },
     onProgress,
   );

@@ -148,8 +148,15 @@ export const RUN_OUTPUT_SCHEMA = {
   required: ["status", "summary", "assertions", "lastSuccessfulStep", "screenshotPath"],
 };
 
+/** Codex.app-bundled CLI — required for reliable Computer Use (Homebrew CLI often cannot). */
+export const CODEX_APP_BUNDLED_CLI =
+  "/Applications/Codex.app/Contents/Resources/codex";
+
 // ---------- Binary resolution ----------
-export async function resolveCodexBinary(customPath: string | null): Promise<string> {
+export async function resolveCodexBinary(
+  customPath: string | null,
+  options?: { preferAppBundled?: boolean },
+): Promise<string> {
   if (customPath) {
     try {
       await fs.access(customPath);
@@ -158,6 +165,17 @@ export async function resolveCodexBinary(customPath: string | null): Promise<str
       throw new Error(`codex binary not found at configured path: ${customPath}`);
     }
   }
+
+  // Computer Use needs the app-bundled CLI; Homebrew often cannot launch the helper.
+  if (options?.preferAppBundled) {
+    try {
+      await fs.access(CODEX_APP_BUNDLED_CLI);
+      return CODEX_APP_BUNDLED_CLI;
+    } catch {
+      // fall through
+    }
+  }
+
   const homebrew = "/opt/homebrew/bin/codex";
   try {
     await fs.access(homebrew);
@@ -175,14 +193,22 @@ export async function resolveCodexBinary(customPath: string | null): Promise<str
   } catch {
     // fall through
   }
+
+  try {
+    await fs.access(CODEX_APP_BUNDLED_CLI);
+    return CODEX_APP_BUNDLED_CLI;
+  } catch {
+    // fall through
+  }
+
   throw new Error(
-    "codex binary not found. Install Codex CLI or set a custom path in Settings.\n" +
-      "Tried: /opt/homebrew/bin/codex, login shell zsh lookup.",
+    "codex binary not found. Install Codex CLI / Codex.app or set a custom path in Settings.\n" +
+      "Tried: Codex.app Resources/codex, /opt/homebrew/bin/codex, login shell zsh lookup.",
   );
 }
 
 // ---------- Spawn env ----------
-function buildEnv(): NodeJS.ProcessEnv {
+function buildEnv(options?: { computerUse?: boolean }): NodeJS.ProcessEnv {
   const home = os.homedir();
   const extraPath = [
     "/opt/homebrew/bin",
@@ -192,11 +218,18 @@ function buildEnv(): NodeJS.ProcessEnv {
     path.dirname(process.execPath),
   ].join(":");
   const existingPath = process.env.PATH ?? "";
-  return {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
     PATH: `${extraPath}:${existingPath}`,
   };
+  if (options?.computerUse) {
+    const codexHome = process.env.CODEX_HOME?.trim() || path.join(home, ".codex");
+    env.CODEX_HOME = codexHome;
+    env.CODEX_SQLITE_HOME =
+      process.env.CODEX_SQLITE_HOME?.trim() || path.join(codexHome, "sqlite");
+  }
+  return env;
 }
 
 // ---------- Event helpers ----------
@@ -477,7 +510,7 @@ export async function startRun(
   const runPromise = new Promise<RunResult>((resolve) => {
     const child = spawn(codexBinary, args, {
       cwd: runOutputDir,
-      env: buildEnv(),
+      env: buildEnv({ computerUse }),
       detached: true, // allows process group kill on cancel
       // stdin must be closed (EOF) or codex hangs on "Reading additional input from stdin..."
       stdio: ["ignore", "pipe", "pipe"],

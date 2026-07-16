@@ -348,6 +348,7 @@ export async function sendGenerateMessage(
     agentSettings.agentProvider,
     agentSettings.codexBinaryPath,
     agentSettings.claudeBinaryPath,
+    { computerUse },
   );
   const agentConfig = getAgentRunConfig(agentSettings.agentProvider, agentSettings);
   const sessionId = resolveProviderSessionId(refreshed, agentSettings.agentProvider);

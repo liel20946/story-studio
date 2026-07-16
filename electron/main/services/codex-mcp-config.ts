@@ -4,7 +4,7 @@ import type { BrowserMcp } from "./contract-types.js";
 import {
   buildCodexComputerUseConfigArgs,
   buildCodexMcpConfigArgs,
-  PROJECT_CODEX_COMPUTER_USE_CONFIG,
+  projectCodexComputerUseConfigToml,
   projectCodexConfigToml,
 } from "./browser-mcp-config.js";
 
@@ -28,7 +28,7 @@ export async function ensureCodexProjectConfig(
   const configDir = path.join(cwd, ".codex");
   await fs.mkdir(configDir, { recursive: true });
   const contents = options?.computerUse
-    ? PROJECT_CODEX_COMPUTER_USE_CONFIG
+    ? projectCodexComputerUseConfigToml()
     : projectCodexConfigToml(options?.browserMcp ?? "playwright");
   await fs.writeFile(path.join(configDir, "config.toml"), contents, "utf-8");
 }

@@ -115,11 +115,13 @@ const RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE = `You are running a saved web UI "
 - Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
 - Do NOT use Playwright MCP, Playwright CLI, Chrome DevTools MCP, the Codex in-app @Browser, Cursor, or any headless/automation browser.
 - Do not invent or call any other browser-driving tool.
+- If Computer Use / @Computer tools are missing, fail immediately with a clear blocked summary — do not improvise another browser tool.
 
 ## Chrome window (required)
-- With @Computer, open a **new regular Google Chrome window** (not Playwright/automation, not Cursor, not a private/incognito window unless the story requires it).
-- Run this entire story inside that new Chrome window.
-- Navigate by typing/pasting the story URL into Chrome's address bar, or opening it from a new tab in that window.
+- Prefer an **already open Google Chrome** window. Open a **new tab in that existing window** for this story.
+- Only open a new Chrome window if Google Chrome is not already running.
+- Navigate by typing/pasting the story URL into that tab's address bar.
+- Do not use Playwright/automation profiles, Cursor, or private/incognito unless the story requires it.
 
 ${RUN_STORY_PLAYBOOK_SHARED}
 
@@ -134,11 +136,12 @@ const RUN_STORY_PLAYBOOK_COMPUTER_USE_BULK = `You are running a saved web UI "st
 - Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
 - Do NOT use Playwright MCP, Playwright CLI, Chrome DevTools MCP, the Codex in-app @Browser, Cursor, or any headless/automation browser.
 - Do not invent or call any other browser-driving tool.
+- If Computer Use / @Computer tools are missing, fail immediately with a clear blocked summary — do not improvise another browser tool.
 
 ## Chrome window / tab (required — bulk run)
-- With @Computer, use the dedicated Story Studio Chrome window for this bulk run.
-- If that window does not exist yet, open a **new regular Google Chrome window** first (not Playwright/automation, not Cursor, not a private/incognito window unless the story requires it).
-- For this story, open a **new tab in that same Chrome window** and run the story there. Do not open a separate Chrome window per story when the bulk window already exists.
+- Prefer the dedicated Story Studio Chrome window if it already exists; otherwise use any **already open Google Chrome** window.
+- For this story, open a **new tab in that same Chrome window** and run the story there. Do not open a separate Chrome window per story when a Chrome window already exists.
+- Only open a new Chrome window if Google Chrome is not already running.
 - Navigate by typing/pasting the story URL into that tab's address bar.
 
 ${RUN_STORY_PLAYBOOK_SHARED}
@@ -230,7 +233,7 @@ const GENERATE_STORY_PLAYBOOK_COMPUTER_USE = `You are generating a Bowser YAML v
 ## Browser tool
 - Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
 - Do NOT use Playwright MCP, Chrome DevTools MCP, Playwright CLI, the Codex in-app @Browser, Cursor, or any headless/automation browser.
-- Before exploring, open a **new regular Google Chrome window** with @Computer and work only in that window.
+- Prefer an **already open Google Chrome** window. Open a **new tab** there for exploration; only open a new Chrome window if Chrome is not running.
 
 ${GENERATE_STORY_TASK}`;
 

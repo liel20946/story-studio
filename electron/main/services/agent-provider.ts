@@ -61,9 +61,13 @@ export async function resolveAgentBinary(
   provider: AgentProvider,
   codexBinaryPath: string | null,
   claudeBinaryPath: string | null = null,
+  options?: { computerUse?: boolean },
 ): Promise<string> {
   if (provider === "claude-code") {
     return resolveClaudeBinary(claudeBinaryPath);
   }
-  return resolveCodexBinary(codexBinaryPath);
+  return resolveCodexBinary(codexBinaryPath, {
+    // Homebrew CLI often cannot launch Computer Use; prefer Codex.app binary.
+    preferAppBundled: Boolean(options?.computerUse),
+  });
 }

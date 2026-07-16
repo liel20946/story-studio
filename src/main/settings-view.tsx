@@ -244,7 +244,7 @@ function AgentPanel({
         {provider === "codex" ? (
           <SettingsRow
             label="Computer Use"
-            description="Override Browser MCP for recording, running, and generating with Codex Computer Use."
+            description="Override Browser MCP for recording, running, and generating. Uses Codex.app Computer Use (install the plugin; prefers the Codex.app CLI)."
           >
             <Switch
               checked={codexComputerUse}

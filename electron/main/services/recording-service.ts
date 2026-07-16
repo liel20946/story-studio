@@ -4,7 +4,6 @@ import * as path from "path";
 import * as os from "os";
 import { spawn, type ChildProcess } from "child_process";
 import { execFile } from "child_process";
-import { createServer } from "net";
 import { promisify } from "util";
 import { app } from "../electron-api.js";
 import { broadcast as ipcBroadcast } from "../broadcast.js";
@@ -428,61 +427,6 @@ function waitForManualRecordingEnd(): Promise<"saved" | "aborted"> {
   });
 }
 
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close();
-        reject(new Error("Failed to allocate a local debugging port."));
-        return;
-      }
-      const { port } = address;
-      server.close((err) => {
-        if (err) reject(err);
-        else resolve(port);
-      });
-    });
-    server.on("error", reject);
-  });
-}
-
-async function waitForChromeDebugger(port: number, timeoutMs = 20_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  let lastError = "";
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) return;
-      lastError = `HTTP ${res.status}`;
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-    }
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  throw new Error(`Chrome debugger did not become ready on port ${port}: ${lastError}`);
-}
-
-async function cleanupChromeSession(
-  chromeProc: ChildProcess | null,
-  userDataDir: string | null,
-): Promise<void> {
-  if (chromeProc && !chromeProc.killed) {
-    try {
-      chromeProc.kill("SIGTERM");
-    } catch {
-      // ignore
-    }
-  }
-  if (_recordingProcess === chromeProc) {
-    _recordingProcess = null;
-  }
-  if (userDataDir) {
-    await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => {});
-  }
-}
-
 function broadcastRecordingError(
   stage: "conversion" | "recording" | "start",
   err: unknown,
@@ -735,6 +679,29 @@ async function startPlaywrightCodegenRecording(
   });
 }
 
+async function openUrlInExistingGoogleChrome(url: string): Promise<void> {
+  if (process.platform === "darwin") {
+    // Reuses the running Chrome / default profile (new tab in existing window).
+    await execFileAsync("open", ["-a", "Google Chrome", url], {
+      timeout: 15_000,
+      env: buildEnv(),
+    });
+    return;
+  }
+
+  const chromePath = await getGoogleChromePath();
+  if (!chromePath) {
+    throw new Error("Google Chrome is not installed.");
+  }
+  // No custom --user-data-dir so Chrome attaches to the default profile.
+  const child = spawn(chromePath, [url], {
+    env: buildEnv(),
+    stdio: "ignore",
+    detached: true,
+  });
+  child.unref();
+}
+
 async function startObservedChromeRecording(
   name: string,
   url: string,
@@ -756,8 +723,8 @@ async function startObservedChromeRecording(
 
   const startingMessage =
     tool === "computer-use"
-      ? "Opening Google Chrome for Computer Use recording…"
-      : "Opening Google Chrome for DevTools recording…";
+      ? "Opening start URL in your Google Chrome…"
+      : "Opening start URL in your Google Chrome…";
   broadcast({ phase: "starting", message: startingMessage });
 
   if (_recordingAborted) {
@@ -765,71 +732,24 @@ async function startObservedChromeRecording(
   }
 
   const agentConfig = getAgentRunConfig(agentSettings.agentProvider, agentSettings);
-  let chromeProc: ChildProcess | null = null;
-  let userDataDir: string | null = null;
-  let browserUrl: string | undefined;
 
   try {
-    userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "story-studio-rec-"));
-    const chromeArgs = [
-      `--user-data-dir=${userDataDir}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-sync",
-      "--new-window",
-    ];
-
-    if (tool === "chrome-devtools") {
-      const port = await getFreePort();
-      chromeArgs.unshift(`--remote-debugging-port=${port}`);
-      browserUrl = `http://127.0.0.1:${port}`;
-      console.log("[recording] spawning Chrome with DevTools", { chromePath, port, url });
-      chromeProc = spawn(chromePath, [...chromeArgs, url], {
-        env: buildEnv(),
-        stdio: "ignore",
-      });
-      _recordingProcess = chromeProc;
-      await waitForChromeDebugger(port);
-    } else {
-      console.log("[recording] spawning Chrome for Computer Use", { chromePath, url });
-      chromeProc = spawn(chromePath, [...chromeArgs, url], {
-        env: buildEnv(),
-        stdio: "ignore",
-      });
-      _recordingProcess = chromeProc;
-    }
-
-    chromeProc.on("error", (err) => {
-      console.error("[recording] Chrome spawn error", err.message);
-    });
-
-    chromeProc.on("close", () => {
-      if (_recordingProcess === chromeProc) {
-        _recordingProcess = null;
-      }
-      // Closing the Chrome window ends capture the same way Save does.
-      if (_manualRecordingResolve) {
-        const resolve = _manualRecordingResolve;
-        _manualRecordingResolve = null;
-        resolve(_recordingAborted ? "aborted" : "saved");
-      }
-    });
+    console.log("[recording] opening URL in existing Google Chrome", { tool, url });
+    await openUrlInExistingGoogleChrome(url);
 
     broadcast({
       phase: "recording",
       message:
-        tool === "computer-use"
-          ? "Recording in Chrome. Perform your actions, end on the final screenshot page, then click Save Recording."
-          : "Recording in Chrome (DevTools). Perform your actions, end on the final screenshot page, then click Save Recording.",
+        tool === "chrome-devtools"
+          ? "Recording in your Chrome. Use the opened tab (enable chrome://inspect → Remote debugging if needed). End on the final screenshot page, then Save Recording."
+          : "Recording in your Chrome. Use the opened tab — do not switch to a new window. End on the final screenshot page, then Save Recording.",
     });
 
     const outcome = await waitForManualRecordingEnd();
     if (outcome === "aborted" || _recordingAborted) {
-      await cleanupChromeSession(chromeProc, userDataDir);
       return { ok: false, cancelled: true };
     }
 
-    // Keep Chrome alive while the agent observes the session.
     const overwrite = overwriteStoryKey ? parseCompositeName(overwriteStoryKey) : null;
     const storyId = overwrite?.storyId;
     const siteSlug = overwrite?.siteSlug ?? siteSlugFromUrl(url);
@@ -852,13 +772,11 @@ async function startObservedChromeRecording(
           agentBinary,
           agentConfig,
           tool,
-          chromeBrowserUrl: browserUrl,
         },
         (message) => broadcast({ phase: "converting", message }),
       );
     } catch (err) {
       await discardDraftDir(draftDir).catch(() => {});
-      await cleanupChromeSession(chromeProc, userDataDir);
       const failure = broadcastRecordingError("conversion", err);
       return {
         ok: false,
@@ -868,11 +786,8 @@ async function startObservedChromeRecording(
       };
     }
 
-    const result = await finishDraftStory({ draftDir, siteSlug, storyId });
-    await cleanupChromeSession(chromeProc, userDataDir);
-    return result;
+    return finishDraftStory({ draftDir, siteSlug, storyId });
   } catch (err) {
-    await cleanupChromeSession(chromeProc, userDataDir);
     const failure = broadcastRecordingError("start", err);
     return {
       ok: false,
@@ -897,6 +812,11 @@ export async function startRecording(
     agentSettings.agentProvider,
     agentSettings.codexBinaryPath,
     agentSettings.claudeBinaryPath,
+    {
+      computerUse:
+        agentSettings.agentProvider === "codex" &&
+        Boolean(agentSettings.codexComputerUse),
+    },
   ).catch(() => null);
   if (!agentBinary) {
     const msg = `${agentLabel} CLI not found. Install ${agentLabel} CLI (or set its path in Settings) to convert recordings.`;

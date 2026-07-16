@@ -223,6 +223,8 @@ export interface GenerateInvokeOptions {
   computerUse?: boolean;
   /** Attach Chrome DevTools MCP to an existing headed Chrome debugging URL. */
   chromeBrowserUrl?: string;
+  /** Connect DevTools MCP to the user's already-running Chrome (recording). */
+  chromeAutoConnect?: boolean;
   onProgress?: (message: string) => void;
 }
 
@@ -285,6 +287,15 @@ async function invokeCodex(
     ignoreUserConfig: !computerUse,
   });
 
+  const spawnEnv = buildBaseAgentSpawnEnv();
+  if (computerUse) {
+    const home = spawnEnv.HOME || process.env.HOME || "";
+    const codexHome = process.env.CODEX_HOME?.trim() || `${home}/.codex`;
+    spawnEnv.CODEX_HOME = codexHome;
+    spawnEnv.CODEX_SQLITE_HOME =
+      process.env.CODEX_SQLITE_HOME?.trim() || `${codexHome}/sqlite`;
+  }
+
   if (resumeSession && sessionId) {
     const args = [
       "exec",
@@ -305,6 +316,7 @@ async function invokeCodex(
       exploring,
       onProgress,
       parseStdout,
+      spawnEnv,
     );
     return { message };
   }
@@ -316,6 +328,7 @@ async function invokeCodex(
       ? buildCodexComputerUseConfigArgs()
       : buildCodexMcpConfigArgs(browserMcp, {
           browserUrl: options.chromeBrowserUrl,
+          autoConnect: options.chromeAutoConnect,
         })
     : [];
 
@@ -344,6 +357,7 @@ async function invokeCodex(
       capturedStdout = stdout;
       return parseStdout(stdout);
     },
+    spawnEnv,
   );
 
   const parsedSessionId = parseCodexSessionIdFromStdout(capturedStdout);
@@ -397,6 +411,7 @@ async function invokeClaude(
       "--mcp-config",
       buildClaudeMcpConfigJson(browserMcp, {
         browserUrl: options.chromeBrowserUrl,
+        autoConnect: options.chromeAutoConnect,
       }),
     );
   }
