@@ -216,6 +216,7 @@ export const settingsSet = (
       | "colorThemeContrastLight"
       | "colorThemeContrastDark"
       | "usePointerCursors"
+      | "codexComputerUse"
       | "startingUrl"
       | "runHook"
     >

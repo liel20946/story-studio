@@ -126,6 +126,7 @@ function AgentPanel({
   codexEffort,
   claudeModel,
   claudeEffort,
+  codexComputerUse,
   capabilities,
   capabilitiesError,
   onProviderChange,
@@ -133,12 +134,14 @@ function AgentPanel({
   onCodexEffortChange,
   onClaudeModelChange,
   onClaudeEffortChange,
+  onCodexComputerUseChange,
 }: {
   provider: AgentProvider;
   codexModel: CodexModel;
   codexEffort: CodexEffort;
   claudeModel: ClaudeModel;
   claudeEffort: ClaudeEffort;
+  codexComputerUse: boolean;
   capabilities: AgentCapabilities | null;
   capabilitiesError?: string;
   onProviderChange: (provider: AgentProvider) => void;
@@ -146,6 +149,7 @@ function AgentPanel({
   onCodexEffortChange: (effort: CodexEffort) => void;
   onClaudeModelChange: (model: ClaudeModel) => void;
   onClaudeEffortChange: (effort: ClaudeEffort) => void;
+  onCodexComputerUseChange: (enabled: boolean) => void;
 }) {
   const model =
     provider === "claude-code" ? claudeModel : codexModel;
@@ -211,6 +215,19 @@ function AgentPanel({
             }}
           />
         </SettingsRow>
+
+        {provider === "codex" ? (
+          <SettingsRow
+            label="Computer Use"
+            description="Run stories with Codex Computer Use in a real Chrome window instead of headless Playwright."
+          >
+            <Switch
+              checked={codexComputerUse}
+              aria-label="Computer Use"
+              onCheckedChange={onCodexComputerUseChange}
+            />
+          </SettingsRow>
+        ) : null}
 
         {capabilitiesError ? (
           <p className="settings-row-desc px-4 pb-3 text-[var(--color-text-secondary)]">
@@ -528,6 +545,18 @@ export function SettingsView() {
     }
   };
 
+  const handleCodexComputerUseChange = async (codexComputerUse: boolean) => {
+    if (codexComputerUse === resolvedSettings.codexComputerUse) return;
+    setAppSettings((prev) => (prev ? { ...prev, codexComputerUse } : prev));
+    try {
+      const updated = await settingsSet({ codexComputerUse });
+      commitAppSettings(updated);
+    } catch (error) {
+      void refreshAppSettings();
+      reportAppErrorFromUnknown("Failed to set Computer Use", error);
+    }
+  };
+
   const handleThemeChange = async (theme: ThemePreference) => {
     const nextSettings = normalizeAppSettings({ ...resolvedSettings, theme });
     commitAppSettings(nextSettings);
@@ -749,6 +778,7 @@ export function SettingsView() {
               codexEffort={resolvedSettings.codexEffort}
               claudeModel={resolvedSettings.claudeModel}
               claudeEffort={resolvedSettings.claudeEffort}
+              codexComputerUse={resolvedSettings.codexComputerUse}
               capabilities={agentCapabilities}
               capabilitiesError={capabilitiesError ?? settingsError ?? undefined}
               onProviderChange={handleProviderChange}
@@ -756,6 +786,7 @@ export function SettingsView() {
               onCodexEffortChange={handleCodexEffortChange}
               onClaudeModelChange={handleClaudeModelChange}
               onClaudeEffortChange={handleClaudeEffortChange}
+              onCodexComputerUseChange={handleCodexComputerUseChange}
             />
           ) : null}
 

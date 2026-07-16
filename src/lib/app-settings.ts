@@ -24,6 +24,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
   colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
   usePointerCursors: false,
+  codexComputerUse: false,
   startingUrl: "https://example.com",
   runHook: "",
 };
@@ -89,5 +90,9 @@ export function normalizeAppSettings(
       typeof base.usePointerCursors === "boolean"
         ? base.usePointerCursors
         : DEFAULT_APP_SETTINGS.usePointerCursors,
+    codexComputerUse:
+      typeof base.codexComputerUse === "boolean"
+        ? base.codexComputerUse
+        : DEFAULT_APP_SETTINGS.codexComputerUse,
   };
 }

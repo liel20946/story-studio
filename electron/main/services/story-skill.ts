@@ -41,25 +41,13 @@ Rules:
 // Legacy alias for recording conversion prompts
 export const STORY_FORMAT = BOWSER_STORY_FORMAT;
 
-export const RUN_STORY_PLAYBOOK = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
-
-## Execution tool — headless, no visible browser
-- Use ONLY the Playwright MCP server named "playwright". It runs headless.
-- Do NOT use the Codex Browser plugin, the in-app browser, the Chrome backend, computer use, or any other browser-driving tool.
-- Do not use any MCP server other than "playwright".
-
-## How to run the story
+const RUN_STORY_PLAYBOOK_SHARED = `## How to run the story
 - Follow **Execution order** — the numbered list that interleaves steps and assertions. Run every line through the last one.
 - Treat each line as intent, not an exact script. Adapt to minor UI changes while preserving the goal.
 - Prefer accessible role/name, labels, visible text, and URL context over coordinates or brittle element refs.
 - Use variables defined in the story, including test-account credentials.
 - If the story includes login steps, start from the logged-out login page and perform the login.
 - Ignore browser automation UI (e.g. "--no-sandbox" infobars).
-
-## Reliable form filling (important)
-Many web apps are React SPAs with controlled inputs. browser_fill_form and browser_type frequently fail. Fill form fields with browser_evaluate using the native value setter and dispatch input + change events:
-  const set = (el, value) => { const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value'); d.set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
-Locate inputs by name / type / placeholder / aria-label. Verify values before submit.
 
 ## Verify steps and dynamic assertions
 - For Verify steps, check visible text or page state directly.
@@ -81,9 +69,9 @@ Locate inputs by name / type / placeholder / aria-label. Verify values before su
 ## Hero screenshot (critical — read carefully)
 - The hero screenshot is **separate** from form-group / pre-submit checkpoints.
 - Capture it **only after the last line in Execution order** completes successfully (usually the final Verify).
-- After the last submit/navigation action, **wait for the UI to settle** (e.g. browser_wait_for 2–3s, or wait until the element the final Verify checks is visible) **before** the final Verify and hero capture.
+- After the last submit/navigation action, **wait for the UI to settle** (a few seconds, or until the element the final Verify checks is visible) **before** the final Verify and hero capture.
 - The hero must show the **post-condition** the story ends on — e.g. the new row in a table, success toast visible, landed page after the last click — **not** a dialog about to be submitted and not an earlier page.
-- Take a **fresh** browser screenshot and save it to the hero path. Do **not** copy or reuse an earlier checkpoint file (especially not a pre-submit form screenshot).
+- Take a **fresh** screenshot and save it to the hero path. Do **not** copy or reuse an earlier checkpoint file (especially not a pre-submit form screenshot).
 - Attach the hero path only on the **last** steps.json entry and in structured output \`screenshotPath\`.
 
 ## steps.json
@@ -93,6 +81,74 @@ Locate inputs by name / type / placeholder / aria-label. Verify values before su
 - Report pass/fail with concise evidence for each Verify step.
 - Do not create real customer-facing side effects unless the story explicitly requires them.
 - Work silently during execution — do not narrate your plan in chat.`;
+
+export const RUN_STORY_PLAYBOOK = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
+
+## Execution tool — headless, no visible browser
+- Use ONLY the Playwright MCP server named "playwright". It runs headless.
+- Do NOT use the Codex Browser plugin, the in-app browser, the Chrome backend, computer use, or any other browser-driving tool.
+- Do not use any MCP server other than "playwright".
+
+${RUN_STORY_PLAYBOOK_SHARED}
+
+## Reliable form filling (important)
+Many web apps are React SPAs with controlled inputs. browser_fill_form and browser_type frequently fail. Fill form fields with browser_evaluate using the native value setter and dispatch input + change events:
+  const set = (el, value) => { const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value'); d.set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+Locate inputs by name / type / placeholder / aria-label. Verify values before submit.`;
+
+const RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
+
+## Execution tool — Codex Computer Use (visible Chrome)
+- Use Codex Computer Use to operate a real desktop Chrome window. See, click, type, and scroll like a human.
+- Do NOT use the Playwright MCP server, Playwright CLI, the Codex in-app browser, or any headless/automation browser.
+- Do not use any MCP browser tools.
+
+## Chrome window (required)
+- Before interacting, open a **new regular Google Chrome window** (not a Playwright/automation profile, not a private/incognito window unless the story requires it).
+- Run this entire story inside that new Chrome window.
+- Navigate by typing/pasting the story URL into Chrome's address bar, or opening it from a new tab in that window.
+
+${RUN_STORY_PLAYBOOK_SHARED}
+
+## Reliable form filling (important)
+- Click into fields and type values normally via Computer Use. Clear existing text when needed before typing.
+- Prefer labels, visible text, and obvious UI affordances over pixel-perfect guessing.
+- After filling a form group, verify the values are visible in the fields before submit.`;
+
+const RUN_STORY_PLAYBOOK_COMPUTER_USE_BULK = `You are running a saved web UI "story" — an intent-level browser test as part of a bulk run. Follow these rules exactly.
+
+## Execution tool — Codex Computer Use (visible Chrome)
+- Use Codex Computer Use to operate a real desktop Chrome window. See, click, type, and scroll like a human.
+- Do NOT use the Playwright MCP server, Playwright CLI, the Codex in-app browser, or any headless/automation browser.
+- Do not use any MCP browser tools.
+
+## Chrome window / tab (required — bulk run)
+- Use the dedicated Story Studio Chrome window for this bulk run.
+- If that window does not exist yet, open a **new regular Google Chrome window** first (not a Playwright/automation profile, not a private/incognito window unless the story requires it).
+- For this story, open a **new tab in that same Chrome window** and run the story there. Do not open a separate Chrome window per story when the bulk window already exists.
+- Navigate by typing/pasting the story URL into that tab's address bar.
+
+${RUN_STORY_PLAYBOOK_SHARED}
+
+## Reliable form filling (important)
+- Click into fields and type values normally via Computer Use. Clear existing text when needed before typing.
+- Prefer labels, visible text, and obvious UI affordances over pixel-perfect guessing.
+- After filling a form group, verify the values are visible in the fields before submit.`;
+
+export interface RunPlaybookOptions {
+  /** Use Codex Computer Use instead of Playwright MCP. */
+  computerUse?: boolean;
+  /** Bulk run: open a new tab in the shared Chrome window. */
+  bulk?: boolean;
+}
+
+/** Resolve the run playbook for Playwright MCP vs Codex Computer Use. */
+export function getRunStoryPlaybook(options?: RunPlaybookOptions): string {
+  if (!options?.computerUse) return RUN_STORY_PLAYBOOK;
+  return options.bulk
+    ? RUN_STORY_PLAYBOOK_COMPUTER_USE_BULK
+    : RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE;
+}
 
 export interface RunPromptPaths {
   runOutputDir: string;

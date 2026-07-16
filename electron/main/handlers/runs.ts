@@ -72,6 +72,10 @@ export function registerRunsHandlers(): void {
     const runId = randomUUID();
 
     const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
+    const runOptions = {
+      computerUse:
+        settings.agentProvider === "codex" && settings.codexComputerUse,
+    };
 
     // Fire and forget — results come via broadcast; caller gets runId immediately.
     startAgentRun(
@@ -83,6 +87,7 @@ export function registerRunsHandlers(): void {
       agentBinary,
       settings.runHook,
       agentConfig,
+      runOptions,
     ).catch((err) => {
       console.error("[agent:run] unhandled run error", { runId, err: String(err) });
     });
@@ -152,6 +157,11 @@ export function registerRunsHandlers(): void {
     }
 
     const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
+    const runOptions = {
+      computerUse:
+        settings.agentProvider === "codex" && settings.codexComputerUse,
+      bulk: true as const,
+    };
 
     startBulkRun(
       bulkId,
@@ -161,6 +171,7 @@ export function registerRunsHandlers(): void {
       settings.runHook,
       options,
       agentConfig,
+      runOptions,
     ).catch((err) => {
       console.error("[bulk] unhandled bulk run error", { bulkId, err: String(err) });
     });
@@ -220,6 +231,11 @@ export function registerRunsHandlers(): void {
     const runs = await listRuns();
     const lastRunMap = buildLastRunMap(runs);
     const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
+    const runOptions = {
+      computerUse:
+        settings.agentProvider === "codex" && settings.codexComputerUse,
+      bulk: true as const,
+    };
 
     const items: { storyName: string; storyTitle: string; runId: string }[] = [];
     const bulkStories: {
@@ -249,6 +265,7 @@ export function registerRunsHandlers(): void {
       settings.runHook,
       options,
       agentConfig,
+      runOptions,
     ).catch((err) => {
       console.error("[bulk] unhandled bulk resume error", { bulkId, err: String(err) });
     });

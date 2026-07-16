@@ -278,6 +278,8 @@ async function fireSchedule(schedule: ScheduledRun): Promise<void> {
     settings.claudeBinaryPath,
   );
   const agentConfig = getAgentRunConfig(settings.agentProvider, settings);
+  const computerUse =
+    settings.agentProvider === "codex" && settings.codexComputerUse;
   const runs = await listRuns();
   const lastRunMap = buildLastRunMap(runs);
 
@@ -323,6 +325,7 @@ async function fireSchedule(schedule: ScheduledRun): Promise<void> {
       agentBinary,
       settings.runHook,
       agentConfig,
+      { computerUse },
     ).catch((err) => {
       console.error("[schedule] unhandled run error", { scheduleId: schedule.id, err: String(err) });
     });
@@ -347,6 +350,7 @@ async function fireSchedule(schedule: ScheduledRun): Promise<void> {
       settings.runHook,
       undefined,
       agentConfig,
+      { computerUse, bulk: true },
     ).catch((err) => {
       console.error("[schedule] unhandled bulk run error", { scheduleId: schedule.id, err: String(err) });
     });

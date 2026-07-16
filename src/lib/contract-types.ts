@@ -181,6 +181,8 @@ export interface AppSettings {
   colorThemeContrastLight: number;
   colorThemeContrastDark: number;
   usePointerCursors: boolean;
+  /** When true and provider is Codex, runs use Computer Use instead of Playwright MCP. */
+  codexComputerUse: boolean;
   startingUrl: string;
   runHook: string;
 }

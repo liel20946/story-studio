@@ -106,6 +106,10 @@ function toAppSettings(
       typeof parsed.usePointerCursors === "boolean"
         ? parsed.usePointerCursors
         : defaults.usePointerCursors,
+    codexComputerUse:
+      typeof parsed.codexComputerUse === "boolean"
+        ? parsed.codexComputerUse
+        : defaults.codexComputerUse,
     startingUrl: parsed.startingUrl ?? defaults.startingUrl,
     runHook: parsed.runHook ?? defaults.runHook,
   };
@@ -133,6 +137,7 @@ async function loadSettings(): Promise<AppSettings> {
     colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
     colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
     usePointerCursors: false,
+    codexComputerUse: false,
     startingUrl: DEFAULT_STARTING_URL,
     runHook: "",
   };
@@ -193,6 +198,7 @@ export function getSettingsValue(): AppSettings {
       colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
       colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
       usePointerCursors: false,
+      codexComputerUse: false,
       startingUrl: DEFAULT_STARTING_URL,
       runHook: "",
     };
@@ -364,6 +370,14 @@ export function registerSettingsHandlers(): void {
         throw new Error("settings:set usePointerCursors must be boolean");
       }
       current.usePointerCursors = val;
+    }
+
+    if ("codexComputerUse" in p) {
+      const val = p["codexComputerUse"];
+      if (typeof val !== "boolean") {
+        throw new Error("settings:set codexComputerUse must be boolean");
+      }
+      current.codexComputerUse = val;
     }
 
     _settings = current;
