@@ -11,7 +11,7 @@ export function resolveEffectiveBrowserTool(options: {
   return options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
 }
 
-/** True when the selected run backend needs Google Chrome installed. */
+/** True when the selected browser backend needs Google Chrome installed. */
 export function needsGoogleChrome(options: {
   browserMcp?: BrowserMcp | null;
   computerUse?: boolean;
@@ -27,23 +27,33 @@ const PLAYWRIGHT_MCP_ARGS = [
   "--viewport-size=1920x1080",
 ] as const;
 
-const CHROME_DEVTOOLS_MCP_ARGS = [
-  "-y",
-  "chrome-devtools-mcp@latest",
-  "--headless",
-  "--isolated",
-] as const;
+export function chromeDevToolsMcpArgs(options?: {
+  /** Attach to an existing Chrome debugging endpoint (headed recording). */
+  browserUrl?: string;
+}): string[] {
+  const args = ["-y", "chrome-devtools-mcp@latest"];
+  if (options?.browserUrl) {
+    args.push(`--browser-url=${options.browserUrl}`);
+  } else {
+    args.push("--headless", "--isolated");
+  }
+  return args;
+}
 
-/** Codex `-c` overrides for the selected headless browser MCP. */
-export function buildCodexMcpConfigArgs(browserMcp: BrowserMcp = "playwright"): string[] {
+/** Codex `-c` overrides for the selected browser MCP. */
+export function buildCodexMcpConfigArgs(
+  browserMcp: BrowserMcp = "playwright",
+  options?: { browserUrl?: string },
+): string[] {
   if (browserMcp === "chrome-devtools") {
+    const mcpArgs = chromeDevToolsMcpArgs({ browserUrl: options?.browserUrl });
     return [
       "-c",
       "mcp_servers.chrome-devtools.enabled=true",
       "-c",
       'mcp_servers.chrome-devtools.command="npx"',
       "-c",
-      `mcp_servers.chrome-devtools.args=${JSON.stringify([...CHROME_DEVTOOLS_MCP_ARGS])}`,
+      `mcp_servers.chrome-devtools.args=${JSON.stringify(mcpArgs)}`,
       "-c",
       "mcp_servers.chrome-devtools.startup_timeout_sec=60",
       "-c",
@@ -70,13 +80,16 @@ export function buildCodexComputerUseConfigArgs(): string[] {
 }
 
 /** Claude `--mcp-config` JSON for the selected browser MCP. */
-export function buildClaudeMcpConfigJson(browserMcp: BrowserMcp = "playwright"): string {
+export function buildClaudeMcpConfigJson(
+  browserMcp: BrowserMcp = "playwright",
+  options?: { browserUrl?: string },
+): string {
   if (browserMcp === "chrome-devtools") {
     return JSON.stringify({
       mcpServers: {
         "chrome-devtools": {
           command: "npx",
-          args: [...CHROME_DEVTOOLS_MCP_ARGS],
+          args: chromeDevToolsMcpArgs({ browserUrl: options?.browserUrl }),
         },
       },
     });
@@ -91,11 +104,14 @@ export function buildClaudeMcpConfigJson(browserMcp: BrowserMcp = "playwright"):
   });
 }
 
-export function projectCodexConfigToml(browserMcp: BrowserMcp = "playwright"): string {
+export function projectCodexConfigToml(
+  browserMcp: BrowserMcp = "playwright",
+  options?: { browserUrl?: string },
+): string {
   if (browserMcp === "chrome-devtools") {
     return `[mcp_servers.chrome-devtools]
 command = "npx"
-args = ${JSON.stringify([...CHROME_DEVTOOLS_MCP_ARGS])}
+args = ${JSON.stringify(chromeDevToolsMcpArgs({ browserUrl: options?.browserUrl }))}
 enabled = true
 startup_timeout_sec = 60
 

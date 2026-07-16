@@ -148,13 +148,13 @@ export function RecordView() {
           setPrepPhase("error");
           setPrepMessage(message);
           reportAppError("Can't record", message);
-        } else if (!avail.playwrightAvailable) {
+        } else if (avail.requiresPlaywright && !avail.playwrightAvailable) {
           const message =
             "Playwright is not available, so recording can't start. Reinstall the app or check your setup.";
           setPrepPhase("error");
           setPrepMessage(message);
           reportAppError("Can't record", message);
-        } else if (!avail.browserInstalled) {
+        } else if (avail.requiresPlaywright && !avail.browserInstalled) {
           setPrepPhase("install-browser");
           setPrepMessage(
             "Playwright browser not found. Install Chromium below, or install Google Chrome.",
@@ -315,7 +315,8 @@ export function RecordView() {
         <DialogTitle>Record Story</DialogTitle>
         <DialogDescription>
           Open a browser, perform your actions, navigate to the screen you want as
-          the final screenshot, then click Save Recording.
+          the final screenshot, then click Save Recording. Browser backend follows
+          Agent settings (Playwright, Chrome DevTools, or Computer Use).
         </DialogDescription>
       </DialogHeader>
       <DialogBody>

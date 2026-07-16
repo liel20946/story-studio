@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { spawn, type ChildProcess } from "child_process";
 import { execFile } from "child_process";
+import { createServer } from "net";
 import { promisify } from "util";
 import { app } from "../electron-api.js";
 import { broadcast as ipcBroadcast } from "../broadcast.js";
@@ -15,9 +16,16 @@ import type {
 } from "./contract-types.js";
 import { resolveAgentBinary } from "./agent-provider.js";
 import { getAgentRunConfig } from "./agent-config.js";
-import { needsGoogleChrome } from "./browser-mcp-config.js";
+import {
+  needsGoogleChrome,
+  resolveEffectiveBrowserTool,
+  type EffectiveBrowserTool,
+} from "./browser-mcp-config.js";
 import { createDraftDir, discardDraftDir, saveDraftToLibrary, listStories } from "./stories-service.js";
-import { convertRecordingWithAgent } from "./recording-convert-service.js";
+import {
+  convertObservedRecordingWithAgent,
+  convertRecordingWithAgent,
+} from "./recording-convert-service.js";
 import { formatRecordingFailure } from "./recording-errors.js";
 import { siteSlugFromUrl, parseCompositeName } from "./bowser-stories-service.js";
 import { getRunsDir } from "./paths.js";
@@ -27,6 +35,8 @@ const execFileAsync = promisify(execFile);
 
 let _recordingProcess: ChildProcess | null = null;
 let _recordingAborted = false;
+/** Resolves when the user clicks Save / Abort during a headed Chrome recording. */
+let _manualRecordingResolve: ((outcome: "saved" | "aborted") => void) | null = null;
 
 const CHROMIUM_EXECUTABLE_SUFFIX: Record<string, string[]> = {
   darwin: ["chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"],
@@ -216,6 +226,14 @@ function chromeRequirementMessage(settings: RecordingAgentSettings): string {
   return "Google Chrome is required for Chrome DevTools MCP. Install Google Chrome from https://www.google.com/chrome/, then try again.";
 }
 
+function resolveRecordingTool(settings: RecordingAgentSettings): EffectiveBrowserTool {
+  return resolveEffectiveBrowserTool({
+    browserMcp: settings.browserMcp,
+    computerUse:
+      settings.agentProvider === "codex" && Boolean(settings.codexComputerUse),
+  });
+}
+
 export async function checkRecordingAvailability(
   settings: RecordingAgentSettings,
 ): Promise<RecordingAvailability> {
@@ -223,6 +241,8 @@ export async function checkRecordingAvailability(
   let playwrightAvailable = false;
   let browserInstalled = false;
   const chromeInstalled = Boolean(await getGoogleChromePath());
+  const tool = resolveRecordingTool(settings);
+  const requiresPlaywright = tool === "playwright";
   const needsChrome = needsGoogleChrome({
     browserMcp: settings.browserMcp,
     computerUse:
@@ -240,27 +260,29 @@ export async function checkRecordingAvailability(
     // not available
   }
 
-  try {
-    // Generous timeout: the first `npx playwright` after launch can be slow to
-    // resolve (cold cache), which previously produced a false negative and made
-    // the record dialog wrongly claim Chromium was missing.
-    const playwright = resolvePlaywrightInvocation();
-    const { stdout } = await execFileAsync(
-      playwright.command,
-      [...playwright.prefixArgs, "--version"],
-      {
-        env: buildEnv({ electronAsNode: playwright.useElectronAsNode }),
-        timeout: 45_000,
-        maxBuffer: 1024 * 64,
-      },
-    );
-    playwrightAvailable = /\bVersion\b/i.test(stdout) || /\d+\.\d+\.\d+/.test(stdout);
-  } catch {
-    // not available
-  }
+  if (requiresPlaywright) {
+    try {
+      // Generous timeout: the first `npx playwright` after launch can be slow to
+      // resolve (cold cache), which previously produced a false negative and made
+      // the record dialog wrongly claim Chromium was missing.
+      const playwright = resolvePlaywrightInvocation();
+      const { stdout } = await execFileAsync(
+        playwright.command,
+        [...playwright.prefixArgs, "--version"],
+        {
+          env: buildEnv({ electronAsNode: playwright.useElectronAsNode }),
+          timeout: 45_000,
+          maxBuffer: 1024 * 64,
+        },
+      );
+      playwrightAvailable = /\bVersion\b/i.test(stdout) || /\d+\.\d+\.\d+/.test(stdout);
+    } catch {
+      // not available
+    }
 
-  if (playwrightAvailable) {
-    browserInstalled = (await resolveRecordingBrowser()).ready;
+    if (playwrightAvailable) {
+      browserInstalled = (await resolveRecordingBrowser()).ready;
+    }
   }
 
   console.log("[recording] availability check", {
@@ -270,6 +292,8 @@ export async function checkRecordingAvailability(
     browserInstalled,
     chromeInstalled,
     needsChrome,
+    requiresPlaywright,
+    tool,
     browserMcp: settings.browserMcp,
     codexComputerUse: settings.codexComputerUse,
   });
@@ -279,6 +303,7 @@ export async function checkRecordingAvailability(
     browserInstalled,
     chromeInstalled,
     needsChrome,
+    requiresPlaywright,
   };
 }
 
@@ -315,34 +340,36 @@ export async function autoFixRecordingPrerequisites(
     return { ok: false, message: msg, error: msg };
   }
 
-  try {
-    const playwright = resolvePlaywrightInvocation();
-    await execFileAsync(playwright.command, [...playwright.prefixArgs, "--version"], {
-      env: buildEnv({ electronAsNode: playwright.useElectronAsNode }),
-      timeout: 60_000,
-      maxBuffer: 1024 * 64,
-    });
-  } catch (err) {
-    const msg = `Playwright CLI is unavailable: ${err instanceof Error ? err.message : String(err)}`;
-    return { ok: false, message: msg, error: msg };
-  }
-
-  const recordingBrowser = await resolveRecordingBrowser();
-  if (!recordingBrowser.ready) {
-    const installRes = await installBrowser();
-    if (!installRes.ok) {
-      const msg = installRes.error ?? "Failed to install Chromium.";
+  const tool = resolveRecordingTool(settings);
+  if (tool === "playwright") {
+    try {
+      const playwright = resolvePlaywrightInvocation();
+      await execFileAsync(playwright.command, [...playwright.prefixArgs, "--version"], {
+        env: buildEnv({ electronAsNode: playwright.useElectronAsNode }),
+        timeout: 60_000,
+        maxBuffer: 1024 * 64,
+      });
+    } catch (err) {
+      const msg = `Playwright CLI is unavailable: ${err instanceof Error ? err.message : String(err)}`;
       return { ok: false, message: msg, error: msg };
     }
-    const browser = await resolveRecordingBrowser();
-    if (!browser.ready) {
-      const msg = "Chromium installation finished, but no runnable browser was found.";
-      return { ok: false, message: msg, error: msg };
+
+    const recordingBrowser = await resolveRecordingBrowser();
+    if (!recordingBrowser.ready) {
+      const installRes = await installBrowser();
+      if (!installRes.ok) {
+        const msg = installRes.error ?? "Failed to install Chromium.";
+        return { ok: false, message: msg, error: msg };
+      }
+      const browser = await resolveRecordingBrowser();
+      if (!browser.ready) {
+        const msg = "Chromium installation finished, but no runnable browser was found.";
+        return { ok: false, message: msg, error: msg };
+      }
     }
   }
 
   const needsChrome = needsGoogleChrome({
-    agentProvider: settings.agentProvider,
     browserMcp: settings.browserMcp,
     computerUse:
       settings.agentProvider === "codex" && Boolean(settings.codexComputerUse),
@@ -359,6 +386,14 @@ export async function autoFixRecordingPrerequisites(
 }
 
 export async function cancelRecording(): Promise<void> {
+  // Headed Chrome / Computer Use: Save ends the capture but keeps Chrome open
+  // so the agent can observe the session during conversion.
+  if (_manualRecordingResolve) {
+    const resolve = _manualRecordingResolve;
+    _manualRecordingResolve = null;
+    resolve("saved");
+    return;
+  }
   if (_recordingProcess) {
     try {
       // SIGINT lets Playwright codegen flush its output file; SIGTERM often does not.
@@ -372,6 +407,11 @@ export async function cancelRecording(): Promise<void> {
 
 export async function abortRecording(): Promise<void> {
   _recordingAborted = true;
+  if (_manualRecordingResolve) {
+    const resolve = _manualRecordingResolve;
+    _manualRecordingResolve = null;
+    resolve("aborted");
+  }
   if (_recordingProcess) {
     try {
       _recordingProcess.kill("SIGTERM");
@@ -379,6 +419,67 @@ export async function abortRecording(): Promise<void> {
       // ignore
     }
     _recordingProcess = null;
+  }
+}
+
+function waitForManualRecordingEnd(): Promise<"saved" | "aborted"> {
+  return new Promise((resolve) => {
+    _manualRecordingResolve = resolve;
+  });
+}
+
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("Failed to allocate a local debugging port."));
+        return;
+      }
+      const { port } = address;
+      server.close((err) => {
+        if (err) reject(err);
+        else resolve(port);
+      });
+    });
+    server.on("error", reject);
+  });
+}
+
+async function waitForChromeDebugger(port: number, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (res.ok) return;
+      lastError = `HTTP ${res.status}`;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`Chrome debugger did not become ready on port ${port}: ${lastError}`);
+}
+
+async function cleanupChromeSession(
+  chromeProc: ChildProcess | null,
+  userDataDir: string | null,
+): Promise<void> {
+  if (chromeProc && !chromeProc.killed) {
+    try {
+      chromeProc.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+  }
+  if (_recordingProcess === chromeProc) {
+    _recordingProcess = null;
+  }
+  if (userDataDir) {
+    await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -416,12 +517,7 @@ function recordingFailureMessage(exitCode: number | null, stderr: string): strin
   );
 }
 
-export async function startRecording(
-  name: string,
-  url: string,
-  agentSettings: RecordingAgentSettings,
-  overwriteStoryKey?: string,
-): Promise<{
+type RecordingStartResult = {
   ok: boolean;
   storyName?: string;
   draftId?: string;
@@ -429,8 +525,50 @@ export async function startRecording(
   errorTitle?: string;
   errorDetail?: string;
   cancelled?: boolean;
-}> {
-  _recordingAborted = false;
+};
+
+async function finishDraftStory(params: {
+  draftDir: string;
+  siteSlug: string;
+  storyId?: string;
+}): Promise<RecordingStartResult> {
+  broadcast({ phase: "converting", message: "Saving story to library…" });
+
+  let storyName: string;
+  try {
+    storyName = await saveDraftToLibrary(params.draftDir, params.siteSlug, params.storyId);
+  } catch (err) {
+    await discardDraftDir(params.draftDir).catch(() => {});
+    const failure = broadcastRecordingError("conversion", err);
+    return {
+      ok: false,
+      error: failure.message,
+      errorTitle: failure.title,
+      errorDetail: failure.detail,
+    };
+  }
+
+  void listRuns()
+    .then((runs) => listStories(buildLastRunMap(runs)))
+    .then((summaries) => ipcBroadcast("stories:changed", summaries))
+    .catch((err) => console.warn("[recording] stories refresh failed", err));
+
+  broadcast({
+    phase: "done",
+    message: "Story saved to library.",
+    storyName,
+  });
+  console.log("[recording] story saved", storyName);
+  return { ok: true, storyName };
+}
+
+async function startPlaywrightCodegenRecording(
+  name: string,
+  url: string,
+  agentSettings: RecordingAgentSettings,
+  agentBinary: string,
+  overwriteStoryKey?: string,
+): Promise<RecordingStartResult> {
   const runsDir = getRunsDir();
   const ts = Date.now();
   const recScriptPath = path.join(runsDir, `.rec-${ts}.spec.ts`);
@@ -453,36 +591,10 @@ export async function startRecording(
     return { ok: false, cancelled: true };
   }
 
-  const agentLabel = agentCliLabel(agentSettings.agentProvider);
-  const agentBinary = await resolveAgentBinary(
-    agentSettings.agentProvider,
-    agentSettings.codexBinaryPath,
-    agentSettings.claudeBinaryPath,
-  ).catch(() => null);
-  if (!agentBinary) {
-    const msg = `${agentLabel} CLI not found. Install ${agentLabel} CLI (or set its path in Settings) to convert recordings.`;
-    broadcast({
-      phase: "error",
-      message: msg,
-      errorTitle: `${agentLabel} CLI required`,
-    });
-    return { ok: false, error: msg, errorTitle: `${agentLabel} CLI required` };
-  }
-
   const agentConfig = getAgentRunConfig(agentSettings.agentProvider, agentSettings);
-
-  // Step 1: spawn headed playwright codegen
   const playwright = resolvePlaywrightInvocation();
 
-  return new Promise<{
-    ok: boolean;
-    storyName?: string;
-    draftId?: string;
-    error?: string;
-    errorTitle?: string;
-    errorDetail?: string;
-    cancelled?: boolean;
-  }>((resolve) => {
+  return new Promise<RecordingStartResult>((resolve) => {
     const codegenArgs = [...playwright.prefixArgs, "codegen", url, "-o", recScriptPath];
     if (recordingBrowser.channel) {
       codegenArgs.push("--channel", recordingBrowser.channel);
@@ -541,7 +653,6 @@ export async function startRecording(
           return resolve({ ok: false, cancelled: true });
         }
 
-        // Step 2: read recorded script
         let script = "";
         try {
           script = await fs.readFile(recScriptPath, "utf-8");
@@ -574,7 +685,6 @@ export async function startRecording(
         const storyId = overwrite?.storyId;
         const siteSlug = overwrite?.siteSlug ?? siteSlugFromUrl(url);
 
-        // Step 3: convert Playwright recording → Bowser YAML via the configured agent
         broadcast({
           phase: "converting",
           message: "Converting with AI…",
@@ -610,35 +720,7 @@ export async function startRecording(
           });
         }
 
-        // Step 4: save directly to the story library (no manual review step).
-        broadcast({ phase: "converting", message: "Saving story to library…" });
-
-        let storyName: string;
-        try {
-          storyName = await saveDraftToLibrary(draftDir, siteSlug, storyId);
-        } catch (err) {
-          await discardDraftDir(draftDir).catch(() => {});
-          const failure = broadcastRecordingError("conversion", err);
-          return resolve({
-            ok: false,
-            error: failure.message,
-            errorTitle: failure.title,
-            errorDetail: failure.detail,
-          });
-        }
-
-        void listRuns()
-          .then((runs) => listStories(buildLastRunMap(runs)))
-          .then((summaries) => ipcBroadcast("stories:changed", summaries))
-          .catch((err) => console.warn("[recording] stories refresh failed", err));
-
-        broadcast({
-          phase: "done",
-          message: "Story saved to library.",
-          storyName,
-        });
-        console.log("[recording] story saved", storyName);
-        resolve({ ok: true, storyName });
+        resolve(await finishDraftStory({ draftDir, siteSlug, storyId }));
       } catch (err) {
         console.error("[recording] unexpected post-recording error", err);
         const failure = broadcastRecordingError("conversion", err);
@@ -651,4 +733,200 @@ export async function startRecording(
       }
     });
   });
+}
+
+async function startObservedChromeRecording(
+  name: string,
+  url: string,
+  agentSettings: RecordingAgentSettings,
+  agentBinary: string,
+  tool: "chrome-devtools" | "computer-use",
+  overwriteStoryKey?: string,
+): Promise<RecordingStartResult> {
+  const chromePath = await getGoogleChromePath();
+  if (!chromePath) {
+    const msg = chromeRequirementMessage(agentSettings);
+    broadcast({
+      phase: "error",
+      message: msg,
+      errorTitle: "Google Chrome required",
+    });
+    return { ok: false, error: msg, errorTitle: "Google Chrome required" };
+  }
+
+  const startingMessage =
+    tool === "computer-use"
+      ? "Opening Google Chrome for Computer Use recording…"
+      : "Opening Google Chrome for DevTools recording…";
+  broadcast({ phase: "starting", message: startingMessage });
+
+  if (_recordingAborted) {
+    return { ok: false, cancelled: true };
+  }
+
+  const agentConfig = getAgentRunConfig(agentSettings.agentProvider, agentSettings);
+  let chromeProc: ChildProcess | null = null;
+  let userDataDir: string | null = null;
+  let browserUrl: string | undefined;
+
+  try {
+    userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "story-studio-rec-"));
+    const chromeArgs = [
+      `--user-data-dir=${userDataDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-sync",
+      "--new-window",
+    ];
+
+    if (tool === "chrome-devtools") {
+      const port = await getFreePort();
+      chromeArgs.unshift(`--remote-debugging-port=${port}`);
+      browserUrl = `http://127.0.0.1:${port}`;
+      console.log("[recording] spawning Chrome with DevTools", { chromePath, port, url });
+      chromeProc = spawn(chromePath, [...chromeArgs, url], {
+        env: buildEnv(),
+        stdio: "ignore",
+      });
+      _recordingProcess = chromeProc;
+      await waitForChromeDebugger(port);
+    } else {
+      console.log("[recording] spawning Chrome for Computer Use", { chromePath, url });
+      chromeProc = spawn(chromePath, [...chromeArgs, url], {
+        env: buildEnv(),
+        stdio: "ignore",
+      });
+      _recordingProcess = chromeProc;
+    }
+
+    chromeProc.on("error", (err) => {
+      console.error("[recording] Chrome spawn error", err.message);
+    });
+
+    chromeProc.on("close", () => {
+      if (_recordingProcess === chromeProc) {
+        _recordingProcess = null;
+      }
+      // Closing the Chrome window ends capture the same way Save does.
+      if (_manualRecordingResolve) {
+        const resolve = _manualRecordingResolve;
+        _manualRecordingResolve = null;
+        resolve(_recordingAborted ? "aborted" : "saved");
+      }
+    });
+
+    broadcast({
+      phase: "recording",
+      message:
+        tool === "computer-use"
+          ? "Recording in Chrome. Perform your actions, end on the final screenshot page, then click Save Recording."
+          : "Recording in Chrome (DevTools). Perform your actions, end on the final screenshot page, then click Save Recording.",
+    });
+
+    const outcome = await waitForManualRecordingEnd();
+    if (outcome === "aborted" || _recordingAborted) {
+      await cleanupChromeSession(chromeProc, userDataDir);
+      return { ok: false, cancelled: true };
+    }
+
+    // Keep Chrome alive while the agent observes the session.
+    const overwrite = overwriteStoryKey ? parseCompositeName(overwriteStoryKey) : null;
+    const storyId = overwrite?.storyId;
+    const siteSlug = overwrite?.siteSlug ?? siteSlugFromUrl(url);
+
+    broadcast({
+      phase: "converting",
+      message: "Converting with AI…",
+    });
+
+    const draftDir = await createDraftDir(siteSlug);
+    try {
+      await convertObservedRecordingWithAgent(
+        draftDir,
+        {
+          url,
+          name,
+          storyId,
+          siteSlug,
+          provider: agentSettings.agentProvider,
+          agentBinary,
+          agentConfig,
+          tool,
+          chromeBrowserUrl: browserUrl,
+        },
+        (message) => broadcast({ phase: "converting", message }),
+      );
+    } catch (err) {
+      await discardDraftDir(draftDir).catch(() => {});
+      await cleanupChromeSession(chromeProc, userDataDir);
+      const failure = broadcastRecordingError("conversion", err);
+      return {
+        ok: false,
+        error: failure.message,
+        errorTitle: failure.title,
+        errorDetail: failure.detail,
+      };
+    }
+
+    const result = await finishDraftStory({ draftDir, siteSlug, storyId });
+    await cleanupChromeSession(chromeProc, userDataDir);
+    return result;
+  } catch (err) {
+    await cleanupChromeSession(chromeProc, userDataDir);
+    const failure = broadcastRecordingError("start", err);
+    return {
+      ok: false,
+      error: failure.message,
+      errorTitle: failure.title,
+      errorDetail: failure.detail,
+    };
+  }
+}
+
+export async function startRecording(
+  name: string,
+  url: string,
+  agentSettings: RecordingAgentSettings,
+  overwriteStoryKey?: string,
+): Promise<RecordingStartResult> {
+  _recordingAborted = false;
+  _manualRecordingResolve = null;
+
+  const agentLabel = agentCliLabel(agentSettings.agentProvider);
+  const agentBinary = await resolveAgentBinary(
+    agentSettings.agentProvider,
+    agentSettings.codexBinaryPath,
+    agentSettings.claudeBinaryPath,
+  ).catch(() => null);
+  if (!agentBinary) {
+    const msg = `${agentLabel} CLI not found. Install ${agentLabel} CLI (or set its path in Settings) to convert recordings.`;
+    broadcast({
+      phase: "error",
+      message: msg,
+      errorTitle: `${agentLabel} CLI required`,
+    });
+    return { ok: false, error: msg, errorTitle: `${agentLabel} CLI required` };
+  }
+
+  const tool = resolveRecordingTool(agentSettings);
+  console.log("[recording] start", { tool, url, name });
+
+  if (tool === "playwright") {
+    return startPlaywrightCodegenRecording(
+      name,
+      url,
+      agentSettings,
+      agentBinary,
+      overwriteStoryKey,
+    );
+  }
+
+  return startObservedChromeRecording(
+    name,
+    url,
+    agentSettings,
+    agentBinary,
+    tool,
+    overwriteStoryKey,
+  );
 }

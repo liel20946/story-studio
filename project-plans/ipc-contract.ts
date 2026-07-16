@@ -101,6 +101,7 @@ export interface RecordingAvailability {
   browserInstalled: boolean; // chromium or system Chrome for recording
   chromeInstalled: boolean; // Google Chrome for DevTools MCP / Computer Use
   needsChrome: boolean;
+  requiresPlaywright: boolean; // false when DevTools / Computer Use records in Chrome
 }
 
 // ---------- Settings ----------

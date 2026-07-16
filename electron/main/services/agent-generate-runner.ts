@@ -53,12 +53,16 @@ function buildCodexModelConfigArgs(agentConfig: AgentRunConfig): string[] {
   ];
 }
 
-function buildCodexSharedFlags(agentConfig: AgentRunConfig): string[] {
+function buildCodexSharedFlags(
+  agentConfig: AgentRunConfig,
+  options?: { ignoreUserConfig?: boolean },
+): string[] {
+  const ignoreUserConfig = options?.ignoreUserConfig !== false;
   return [
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
     "--json",
-    "--ignore-user-config",
+    ...(ignoreUserConfig ? ["--ignore-user-config"] : []),
     ...buildCodexModelConfigArgs(agentConfig),
   ];
 }
@@ -217,6 +221,8 @@ export interface GenerateInvokeOptions {
   browserMcp?: BrowserMcp;
   /** Codex only — overrides browserMcp and skips Playwright/Chrome DevTools MCP. */
   computerUse?: boolean;
+  /** Attach Chrome DevTools MCP to an existing headed Chrome debugging URL. */
+  chromeBrowserUrl?: string;
   onProgress?: (message: string) => void;
 }
 
@@ -274,11 +280,16 @@ async function invokeCodex(
     return parseAgentMessageFromCodexStdout(stdout);
   };
 
+  const computerUse = Boolean(options.computerUse);
+  const sharedFlags = buildCodexSharedFlags(agentConfig, {
+    ignoreUserConfig: !computerUse,
+  });
+
   if (resumeSession && sessionId) {
     const args = [
       "exec",
       "resume",
-      ...buildCodexSharedFlags(agentConfig),
+      ...sharedFlags,
       "-o",
       lastMessagePath,
       sessionId,
@@ -300,16 +311,17 @@ async function invokeCodex(
 
   const browserMcp =
     options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
-  const computerUse = Boolean(options.computerUse);
   const mcpArgs = exploring
     ? computerUse
       ? buildCodexComputerUseConfigArgs()
-      : buildCodexMcpConfigArgs(browserMcp)
+      : buildCodexMcpConfigArgs(browserMcp, {
+          browserUrl: options.chromeBrowserUrl,
+        })
     : [];
 
   const args = [
     "exec",
-    ...buildCodexSharedFlags(agentConfig),
+    ...sharedFlags,
     "-C",
     outputDir,
     ...mcpArgs,
@@ -381,7 +393,12 @@ async function invokeClaude(
   if (exploring && !resumeSession && !options.computerUse) {
     const browserMcp =
       options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
-    args.push("--mcp-config", buildClaudeMcpConfigJson(browserMcp));
+    args.push(
+      "--mcp-config",
+      buildClaudeMcpConfigJson(browserMcp, {
+        browserUrl: options.chromeBrowserUrl,
+      }),
+    );
   }
 
   onProgress?.(exploring ? "Planning next moves" : "Reviewing your draft");

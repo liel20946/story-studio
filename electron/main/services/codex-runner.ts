@@ -372,7 +372,7 @@ export async function startRun(
     "--dangerously-bypass-approvals-and-sandbox",
     "--json",
     "--skip-git-repo-check",
-    "--ignore-user-config",
+    ...(computerUse ? [] : ["--ignore-user-config"]),
     "-C",
     runOutputDir,
     // Pin model + reasoning effort so runs are deterministic regardless of the

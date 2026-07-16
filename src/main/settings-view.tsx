@@ -226,7 +226,7 @@ function AgentPanel({
           description={
             mcpOverridden
               ? "Overridden by Computer Use while that toggle is on."
-              : "Headless browser MCP used when running and generating stories."
+              : "Browser backend for recording, running, and generating stories."
           }
         >
           <select
@@ -244,7 +244,7 @@ function AgentPanel({
         {provider === "codex" ? (
           <SettingsRow
             label="Computer Use"
-            description="Override Browser MCP and drive a real Chrome window with Codex Computer Use."
+            description="Override Browser MCP for recording, running, and generating with Codex Computer Use."
           >
             <Switch
               checked={codexComputerUse}
