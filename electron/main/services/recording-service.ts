@@ -7,9 +7,15 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { app } from "../electron-api.js";
 import { broadcast as ipcBroadcast } from "../broadcast.js";
-import type { RecordingProgress, RecordingAvailability, AgentProvider } from "./contract-types.js";
+import type {
+  RecordingProgress,
+  RecordingAvailability,
+  AgentProvider,
+  BrowserMcp,
+} from "./contract-types.js";
 import { resolveAgentBinary } from "./agent-provider.js";
 import { getAgentRunConfig } from "./agent-config.js";
+import { needsGoogleChrome } from "./browser-mcp-config.js";
 import { createDraftDir, discardDraftDir, saveDraftToLibrary, listStories } from "./stories-service.js";
 import { convertRecordingWithAgent } from "./recording-convert-service.js";
 import { formatRecordingFailure } from "./recording-errors.js";
@@ -48,21 +54,30 @@ function getPlaywrightBrowsersCacheDir(): string {
   return path.join(os.homedir(), ".cache", "ms-playwright");
 }
 
-const SYSTEM_CHROME_PATHS: Record<string, string[]> = {
+/** Google Chrome only — required by Chrome DevTools MCP / Computer Use. */
+const GOOGLE_CHROME_PATHS: Record<string, string[]> = {
   darwin: [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     path.join(os.homedir(), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
   ],
-  linux: [
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-  ],
+  linux: ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable"],
   win32: [
     path.join(process.env.PROGRAMFILES ?? "C:\\Program Files", "Google/Chrome/Application/chrome.exe"),
     path.join(process.env["PROGRAMFILES(X86)"] ?? "C:\\Program Files (x86)", "Google/Chrome/Application/chrome.exe"),
   ],
+};
+
+/** Chromium-family browsers acceptable as a Playwright recording fallback. */
+const SYSTEM_CHROME_PATHS: Record<string, string[]> = {
+  darwin: [
+    ...GOOGLE_CHROME_PATHS.darwin,
+  ],
+  linux: [
+    ...GOOGLE_CHROME_PATHS.linux,
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ],
+  win32: [...GOOGLE_CHROME_PATHS.win32],
 };
 
 interface RecordingBrowser {
@@ -94,8 +109,7 @@ async function isPlaywrightChromiumInstalled(): Promise<boolean> {
   }
 }
 
-async function getSystemChromePath(): Promise<string | null> {
-  const candidates = SYSTEM_CHROME_PATHS[process.platform] ?? [];
+async function findFirstExistingPath(candidates: string[]): Promise<string | null> {
   for (const candidate of candidates) {
     try {
       await fs.access(candidate);
@@ -105,6 +119,14 @@ async function getSystemChromePath(): Promise<string | null> {
     }
   }
   return null;
+}
+
+async function getSystemChromePath(): Promise<string | null> {
+  return findFirstExistingPath(SYSTEM_CHROME_PATHS[process.platform] ?? []);
+}
+
+async function getGoogleChromePath(): Promise<string | null> {
+  return findFirstExistingPath(GOOGLE_CHROME_PATHS[process.platform] ?? []);
 }
 
 async function resolveRecordingBrowser(): Promise<RecordingBrowser> {
@@ -177,10 +199,21 @@ type RecordingAgentSettings = {
   codexEffort: string;
   claudeModel: string;
   claudeEffort: string;
+  browserMcp?: BrowserMcp;
+  codexComputerUse?: boolean;
 };
 
 function agentCliLabel(provider: AgentProvider): string {
   return provider === "claude-code" ? "Claude Code" : "Codex";
+}
+
+function chromeRequirementMessage(settings: RecordingAgentSettings): string {
+  const computerUse =
+    settings.agentProvider === "codex" && Boolean(settings.codexComputerUse);
+  if (computerUse) {
+    return "Google Chrome is required for Codex Computer Use. Install Google Chrome from https://www.google.com/chrome/, then try again.";
+  }
+  return "Google Chrome is required for Chrome DevTools MCP. Install Google Chrome from https://www.google.com/chrome/, then try again.";
 }
 
 export async function checkRecordingAvailability(
@@ -189,6 +222,12 @@ export async function checkRecordingAvailability(
   let agentAvailable = false;
   let playwrightAvailable = false;
   let browserInstalled = false;
+  const chromeInstalled = Boolean(await getGoogleChromePath());
+  const needsChrome = needsGoogleChrome({
+    browserMcp: settings.browserMcp,
+    computerUse:
+      settings.agentProvider === "codex" && Boolean(settings.codexComputerUse),
+  });
 
   try {
     await resolveAgentBinary(
@@ -229,8 +268,18 @@ export async function checkRecordingAvailability(
     agentAvailable,
     playwrightAvailable,
     browserInstalled,
+    chromeInstalled,
+    needsChrome,
+    browserMcp: settings.browserMcp,
+    codexComputerUse: settings.codexComputerUse,
   });
-  return { agentAvailable, playwrightAvailable, browserInstalled };
+  return {
+    agentAvailable,
+    playwrightAvailable,
+    browserInstalled,
+    chromeInstalled,
+    needsChrome,
+  };
 }
 
 export async function installBrowser(): Promise<{ ok: boolean; error?: string }> {
@@ -278,16 +327,32 @@ export async function autoFixRecordingPrerequisites(
     return { ok: false, message: msg, error: msg };
   }
 
-  const installRes = await installBrowser();
-  if (!installRes.ok) {
-    const msg = installRes.error ?? "Failed to install Chromium.";
-    return { ok: false, message: msg, error: msg };
+  const recordingBrowser = await resolveRecordingBrowser();
+  if (!recordingBrowser.ready) {
+    const installRes = await installBrowser();
+    if (!installRes.ok) {
+      const msg = installRes.error ?? "Failed to install Chromium.";
+      return { ok: false, message: msg, error: msg };
+    }
+    const browser = await resolveRecordingBrowser();
+    if (!browser.ready) {
+      const msg = "Chromium installation finished, but no runnable browser was found.";
+      return { ok: false, message: msg, error: msg };
+    }
   }
 
-  const browser = await resolveRecordingBrowser();
-  if (!browser.ready) {
-    const msg = "Chromium installation finished, but no runnable browser was found.";
-    return { ok: false, message: msg, error: msg };
+  const needsChrome = needsGoogleChrome({
+    agentProvider: settings.agentProvider,
+    browserMcp: settings.browserMcp,
+    computerUse:
+      settings.agentProvider === "codex" && Boolean(settings.codexComputerUse),
+  });
+  if (needsChrome) {
+    const chromePath = await getGoogleChromePath();
+    if (!chromePath) {
+      const msg = chromeRequirementMessage(settings);
+      return { ok: false, message: msg, error: msg };
+    }
   }
 
   return { ok: true, message: "Recording prerequisites fixed. Ready to record." };

@@ -1,5 +1,5 @@
 import type { AgentProvider, ActiveRunSnapshot, RunResult } from "./contract-types.js";
-import type { AgentRunConfig } from "./agent-config.js";
+import type { AgentRunConfig, StoryRunOptions } from "./agent-config.js";
 import { startRun, cancelRun, listActiveCodexRuns } from "./codex-runner.js";
 import { startClaudeRun, cancelClaudeRun, listActiveClaudeRuns } from "./claude-runner.js";
 import { cancelRecoveredRun, isRecoveredRun, listRecoveredRuns } from "./run-recovery.js";
@@ -21,6 +21,7 @@ export async function startAgentRun(
   agentBinary: string,
   runHook?: string,
   agentConfig?: AgentRunConfig,
+  runOptions?: StoryRunOptions,
 ): Promise<RunResult> {
   _runProviders.set(runId, provider);
   if (mockRunsEnabled()) {
@@ -41,6 +42,7 @@ export async function startAgentRun(
       agentBinary,
       runHook,
       agentConfig,
+      runOptions,
     );
   }
   return startRun(
@@ -51,6 +53,7 @@ export async function startAgentRun(
     agentBinary,
     runHook,
     agentConfig,
+    runOptions,
   );
 }
 

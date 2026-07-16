@@ -33,7 +33,7 @@ import { getDraftsDir } from "./paths.js";
 import {
   buildGeneratePrompt,
   buildGenerateResumePrompt,
-  GENERATE_STORY_PLAYBOOK,
+  getGenerateStoryPlaybook,
 } from "./story-skill.js";
 import {
   cancelGenerateInvocation,
@@ -147,6 +147,8 @@ type GenerateSettings = {
   codexEffort: string;
   claudeModel: string;
   claudeEffort: string;
+  browserMcp?: "playwright" | "chrome-devtools";
+  codexComputerUse?: boolean;
 };
 
 export interface AgentModelOverride {
@@ -312,6 +314,11 @@ export async function sendGenerateMessage(
   const exploring = !currentDraftYaml?.trim();
   const resumeSession = canResumeAgentSession(refreshed, agentSettings.agentProvider);
   const enteringRevision = resumeSession && !exploring;
+  const computerUse =
+    agentSettings.agentProvider === "codex" && Boolean(agentSettings.codexComputerUse);
+  const browserMcp =
+    agentSettings.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
+  const generatePlaybook = getGenerateStoryPlaybook({ computerUse, browserMcp });
 
   await setConversationGenerating(conversationId, true);
   broadcast("generate:progress", {
@@ -333,6 +340,8 @@ export async function sendGenerateMessage(
         currentDraftYaml,
         isFirstTurn,
         exploring,
+        computerUse,
+        browserMcp,
       });
 
   const agentBinary = await resolveAgentBinary(
@@ -360,7 +369,7 @@ export async function sendGenerateMessage(
   let agentMessage = "";
   _activeGenerations.set(conversationId, { playwrightHeld: false });
   try {
-    if (exploring) {
+    if (exploring && !computerUse) {
       await acquirePlaywrightSlot();
       playwrightHeld = true;
       _activeGenerations.set(conversationId, { playwrightHeld: true });
@@ -376,7 +385,9 @@ export async function sendGenerateMessage(
       exploring,
       sessionId,
       resumeSession,
-      systemPrompt: resumeSession ? undefined : GENERATE_STORY_PLAYBOOK,
+      systemPrompt: resumeSession ? undefined : generatePlaybook,
+      browserMcp,
+      computerUse,
       onProgress: (message) => {
         broadcast("generate:progress", { conversationId, message });
       },

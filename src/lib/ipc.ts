@@ -242,6 +242,8 @@ export const settingsSet = (
       | "colorThemeContrastLight"
       | "colorThemeContrastDark"
       | "usePointerCursors"
+      | "browserMcp"
+      | "codexComputerUse"
       | "startingUrl"
       | "runHook"
     >

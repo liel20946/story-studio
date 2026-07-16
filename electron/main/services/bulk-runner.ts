@@ -12,7 +12,7 @@ import type {
   BulkStopCause,
   RunResult,
 } from "./contract-types.js";
-import type { AgentRunConfig } from "./agent-config.js";
+import type { AgentRunConfig, StoryRunOptions } from "./agent-config.js";
 
 export interface BulkStoryInput {
   runId: string;
@@ -40,6 +40,7 @@ interface BulkSession {
   agentBinary: string;
   runHook?: string;
   agentConfig?: AgentRunConfig;
+  runOptions?: StoryRunOptions;
   /** Resolvers waiting for stop/cancel to finish cancelling in-flight work. */
   abort: boolean;
 }
@@ -119,6 +120,7 @@ export async function startBulkRun(
   runHook?: string,
   options?: BulkRunOptions,
   agentConfig?: AgentRunConfig,
+  runOptions?: StoryRunOptions,
 ): Promise<void> {
   const session: BulkSession = {
     bulkId,
@@ -130,6 +132,7 @@ export async function startBulkRun(
     agentBinary,
     runHook,
     agentConfig,
+    runOptions: { ...runOptions, bulk: true },
     abort: false,
   };
   _sessions.set(bulkId, session);
@@ -183,6 +186,7 @@ export async function resumeBulkRun(
   runHook?: string,
   options?: BulkRunOptions,
   agentConfig?: AgentRunConfig,
+  runOptions?: StoryRunOptions,
 ): Promise<void> {
   // Prefer extending the existing session when present; otherwise start fresh
   // with the same bulkId so the UI can keep tracking it.
@@ -205,6 +209,7 @@ export async function resumeBulkRun(
     agentBinary,
     runHook,
     agentConfig,
+    runOptions: { ...runOptions, bulk: true },
     abort: false,
   };
   // Clear previous skipped items that are being retried.
@@ -251,6 +256,7 @@ async function runBulkWorkers(session: BulkSession): Promise<void> {
           session.agentBinary,
           session.runHook,
           session.agentConfig,
+          session.runOptions,
         );
         item.result = result;
         // Don't overwrite skipped — stop/cancel may have already reserved this

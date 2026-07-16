@@ -17,7 +17,7 @@ import type {
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
 import { writeRunMeta, deleteRunMeta } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
-import { RUN_STORY_PLAYBOOK, buildRunPromptSuffix } from "./story-skill.js";
+import { getRunStoryPlaybook, buildRunPromptSuffix } from "./story-skill.js";
 import {
   ensureRunOutputDir,
   getHeroScreenshotPath,
@@ -37,11 +37,16 @@ import {
   releasePlaywrightSlot,
   MAX_CONCURRENT_PLAYWRIGHT,
 } from "./playwright-slots.js";
-import { buildCodexMcpConfigArgs, ensureCodexProjectConfig } from "./codex-mcp-config.js";
+import {
+  buildCodexComputerUseConfigArgs,
+  buildCodexMcpConfigArgs,
+  ensureCodexProjectConfig,
+} from "./codex-mcp-config.js";
 import {
   DEFAULT_CODEX_EFFORT,
   DEFAULT_CODEX_MODEL,
   type AgentRunConfig,
+  type StoryRunOptions,
 } from "./agent-config.js";
 import {
   markRunCancelled,
@@ -298,8 +303,13 @@ export async function startRun(
   codexBinary: string,
   runHook?: string,
   agentConfig?: AgentRunConfig,
+  runOptions?: StoryRunOptions,
 ): Promise<RunResult> {
   const startedAt = Date.now();
+  const computerUse = Boolean(runOptions?.computerUse);
+  const browserMcp = runOptions?.browserMcp === "chrome-devtools"
+    ? "chrome-devtools"
+    : "playwright";
   const model = agentConfig?.model ?? DEFAULT_CODEX_MODEL;
   const state: RunState = {
     runId,
@@ -334,14 +344,18 @@ export async function startRun(
 
   // codex --output-schema reads this file; it must exist before spawn.
   await fs.writeFile(schemaPath, JSON.stringify(RUN_OUTPUT_SCHEMA), "utf-8");
-  await ensureCodexProjectConfig(runOutputDir);
+  await ensureCodexProjectConfig(runOutputDir, { computerUse, browserMcp });
 
   const storyContents = storyFilePath.includes("\n")
     ? storyFilePath
     : await fs.readFile(storyFilePath, "utf-8").catch(() => "");
 
   const prompt =
-    RUN_STORY_PLAYBOOK +
+    getRunStoryPlaybook({
+      computerUse,
+      browserMcp,
+      bulk: runOptions?.bulk,
+    }) +
     buildRunPromptSuffix({
       runOutputDir,
       screenshotsDir,
@@ -367,7 +381,9 @@ export async function startRun(
     `model="${state.agentModel}"`,
     "-c",
     `model_reasoning_effort="${effort}"`,
-    ...buildCodexMcpConfigArgs(),
+    ...(computerUse
+      ? buildCodexComputerUseConfigArgs()
+      : buildCodexMcpConfigArgs(browserMcp)),
     "--output-schema",
     schemaPath,
     "-o",
@@ -375,7 +391,15 @@ export async function startRun(
     prompt,
   ];
 
-  console.log("[codex:run]", { runId, storyName, codexBinary, args: args.slice(0, 8) });
+  console.log("[codex:run]", {
+    runId,
+    storyName,
+    computerUse,
+    browserMcp,
+    bulk: Boolean(runOptions?.bulk),
+    codexBinary,
+    args: args.slice(0, 8),
+  });
 
   const events = state.events;
 
@@ -386,15 +410,18 @@ export async function startRun(
     ts: Date.now(),
     kind: "status",
     label: "Starting",
-    detail: `Loading codex for story: ${storyTitle}`,
+    detail: computerUse
+      ? `Loading codex (Computer Use) for story: ${storyTitle}`
+      : browserMcp === "chrome-devtools"
+        ? `Loading codex (Chrome DevTools MCP) for story: ${storyTitle}`
+        : `Loading codex for story: ${storyTitle}`,
     status: "running",
   };
   events.push(startEvent);
   broadcast("run:event", startEvent);
   syncRunTimeline(runId, events);
 
-  // Wait for a codex exec slot, then a Playwright MCP slot. Singles use both;
-  // bulk orchestrators only take a codex slot (subagents acquire Playwright later).
+  // Wait for a codex exec slot, then (for Playwright mode) a Playwright MCP slot.
   await acquireRunSlot();
   state.queued = false;
 
@@ -419,28 +446,32 @@ export async function startRun(
     return finalizeRun(cancelledResult, events);
   }
 
-  await acquirePlaywrightSlot();
+  let acquiredPlaywrightSlot = false;
+  if (!computerUse) {
+    await acquirePlaywrightSlot();
+    acquiredPlaywrightSlot = true;
 
-  if (state.cancelled) {
-    _runs.delete(runId);
-    releaseRunSlot();
-    releasePlaywrightSlot();
-    const cancelledResult: RunResult = {
-      runId,
-      storyName,
-      storyTitle,
-      status: "cancelled",
-      summary: "",
-      assertions: [],
-      screenshotPath,
-      screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
-      startedAt,
-      finishedAt: Date.now(),
-      error: "Cancelled by user",
-      agentProvider: state.agentProvider,
-      agentModel: state.agentModel,
-    };
-    return finalizeRun(cancelledResult, events);
+    if (state.cancelled) {
+      _runs.delete(runId);
+      releaseRunSlot();
+      releasePlaywrightSlot();
+      const cancelledResult: RunResult = {
+        runId,
+        storyName,
+        storyTitle,
+        status: "cancelled",
+        summary: "",
+        assertions: [],
+        screenshotPath,
+        screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+        startedAt,
+        finishedAt: Date.now(),
+        error: "Cancelled by user",
+        agentProvider: state.agentProvider,
+        agentModel: state.agentModel,
+      };
+      return finalizeRun(cancelledResult, events);
+    }
   }
 
   const runPromise = new Promise<RunResult>((resolve) => {
@@ -597,7 +628,7 @@ export async function startRun(
   // Release codex + Playwright slots when the run settles.
   void runPromise.finally(() => {
     releaseRunSlot();
-    releasePlaywrightSlot();
+    if (acquiredPlaywrightSlot) releasePlaywrightSlot();
   });
   return runPromise;
 }

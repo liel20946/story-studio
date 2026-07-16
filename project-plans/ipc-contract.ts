@@ -96,9 +96,11 @@ export interface RecordingProgress {
 }
 
 export interface RecordingAvailability {
-  codexAvailable: boolean; // codex binary resolved
+  agentAvailable: boolean;
   playwrightAvailable: boolean; // `npx playwright --version` ok
-  browserInstalled: boolean; // chromium present
+  browserInstalled: boolean; // chromium or system Chrome for recording
+  chromeInstalled: boolean; // Google Chrome for DevTools MCP / Computer Use
+  needsChrome: boolean;
 }
 
 // ---------- Settings ----------

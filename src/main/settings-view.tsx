@@ -22,6 +22,7 @@ import { useStoriesDataTransfer } from "../components/stories-data-transfer";
 import { LabeledSegment } from "../components/labeled-segment";
 import type {
   AgentProvider,
+  BrowserMcp,
   ThemePreference,
   ColorThemeId,
   CodexModel,
@@ -126,6 +127,8 @@ function AgentPanel({
   codexEffort,
   claudeModel,
   claudeEffort,
+  browserMcp,
+  codexComputerUse,
   capabilities,
   capabilitiesError,
   onProviderChange,
@@ -133,12 +136,16 @@ function AgentPanel({
   onCodexEffortChange,
   onClaudeModelChange,
   onClaudeEffortChange,
+  onBrowserMcpChange,
+  onCodexComputerUseChange,
 }: {
   provider: AgentProvider;
   codexModel: CodexModel;
   codexEffort: CodexEffort;
   claudeModel: ClaudeModel;
   claudeEffort: ClaudeEffort;
+  browserMcp: BrowserMcp;
+  codexComputerUse: boolean;
   capabilities: AgentCapabilities | null;
   capabilitiesError?: string;
   onProviderChange: (provider: AgentProvider) => void;
@@ -146,6 +153,8 @@ function AgentPanel({
   onCodexEffortChange: (effort: CodexEffort) => void;
   onClaudeModelChange: (model: ClaudeModel) => void;
   onClaudeEffortChange: (effort: ClaudeEffort) => void;
+  onBrowserMcpChange: (browserMcp: BrowserMcp) => void;
+  onCodexComputerUseChange: (enabled: boolean) => void;
 }) {
   const model =
     provider === "claude-code" ? claudeModel : codexModel;
@@ -159,6 +168,7 @@ function AgentPanel({
       : capabilities?.source === "codex-catalog"
         ? "Codex model used when running stories."
         : "Codex model used when running stories.";
+  const mcpOverridden = provider === "codex" && codexComputerUse;
 
   return (
     <div className="settings-panel">
@@ -211,6 +221,39 @@ function AgentPanel({
             }}
           />
         </SettingsRow>
+
+        <SettingsRow
+          label="Browser MCP"
+          description={
+            mcpOverridden
+              ? "Overridden by Computer Use while that toggle is on."
+              : "Headless browser MCP used when running and generating stories."
+          }
+        >
+          <select
+            className="settings-select"
+            aria-label="Browser MCP"
+            value={browserMcp}
+            disabled={mcpOverridden}
+            onChange={(e) => onBrowserMcpChange(e.target.value as BrowserMcp)}
+          >
+            <option value="playwright">Playwright MCP</option>
+            <option value="chrome-devtools">Chrome DevTools MCP</option>
+          </select>
+        </SettingsRow>
+
+        {provider === "codex" ? (
+          <SettingsRow
+            label="Computer Use"
+            description="Override Browser MCP and drive a real Chrome window with Codex Computer Use."
+          >
+            <Switch
+              checked={codexComputerUse}
+              aria-label="Computer Use"
+              onCheckedChange={onCodexComputerUseChange}
+            />
+          </SettingsRow>
+        ) : null}
 
         {capabilitiesError ? (
           <p className="settings-row-desc px-4 pb-3 text-[var(--color-text-secondary)]">
@@ -528,6 +571,30 @@ export function SettingsView() {
     }
   };
 
+  const handleBrowserMcpChange = async (browserMcp: BrowserMcp) => {
+    if (browserMcp === resolvedSettings.browserMcp) return;
+    setAppSettings((prev) => (prev ? { ...prev, browserMcp } : prev));
+    try {
+      const updated = await settingsSet({ browserMcp });
+      commitAppSettings(updated);
+    } catch (error) {
+      void refreshAppSettings();
+      reportAppErrorFromUnknown("Failed to set Browser MCP", error);
+    }
+  };
+
+  const handleCodexComputerUseChange = async (codexComputerUse: boolean) => {
+    if (codexComputerUse === resolvedSettings.codexComputerUse) return;
+    setAppSettings((prev) => (prev ? { ...prev, codexComputerUse } : prev));
+    try {
+      const updated = await settingsSet({ codexComputerUse });
+      commitAppSettings(updated);
+    } catch (error) {
+      void refreshAppSettings();
+      reportAppErrorFromUnknown("Failed to set Computer Use", error);
+    }
+  };
+
   const handleThemeChange = async (theme: ThemePreference) => {
     const nextSettings = normalizeAppSettings({ ...resolvedSettings, theme });
     commitAppSettings(nextSettings);
@@ -749,6 +816,8 @@ export function SettingsView() {
               codexEffort={resolvedSettings.codexEffort}
               claudeModel={resolvedSettings.claudeModel}
               claudeEffort={resolvedSettings.claudeEffort}
+              browserMcp={resolvedSettings.browserMcp}
+              codexComputerUse={resolvedSettings.codexComputerUse}
               capabilities={agentCapabilities}
               capabilitiesError={capabilitiesError ?? settingsError ?? undefined}
               onProviderChange={handleProviderChange}
@@ -756,6 +825,8 @@ export function SettingsView() {
               onCodexEffortChange={handleCodexEffortChange}
               onClaudeModelChange={handleClaudeModelChange}
               onClaudeEffortChange={handleClaudeEffortChange}
+              onBrowserMcpChange={handleBrowserMcpChange}
+              onCodexComputerUseChange={handleCodexComputerUseChange}
             />
           ) : null}
 
