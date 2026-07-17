@@ -57,7 +57,9 @@ export function initAutoUpdates(): void {
     void promptRestartToInstall(info.version);
   });
 
-  void autoUpdater.checkForUpdatesAndNotify();
+  void autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+    logger.debug("updates", "Update check skipped or failed", error);
+  });
 }
 
 export async function checkForUpdatesManually(): Promise<void> {

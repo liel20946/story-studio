@@ -3,7 +3,7 @@ import type { ThemePreference } from "./contract-types";
 import type { ColorThemeId } from "./color-themes";
 import {
   colorThemeAvailable,
-  DEFAULT_COLOR_THEME_ID,
+  defaultColorThemeForMode,
   type ThemeMode,
 } from "./color-themes";
 import {
@@ -15,6 +15,12 @@ import { applyColorThemePalette, clearColorThemeOverrides } from "./color-theme-
 import { normalizeAppSettings } from "./app-settings";
 import { setCachedAppSettings } from "./settings-cache";
 import { settingsGet } from "./ipc";
+
+function syncSidebarVibrancy(themeId: ColorThemeId): void {
+  void window.electronAPI.invoke("window:setSidebarVibrancy", {
+    enabled: themeId === "cursor",
+  });
+}
 
 const LEGACY_APPEARANCE_PROPS = [
   "--bg",
@@ -102,7 +108,7 @@ export function applyAppearance(
   const colorTheme = activeColorThemeForMode(resolved, settings);
   const effectiveColorTheme = colorThemeAvailable(colorTheme, resolved)
     ? colorTheme
-    : DEFAULT_COLOR_THEME_ID;
+    : defaultColorThemeForMode(resolved);
   const effectiveSettings: AppearanceSettings = {
     ...settings,
     ...(resolved === "light"
@@ -111,7 +117,9 @@ export function applyAppearance(
   };
   const palette = resolveEffectivePalette(effectiveSettings, resolved);
   const contrast = resolveEffectiveContrast(settings, resolved);
-  applyColorThemePalette(palette, resolved, contrast);
+  applyColorThemePalette(palette, resolved, contrast, effectiveColorTheme);
+  document.documentElement.dataset.colorTheme = effectiveColorTheme;
+  syncSidebarVibrancy(effectiveColorTheme);
   document.documentElement.classList.toggle(
     "use-pointer-cursors",
     settings.usePointerCursors,

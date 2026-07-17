@@ -1,13 +1,22 @@
 // Shared concurrency cap for Playwright MCP browser sessions. Each story agent
-// holds one slot while its browser is active. Bulk runs additionally throttle
-// with maxParallel in bulk-runner.ts; this is the hard process ceiling.
+// holds one slot while its browser is active. Bulk runs fire every story at
+// once (see bulk-runner.ts) and rely on this hard process ceiling to queue
+// any excess.
+import { getSettingsValue } from "../handlers/settings.js";
+
 export const MAX_CONCURRENT_PLAYWRIGHT = 8;
 
 let _activePlaywright = 0;
 const _playwrightWaiters: Array<() => void> = [];
 
+function currentPlaywrightLimit(): number {
+  return getSettingsValue().browserMode === "existing-chrome"
+    ? 1
+    : MAX_CONCURRENT_PLAYWRIGHT;
+}
+
 export function acquirePlaywrightSlot(): Promise<void> {
-  if (_activePlaywright < MAX_CONCURRENT_PLAYWRIGHT) {
+  if (_activePlaywright < currentPlaywrightLimit()) {
     _activePlaywright++;
     return Promise.resolve();
   }
@@ -15,9 +24,14 @@ export function acquirePlaywrightSlot(): Promise<void> {
 }
 
 export function releasePlaywrightSlot(): void {
-  const next = _playwrightWaiters.shift();
-  if (next) next();
-  else _activePlaywright = Math.max(0, _activePlaywright - 1);
+  _activePlaywright = Math.max(0, _activePlaywright - 1);
+  while (
+    _playwrightWaiters.length > 0 &&
+    _activePlaywright < currentPlaywrightLimit()
+  ) {
+    _activePlaywright++;
+    _playwrightWaiters.shift()?.();
+  }
 }
 
 export function getActivePlaywrightCount(): number {
@@ -25,5 +39,5 @@ export function getActivePlaywrightCount(): number {
 }
 
 export function getAvailablePlaywrightSlots(): number {
-  return Math.max(0, MAX_CONCURRENT_PLAYWRIGHT - _activePlaywright);
+  return Math.max(0, currentPlaywrightLimit() - _activePlaywright);
 }

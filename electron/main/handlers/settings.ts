@@ -2,16 +2,11 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { ipcMain, app, nativeTheme } from "../electron-api.js";
 import { broadcast } from "../broadcast.js";
-import type { AppSettings, BrowserMcp } from "../services/contract-types.js";
+import type { AppSettings } from "../services/contract-types.js";
 import {
   DEFAULT_AGENT_PROVIDER,
   parseAgentProvider,
 } from "../services/agent-provider.js";
-
-function parseBrowserMcp(value: unknown, fallback: BrowserMcp): BrowserMcp {
-  if (value === "playwright" || value === "chrome-devtools") return value;
-  return fallback;
-}
 import {
   defaultAgentModelSettings,
   parseAgentModelSettings,
@@ -23,7 +18,10 @@ import {
   isEffortAllowed,
 } from "../services/agent-capabilities.js";
 import { getStoriesDir, getRunsDir, overridePaths } from "../services/paths.js";
-import { parseColorThemeId } from "../../../src/lib/color-themes.js";
+import {
+  defaultColorThemeForMode,
+  parseColorThemeIdForMode,
+} from "../../../src/lib/color-themes.js";
 import {
   DEFAULT_COLOR_THEME_CONTRAST,
   parseColorThemeContrast,
@@ -40,9 +38,15 @@ function parseTheme(
   return fallback;
 }
 
+function parseBrowserMode(
+  value: unknown,
+  fallback: AppSettings["browserMode"],
+): AppSettings["browserMode"] {
+  return value === "private" || value === "existing-chrome" ? value : fallback;
+}
+
 // Defaults for the user-facing settings (kept in one place so load + set agree).
 const DEFAULT_THEME: AppSettings["theme"] = "dark";
-const DEFAULT_COLOR_THEME = parseColorThemeId(undefined);
 const DEFAULT_STARTING_URL = "https://example.com";
 
 const SETTINGS_FILE = () =>
@@ -57,12 +61,14 @@ function parseColorThemeFields(
   const legacy =
     typeof parsed.colorTheme === "string" ? parsed.colorTheme : undefined;
   return {
-    colorThemeLight: parseColorThemeId(
+    colorThemeLight: parseColorThemeIdForMode(
       parsed.colorThemeLight ?? legacy,
+      "light",
       defaults.colorThemeLight,
     ),
-    colorThemeDark: parseColorThemeId(
+    colorThemeDark: parseColorThemeIdForMode(
       parsed.colorThemeDark ?? legacy,
+      "dark",
       defaults.colorThemeDark,
     ),
   };
@@ -88,6 +94,7 @@ function toAppSettings(
     codexEffort: modelDefaults.codexEffort,
     claudeModel: modelDefaults.claudeModel,
     claudeEffort: modelDefaults.claudeEffort,
+    browserMode: parseBrowserMode(parsed.browserMode, defaults.browserMode),
     storiesDir: parsed.storiesDir ?? defaults.storiesDir,
     runsDir: parsed.runsDir ?? defaults.runsDir,
     theme: parseTheme(parsed.theme, defaults.theme),
@@ -111,11 +118,6 @@ function toAppSettings(
       typeof parsed.usePointerCursors === "boolean"
         ? parsed.usePointerCursors
         : defaults.usePointerCursors,
-    browserMcp: parseBrowserMcp(parsed.browserMcp, defaults.browserMcp),
-    codexComputerUse:
-      typeof parsed.codexComputerUse === "boolean"
-        ? parsed.codexComputerUse
-        : defaults.codexComputerUse,
     startingUrl: parsed.startingUrl ?? defaults.startingUrl,
     runHook: parsed.runHook ?? defaults.runHook,
   };
@@ -133,18 +135,17 @@ async function loadSettings(): Promise<AppSettings> {
     codexEffort: modelDefaults.codexEffort,
     claudeModel: modelDefaults.claudeModel,
     claudeEffort: modelDefaults.claudeEffort,
+    browserMode: "private",
     storiesDir,
     runsDir,
     theme: DEFAULT_THEME,
-    colorThemeLight: DEFAULT_COLOR_THEME,
-    colorThemeDark: DEFAULT_COLOR_THEME,
+    colorThemeLight: defaultColorThemeForMode("light"),
+    colorThemeDark: defaultColorThemeForMode("dark"),
     colorThemePaletteLight: null,
     colorThemePaletteDark: null,
     colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
     colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
     usePointerCursors: false,
-    browserMcp: "playwright",
-    codexComputerUse: false,
     startingUrl: DEFAULT_STARTING_URL,
     runHook: "",
   };
@@ -165,6 +166,7 @@ async function loadSettings(): Promise<AppSettings> {
     const needsMigration =
       "appearance" in parsed ||
       "colorTheme" in parsed ||
+      !("browserMode" in parsed) ||
       !("colorThemeLight" in parsed) ||
       !("colorThemeDark" in parsed) ||
       !("colorThemeContrastLight" in parsed) ||
@@ -195,18 +197,17 @@ export function getSettingsValue(): AppSettings {
       codexEffort: modelDefaults.codexEffort,
       claudeModel: modelDefaults.claudeModel,
       claudeEffort: modelDefaults.claudeEffort,
+      browserMode: "private",
       storiesDir: getStoriesDir(),
       runsDir: getRunsDir(),
       theme: DEFAULT_THEME,
-      colorThemeLight: DEFAULT_COLOR_THEME,
-      colorThemeDark: DEFAULT_COLOR_THEME,
+      colorThemeLight: defaultColorThemeForMode("light"),
+      colorThemeDark: defaultColorThemeForMode("dark"),
       colorThemePaletteLight: null,
       colorThemePaletteDark: null,
       colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
       colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
       usePointerCursors: false,
-      browserMcp: "playwright",
-      codexComputerUse: false,
       startingUrl: DEFAULT_STARTING_URL,
       runHook: "",
     };
@@ -295,6 +296,16 @@ export function registerSettingsHandlers(): void {
       current.claudeEffort = val;
     }
 
+    if ("browserMode" in p) {
+      const val = p["browserMode"];
+      if (val !== "private" && val !== "existing-chrome") {
+        throw new Error(
+          "settings:set browserMode must be 'private' | 'existing-chrome'",
+        );
+      }
+      current.browserMode = val;
+    }
+
     if ("theme" in p) {
       const val = p["theme"];
       const theme = parseTheme(val, current.theme);
@@ -308,7 +319,11 @@ export function registerSettingsHandlers(): void {
 
     if ("colorThemeLight" in p) {
       const val = p["colorThemeLight"];
-      const colorThemeLight = parseColorThemeId(val, current.colorThemeLight);
+      const colorThemeLight = parseColorThemeIdForMode(
+        val,
+        "light",
+        current.colorThemeLight,
+      );
       if (val !== colorThemeLight) {
         throw new Error("settings:set colorThemeLight is invalid");
       }
@@ -317,7 +332,11 @@ export function registerSettingsHandlers(): void {
 
     if ("colorThemeDark" in p) {
       const val = p["colorThemeDark"];
-      const colorThemeDark = parseColorThemeId(val, current.colorThemeDark);
+      const colorThemeDark = parseColorThemeIdForMode(
+        val,
+        "dark",
+        current.colorThemeDark,
+      );
       if (val !== colorThemeDark) {
         throw new Error("settings:set colorThemeDark is invalid");
       }
@@ -378,22 +397,6 @@ export function registerSettingsHandlers(): void {
         throw new Error("settings:set usePointerCursors must be boolean");
       }
       current.usePointerCursors = val;
-    }
-
-    if ("browserMcp" in p) {
-      const val = p["browserMcp"];
-      if (val !== "playwright" && val !== "chrome-devtools") {
-        throw new Error("settings:set browserMcp must be 'playwright' | 'chrome-devtools'");
-      }
-      current.browserMcp = val;
-    }
-
-    if ("codexComputerUse" in p) {
-      const val = p["codexComputerUse"];
-      if (typeof val !== "boolean") {
-        throw new Error("settings:set codexComputerUse must be boolean");
-      }
-      current.codexComputerUse = val;
     }
 
     _settings = current;

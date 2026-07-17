@@ -1,18 +1,10 @@
-import type { AppSettings, BrowserMcp } from "./contract-types";
+import type { AppSettings } from "./contract-types";
 import {
   DEFAULT_COLOR_THEME_CONTRAST,
   parseColorThemeContrast,
   parseColorThemePalette,
 } from "./color-theme-config";
-import { parseColorThemeId, type ColorThemeId } from "./color-themes";
-
-export function parseBrowserMcp(
-  value: unknown,
-  fallback: BrowserMcp = "playwright",
-): BrowserMcp {
-  if (value === "playwright" || value === "chrome-devtools") return value;
-  return fallback;
-}
+import { parseColorThemeId, parseColorThemeIdForMode, type ColorThemeId } from "./color-themes";
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   agentProvider: "codex",
@@ -22,18 +14,17 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   codexEffort: "medium",
   claudeModel: "sonnet",
   claudeEffort: "medium",
+  browserMode: "private",
   storiesDir: "",
   runsDir: "",
   theme: "dark",
   colorThemeLight: "raycast",
-  colorThemeDark: "raycast",
+  colorThemeDark: "cursor",
   colorThemePaletteLight: null,
   colorThemePaletteDark: null,
   colorThemeContrastLight: DEFAULT_COLOR_THEME_CONTRAST,
   colorThemeContrastDark: DEFAULT_COLOR_THEME_CONTRAST,
   usePointerCursors: false,
-  browserMcp: "playwright",
-  codexComputerUse: false,
   startingUrl: "https://example.com",
   runHook: "",
 };
@@ -48,6 +39,13 @@ function parseThemePreference(
   return fallback;
 }
 
+function parseBrowserMode(
+  value: unknown,
+  fallback: AppSettings["browserMode"],
+): AppSettings["browserMode"] {
+  return value === "private" || value === "existing-chrome" ? value : fallback;
+}
+
 type LegacyAppSettings = Partial<AppSettings> & {
   colorTheme?: ColorThemeId;
 };
@@ -58,12 +56,14 @@ function parseColorThemeFields(
 ): Pick<AppSettings, "colorThemeLight" | "colorThemeDark"> {
   const legacy = base.colorTheme;
   return {
-    colorThemeLight: parseColorThemeId(
+    colorThemeLight: parseColorThemeIdForMode(
       base.colorThemeLight ?? legacy,
+      "light",
       defaults.colorThemeLight,
     ),
-    colorThemeDark: parseColorThemeId(
+    colorThemeDark: parseColorThemeIdForMode(
       base.colorThemeDark ?? legacy,
+      "dark",
       defaults.colorThemeDark,
     ),
   };
@@ -78,6 +78,10 @@ export function normalizeAppSettings(
   return {
     ...DEFAULT_APP_SETTINGS,
     ...base,
+    browserMode: parseBrowserMode(
+      base.browserMode,
+      DEFAULT_APP_SETTINGS.browserMode,
+    ),
     theme: parseThemePreference(base.theme, DEFAULT_APP_SETTINGS.theme),
     colorThemeLight: colorThemes.colorThemeLight,
     colorThemeDark: colorThemes.colorThemeDark,
@@ -99,10 +103,5 @@ export function normalizeAppSettings(
       typeof base.usePointerCursors === "boolean"
         ? base.usePointerCursors
         : DEFAULT_APP_SETTINGS.usePointerCursors,
-    browserMcp: parseBrowserMcp(base.browserMcp, DEFAULT_APP_SETTINGS.browserMcp),
-    codexComputerUse:
-      typeof base.codexComputerUse === "boolean"
-        ? base.codexComputerUse
-        : DEFAULT_APP_SETTINGS.codexComputerUse,
   };
 }

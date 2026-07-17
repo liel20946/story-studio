@@ -5,6 +5,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { broadcast } from "../broadcast.js";
+import { killDetachedAgentProcess } from "./agent-process-kill.js";
 import type {
   RunEvent,
   RunEventKind,
@@ -17,7 +18,8 @@ import type {
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
 import { writeRunMeta, deleteRunMeta } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
-import { getRunStoryPlaybook, buildRunPromptSuffix } from "./story-skill.js";
+import { buildRunStoryPlaybook, buildRunPromptSuffix } from "./story-skill.js";
+import { getSettingsValue } from "../handlers/settings.js";
 import {
   ensureRunOutputDir,
   getHeroScreenshotPath,
@@ -28,6 +30,7 @@ import {
 import {
   deletePersistedRunEvents,
   deleteRunPid,
+  ensureActionTimeline,
   flushPersistRunEvents,
   schedulePersistRunEvents,
   writeRunPid,
@@ -38,26 +41,26 @@ import {
   MAX_CONCURRENT_PLAYWRIGHT,
 } from "./playwright-slots.js";
 import {
-  buildCodexComputerUseConfigArgs,
-  buildCodexMcpConfigArgs,
+  buildCodexPlaywrightMcpConfigArgs,
   ensureCodexProjectConfig,
+  playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
 import {
   DEFAULT_CODEX_EFFORT,
   DEFAULT_CODEX_MODEL,
   type AgentRunConfig,
-  type StoryRunOptions,
 } from "./agent-config.js";
 import {
   markRunCancelled,
   settleRunningEvents,
 } from "./run-event-settle.js";
+import { classifyMcpTool } from "./mcp-tool-event.js";
 
 const execFileAsync = promisify(execFile);
 
 // How many agent processes may run AT ONCE (single-story + bulk). Playwright
 // sessions share the same hard ceiling — see playwright-slots.ts. Bulk runs
-// further throttle with maxParallel in bulk-runner.ts.
+// fire every story at once and rely on this ceiling to queue the excess.
 const MAX_CONCURRENT_RUNS = MAX_CONCURRENT_PLAYWRIGHT;
 let _activeRuns = 0;
 const _runWaiters: Array<() => void> = [];
@@ -148,31 +151,14 @@ export const RUN_OUTPUT_SCHEMA = {
   required: ["status", "summary", "assertions", "lastSuccessfulStep", "screenshotPath"],
 };
 
-/** Codex.app-bundled CLI — required for reliable Computer Use (Homebrew CLI often cannot). */
-export const CODEX_APP_BUNDLED_CLI =
-  "/Applications/Codex.app/Contents/Resources/codex";
-
 // ---------- Binary resolution ----------
-export async function resolveCodexBinary(
-  customPath: string | null,
-  options?: { preferAppBundled?: boolean },
-): Promise<string> {
+export async function resolveCodexBinary(customPath: string | null): Promise<string> {
   if (customPath) {
     try {
       await fs.access(customPath);
       return customPath;
     } catch {
       throw new Error(`codex binary not found at configured path: ${customPath}`);
-    }
-  }
-
-  // Computer Use needs the app-bundled CLI; Homebrew often cannot launch the helper.
-  if (options?.preferAppBundled) {
-    try {
-      await fs.access(CODEX_APP_BUNDLED_CLI);
-      return CODEX_APP_BUNDLED_CLI;
-    } catch {
-      // fall through
     }
   }
 
@@ -194,21 +180,14 @@ export async function resolveCodexBinary(
     // fall through
   }
 
-  try {
-    await fs.access(CODEX_APP_BUNDLED_CLI);
-    return CODEX_APP_BUNDLED_CLI;
-  } catch {
-    // fall through
-  }
-
   throw new Error(
-    "codex binary not found. Install Codex CLI / Codex.app or set a custom path in Settings.\n" +
-      "Tried: Codex.app Resources/codex, /opt/homebrew/bin/codex, login shell zsh lookup.",
+    "codex binary not found. Install Codex CLI or set a custom path in Settings.\n" +
+      "Tried: /opt/homebrew/bin/codex, login shell zsh lookup.",
   );
 }
 
 // ---------- Spawn env ----------
-function buildEnv(options?: { computerUse?: boolean }): NodeJS.ProcessEnv {
+function buildEnv(): NodeJS.ProcessEnv {
   const home = os.homedir();
   const extraPath = [
     "/opt/homebrew/bin",
@@ -217,19 +196,11 @@ function buildEnv(options?: { computerUse?: boolean }): NodeJS.ProcessEnv {
     path.join(home, ".npm-global/bin"),
     path.dirname(process.execPath),
   ].join(":");
-  const existingPath = process.env.PATH ?? "";
-  const env: NodeJS.ProcessEnv = {
+  return {
     ...process.env,
     HOME: home,
-    PATH: `${extraPath}:${existingPath}`,
+    PATH: `${extraPath}:${process.env.PATH ?? ""}`,
   };
-  if (options?.computerUse) {
-    const codexHome = process.env.CODEX_HOME?.trim() || path.join(home, ".codex");
-    env.CODEX_HOME = codexHome;
-    env.CODEX_SQLITE_HOME =
-      process.env.CODEX_SQLITE_HOME?.trim() || path.join(codexHome, "sqlite");
-  }
-  return env;
 }
 
 // ---------- Event helpers ----------
@@ -267,48 +238,6 @@ function isBenignCodexStderrEvent(event: RunEvent): boolean {
   return event.kind === "error" && !!event.detail && isBenignCodexStderr(event.detail);
 }
 
-function toolNameToKind(toolName: string): RunEventKind {
-  if (toolName.includes("navigate")) return "navigate";
-  if (toolName.includes("click") || toolName.includes("press") || toolName.includes("select")) return "click";
-  if (toolName.includes("type") || toolName.includes("fill")) return "type";
-  if (toolName.includes("snapshot")) return "snapshot";
-  if (toolName.includes("screenshot")) return "screenshot";
-  if (toolName.includes("wait")) return "wait";
-  if (toolName.includes("evaluate")) return "evaluate";
-  return "tool";
-}
-
-function toolNameToLabel(toolName: string): string {
-  const bare = toolName.replace(/^playwright__browser[-_]?|^browser[-_]?/, "");
-  if (bare.includes("screenshot")) return "Screenshot";
-  return bare.charAt(0).toUpperCase() + bare.slice(1).replace(/[-_]/g, " ");
-}
-
-function extractToolDetail(item: Record<string, unknown>): string | undefined {
-  const args = item["arguments"] as Record<string, unknown> | undefined;
-  if (!args) return undefined;
-
-  // Prefer a short, human-readable description per tool shape. Never dump raw
-  // JSON or evaluate() source — the timeline shows one concise line per action.
-  if (typeof args["url"] === "string") return args["url"];
-  if (typeof args["element"] === "string") return args["element"];
-  if (typeof args["text"] === "string") return args["text"];
-  if (typeof args["value"] === "string") return args["value"];
-  if (typeof args["selector"] === "string") return args["selector"];
-  if (Array.isArray(args["fields"])) {
-    const names = (args["fields"] as Array<Record<string, unknown>>)
-      .map((f) => (f["name"] ?? f["ref"]) as string | undefined)
-      .filter((n): n is string => typeof n === "string");
-    return names.length ? names.join(", ") : undefined;
-  }
-  // browser_evaluate and other code-bearing tools: no detail (script is noise).
-  if (typeof args["function"] === "string" || typeof args["expression"] === "string") {
-    return undefined;
-  }
-  const json = JSON.stringify(args);
-  return json.length <= 80 ? json : undefined;
-}
-
 function isToolResultError(item: Record<string, unknown>): boolean {
   // Check item.error first
   if (item["error"]) return true;
@@ -336,13 +265,8 @@ export async function startRun(
   codexBinary: string,
   runHook?: string,
   agentConfig?: AgentRunConfig,
-  runOptions?: StoryRunOptions,
 ): Promise<RunResult> {
   const startedAt = Date.now();
-  const computerUse = Boolean(runOptions?.computerUse);
-  const browserMcp = runOptions?.browserMcp === "chrome-devtools"
-    ? "chrome-devtools"
-    : "playwright";
   const model = agentConfig?.model ?? DEFAULT_CODEX_MODEL;
   const state: RunState = {
     runId,
@@ -377,18 +301,14 @@ export async function startRun(
 
   // codex --output-schema reads this file; it must exist before spawn.
   await fs.writeFile(schemaPath, JSON.stringify(RUN_OUTPUT_SCHEMA), "utf-8");
-  await ensureCodexProjectConfig(runOutputDir, { computerUse, browserMcp });
+  await ensureCodexProjectConfig(runOutputDir);
 
   const storyContents = storyFilePath.includes("\n")
     ? storyFilePath
     : await fs.readFile(storyFilePath, "utf-8").catch(() => "");
 
   const prompt =
-    getRunStoryPlaybook({
-      computerUse,
-      browserMcp,
-      bulk: runOptions?.bulk,
-    }) +
+    buildRunStoryPlaybook(getSettingsValue().browserMode) +
     buildRunPromptSuffix({
       runOutputDir,
       screenshotsDir,
@@ -399,24 +319,30 @@ export async function startRun(
     });
 
   const effort = agentConfig?.effort ?? DEFAULT_CODEX_EFFORT;
+  const mcpConfigArgs = await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
+  const mcpSecretEnv = await playwrightMcpSecretEnv();
 
   const args = [
     "exec",
     "--dangerously-bypass-approvals-and-sandbox",
     "--json",
     "--skip-git-repo-check",
-    ...(computerUse ? [] : ["--ignore-user-config"]),
+    // Isolate the run from the user's ~/.codex/config.toml. Without this, codex
+    // inherits global settings — notably `[features] multi_agent = true` — and
+    // fans a single deterministic story out to PARALLEL sub-agents that each
+    // drive the same flow, producing duplicate real-world side effects (e.g.
+    // issuing store credit 2–3×), plus loading every global MCP server. The
+    // Playwright MCP is registered regardless via the inline `-c mcp_servers.*`
+    // injection below (mcpConfigArgs), so runs never depend on the user's
+    // global or project Codex config at all.
+    "--ignore-user-config",
     "-C",
     runOutputDir,
-    // Pin model + reasoning effort so runs are deterministic regardless of the
-    // user's global ~/.codex/config.toml defaults.
     "-c",
     `model="${state.agentModel}"`,
     "-c",
     `model_reasoning_effort="${effort}"`,
-    ...(computerUse
-      ? buildCodexComputerUseConfigArgs()
-      : buildCodexMcpConfigArgs(browserMcp)),
+    ...mcpConfigArgs,
     "--output-schema",
     schemaPath,
     "-o",
@@ -424,14 +350,11 @@ export async function startRun(
     prompt,
   ];
 
-  console.log("[codex:run]", {
+  console.log("[codex:run] starting", {
     runId,
     storyName,
-    computerUse,
-    browserMcp,
-    bulk: Boolean(runOptions?.bulk),
     codexBinary,
-    args: args.slice(0, 8),
+    mcpConfigArgs,
   });
 
   const events = state.events;
@@ -443,11 +366,7 @@ export async function startRun(
     ts: Date.now(),
     kind: "status",
     label: "Starting",
-    detail: computerUse
-      ? `Loading codex (Computer Use) for story: ${storyTitle}`
-      : browserMcp === "chrome-devtools"
-        ? `Loading codex (Chrome DevTools MCP) for story: ${storyTitle}`
-        : `Loading codex for story: ${storyTitle}`,
+    detail: `Loading codex for story: ${storyTitle}`,
     status: "running",
   };
   events.push(startEvent);
@@ -479,38 +398,41 @@ export async function startRun(
     return finalizeRun(cancelledResult, events);
   }
 
-  let acquiredPlaywrightSlot = false;
-  if (!computerUse) {
-    await acquirePlaywrightSlot();
-    acquiredPlaywrightSlot = true;
+  // Browser readiness (Playwright CLI + MCP package + Chromium) is warmed once
+  // in the background at app launch (prewarmPlaywrightInBackground) — matching
+  // shipped v1.5.6, which spawns codex right after acquiring slots. A local
+  // change had inserted a blocking ensurePlaywrightReady() preflight here (an
+  // extra `npx -y` round-trip plus a "Preparing browser environment…" phase)
+  // that delayed the start of every run; that per-run gate is removed.
+  await acquirePlaywrightSlot();
 
-    if (state.cancelled) {
-      _runs.delete(runId);
-      releaseRunSlot();
-      releasePlaywrightSlot();
-      const cancelledResult: RunResult = {
-        runId,
-        storyName,
-        storyTitle,
-        status: "cancelled",
-        summary: "",
-        assertions: [],
-        screenshotPath,
-        screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
-        startedAt,
-        finishedAt: Date.now(),
-        error: "Cancelled by user",
-        agentProvider: state.agentProvider,
-        agentModel: state.agentModel,
-      };
-      return finalizeRun(cancelledResult, events);
-    }
+  if (state.cancelled) {
+    _runs.delete(runId);
+    releaseRunSlot();
+    releasePlaywrightSlot();
+    const cancelledResult: RunResult = {
+      runId,
+      storyName,
+      storyTitle,
+      status: "cancelled",
+      summary: "",
+      assertions: [],
+      screenshotPath,
+      screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+      startedAt,
+      finishedAt: Date.now(),
+      error: "Cancelled by user",
+      agentProvider: state.agentProvider,
+      agentModel: state.agentModel,
+    };
+    return finalizeRun(cancelledResult, events);
   }
 
   const runPromise = new Promise<RunResult>((resolve) => {
+    console.log("[codex:run] spawning codex", { runId, pid: "pending" });
     const child = spawn(codexBinary, args, {
       cwd: runOutputDir,
-      env: buildEnv({ computerUse }),
+      env: { ...buildEnv(), ...mcpSecretEnv },
       detached: true, // allows process group kill on cancel
       // stdin must be closed (EOF) or codex hangs on "Reading additional input from stdin..."
       stdio: ["ignore", "pipe", "pipe"],
@@ -661,7 +583,7 @@ export async function startRun(
   // Release codex + Playwright slots when the run settles.
   void runPromise.finally(() => {
     releaseRunSlot();
-    if (acquiredPlaywrightSlot) releasePlaywrightSlot();
+    releasePlaywrightSlot();
   });
   return runPromise;
 }
@@ -699,9 +621,11 @@ function handleCodexLine(
     const server = (item["server"] as string | undefined) ?? "";
     const tool = (item["tool"] as string | undefined) ?? "";
     const fullToolName = `${server}__${tool}`;
-    const kind = toolNameToKind(fullToolName);
-    const label = kind === "evaluate" ? "Thinking" : toolNameToLabel(tool || fullToolName);
-    const detail = extractToolDetail(item);
+    const args = (item["arguments"] as Record<string, unknown> | undefined) ?? {};
+    const classified = classifyMcpTool(fullToolName, args);
+    const kind = classified.kind;
+    const label = classified.label;
+    const detail = classified.detail;
     const failed = !isStarted && isToolResultError(item);
     const status: RunEvent["status"] = isStarted ? "running" : failed ? "failed" : "ok";
 
@@ -769,9 +693,8 @@ function handleCodexLine(
       syncRunTimeline(runId, events);
     }
   }
-  // command_execution and other internal item types (codex reading skills/story
-  // files via shell) are intentionally NOT surfaced — the timeline shows browser
-  // actions and narration, not codex plumbing.
+  // command_execution and other internal item types are intentionally NOT surfaced —
+  // the timeline shows Playwright MCP browser actions, not codex plumbing.
 }
 
 async function readResultJson(resultPath: string): Promise<Record<string, unknown> | null> {
@@ -816,6 +739,9 @@ async function finalizeRun(result: RunResult, events: RunEvent[]): Promise<RunRe
   events.push(...timelineEvents);
 
   settleRunningEvents(events, result.status);
+  const withSteps = await ensureActionTimeline(result.runId, events);
+  events.length = 0;
+  events.push(...withSteps);
   await flushPersistRunEvents(result.runId, events);
   const enriched = await enrichRunResult(result);
   const record: RunRecord = { ...enriched, events };
@@ -850,34 +776,12 @@ export function cancelRun(runId: string): boolean {
     return true;
   }
 
-  const proc = state.process;
-  const pid = proc.pid ?? 0;
-
-  // codex is spawned detached, so it leads its own process group; kill the whole
-  // group (`-pid`) to also take down the MCP servers it spawned via npx.
-  const killGroup = (sig: NodeJS.Signals) => {
-    try {
-      if (pid) process.kill(-pid, sig);
-      else proc.kill(sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {
-        // already gone
-      }
-    }
-  };
-
-  killGroup("SIGTERM");
-  // codex can be blocked in a long network MCP call and ignore SIGTERM; force-kill
-  // if this run is still in-flight a couple seconds later (the close handler
-  // removes it from _runs once the process actually exits).
-  setTimeout(() => {
-    if (_runs.has(runId)) {
+  killDetachedAgentProcess(state.process, {
+    isStillActive: () => _runs.has(runId),
+    onEscalate: () => {
       console.log("[codex:run] SIGTERM ignored — escalating to SIGKILL", runId);
-      killGroup("SIGKILL");
-    }
-  }, 2000);
+    },
+  });
 
   console.log("[codex:run] cancelled run", runId);
   return true;

@@ -6,6 +6,8 @@
 // the codex prompt at run time.
 // ============================================================================
 
+import type { BrowserMode } from "./contract-types.js";
+
 export const BOWSER_STORY_FORMAT = `## Bowser YAML v2 story format
 Stories live in site YAML files with this shape:
 
@@ -43,6 +45,10 @@ export const STORY_FORMAT = BOWSER_STORY_FORMAT;
 
 const RUN_STORY_PLAYBOOK_SHARED = `## How to run the story
 - Follow **Execution order** — the numbered list that interleaves steps and assertions. Run every line through the last one.
+- Execute that numbered list strictly from top to bottom. Never attempt, probe, or pre-run a later interaction before the current line succeeds.
+- Every browser interaction (Navigate, Click, Fill, Press, or Select) must implement the current Execution order line. Use non-mutating snapshots to inspect the page; do not click or type merely to explore.
+- Execute exactly ONE Execution order line per browser action tool call. Never batch multiple story lines into one \`browser_run_code_unsafe\` call, generated script, or callback; Story Studio uses each completed call to report live progress.
+- Immediately after each Execution order line finishes, update \`steps.json\` with that line's real result before starting the next line. Do not synthesize the full timeline at the end.
 - Treat each line as intent, not an exact script. Adapt to minor UI changes while preserving the goal.
 - Prefer accessible role/name, labels, visible text, and URL context over coordinates or brittle element refs.
 - Use variables defined in the story, including test-account credentials.
@@ -64,7 +70,9 @@ const RUN_STORY_PLAYBOOK_SHARED = `## How to run the story
   5. **Failure** — always, immediately before stopping.
 - Skip screenshots for intermediate Fill / Click / Press / Select steps inside a form group, focus changes, scrolling, and waiting.
 - Aim for roughly **3–8 checkpoint screenshots** on a typical story, not one per workflow line.
-- Save checkpoint images as \`screenshots/step-{index}-{slug}.png\` and attach the path only on that steps.json entry.
+- For every \`browser_take_screenshot\` call, pass \`{ "filename": "screenshots/step-{index}-{slug}.png", "raw": true }\`.
+  The MCP parameter is named **filename**, not \`path\`; use a workspace-relative path under \`screenshots/\` (the run output directory is the MCP workspace).
+- In steps.json, attach the corresponding path as \`screenshots/step-{index}-{slug}.png\` only on that checkpoint entry.
 
 ## Hero screenshot (critical — read carefully)
 - The hero screenshot is **separate** from form-group / pre-submit checkpoints.
@@ -76,6 +84,7 @@ const RUN_STORY_PLAYBOOK_SHARED = `## How to run the story
 
 ## steps.json
 - Write \`steps.json\` as a non-empty array covering every line in Execution order (actions and Verify steps). Each entry: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
+- **Live progress:** after each step finishes, rewrite the full \`steps.json\` file to disk (not only at process exit). In generated Node scripts, call \`fs.writeFileSync(stepsPath, JSON.stringify(steps, null, 2))\` in each step's \`finally\` block so Story Studio can show actions in real time.
 
 ## Report
 - Report pass/fail with concise evidence for each Verify step.
@@ -87,91 +96,29 @@ Many web apps are React SPAs with controlled inputs. Fill tools and type tools f
   const set = (el, value) => { const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value'); d.set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
 Locate inputs by name / type / placeholder / aria-label. Verify values before submit.`;
 
-export const RUN_STORY_PLAYBOOK = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
+export function buildRunStoryPlaybook(browserMode: BrowserMode): string {
+  const browserDescription =
+    browserMode === "existing-chrome"
+      ? `## Execution tool — existing Chrome tab via Playwright MCP
+- Use ONLY the Playwright MCP server named "playwright". It is connected to a user-selected Chrome tab with the user's existing authenticated session.
+- Reuse the selected tab. Do not close unrelated tabs or clear cookies, storage, or browser data.
+- In existing-Chrome mode, do NOT use \`browser_click\`: its actionability wait can hang through the extension bridge.
+- For every Click step, use \`browser_run_code_unsafe\` with the exact role/text or snapshot aria-ref. Click with \`{ force: true, noWaitAfter: true, timeout: 5000 }\`. If that throws without changing the page, use \`locator.evaluate((element) => element.click())\` once.
+- After each click, take a fresh snapshot and confirm the expected state change before continuing. Never repeat a consequential click if the page already changed.`
+      : `## Execution tool — headless Playwright MCP
+- Use ONLY the Playwright MCP server named "playwright". It runs headless in an isolated browser.`;
+  return `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
 
-## Execution tool — headless, no visible browser
-- Use ONLY the Playwright MCP server named "playwright". It runs headless.
-- Do NOT use the Codex Browser plugin, the in-app browser, the Chrome backend, computer use, Chrome DevTools MCP, or any other browser-driving tool.
+${browserDescription}
+- Do NOT use the Codex Browser plugin, the in-app browser, computer use, Playwright CLI, or any other browser-driving tool.
 - Do not use any MCP server other than "playwright".
 
 ${RUN_STORY_PLAYBOOK_SHARED}
 
 ${RUN_STORY_PLAYBOOK_FORM_FILL_MCP}`;
-
-const RUN_STORY_PLAYBOOK_CHROME_DEVTOOLS = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
-
-## Execution tool — headless Chrome DevTools MCP
-- Use ONLY the Chrome DevTools MCP server named "chrome-devtools". It runs headless Google Chrome.
-- Do NOT use the Playwright MCP server, Playwright CLI, the Codex Browser plugin, the in-app browser, computer use, or any other browser-driving tool.
-- Do not use any MCP server other than "chrome-devtools".
-
-${RUN_STORY_PLAYBOOK_SHARED}
-
-${RUN_STORY_PLAYBOOK_FORM_FILL_MCP}`;
-
-const RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE = `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
-
-## Execution tool — @Computer (Codex Computer Use)
-- Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
-- Do NOT use Playwright MCP, Playwright CLI, Chrome DevTools MCP, the Codex in-app @Browser, Cursor, or any headless/automation browser.
-- Do not invent or call any other browser-driving tool.
-- If Computer Use / @Computer tools are missing, fail immediately with a clear blocked summary — do not improvise another browser tool.
-
-## Chrome window (required)
-- Prefer an **already open Google Chrome** window. Open a **new tab in that existing window** for this story.
-- Only open a new Chrome window if Google Chrome is not already running.
-- Navigate by typing/pasting the story URL into that tab's address bar.
-- Do not use Playwright/automation profiles, Cursor, or private/incognito unless the story requires it.
-
-${RUN_STORY_PLAYBOOK_SHARED}
-
-## Reliable form filling (important)
-- Click into fields and type values normally via @Computer. Clear existing text when needed before typing.
-- Prefer labels, visible text, and obvious UI affordances over pixel-perfect guessing.
-- After filling a form group, verify the values are visible in the fields before submit.`;
-
-const RUN_STORY_PLAYBOOK_COMPUTER_USE_BULK = `You are running a saved web UI "story" — an intent-level browser test as part of a bulk run. Follow these rules exactly.
-
-## Execution tool — @Computer (Codex Computer Use)
-- Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
-- Do NOT use Playwright MCP, Playwright CLI, Chrome DevTools MCP, the Codex in-app @Browser, Cursor, or any headless/automation browser.
-- Do not invent or call any other browser-driving tool.
-- If Computer Use / @Computer tools are missing, fail immediately with a clear blocked summary — do not improvise another browser tool.
-
-## Chrome window / tab (required — bulk run)
-- Prefer the dedicated Story Studio Chrome window if it already exists; otherwise use any **already open Google Chrome** window.
-- For this story, open a **new tab in that same Chrome window** and run the story there. Do not open a separate Chrome window per story when a Chrome window already exists.
-- Only open a new Chrome window if Google Chrome is not already running.
-- Navigate by typing/pasting the story URL into that tab's address bar.
-
-${RUN_STORY_PLAYBOOK_SHARED}
-
-## Reliable form filling (important)
-- Click into fields and type values normally via @Computer. Clear existing text when needed before typing.
-- Prefer labels, visible text, and obvious UI affordances over pixel-perfect guessing.
-- After filling a form group, verify the values are visible in the fields before submit.`;
-
-export interface RunPlaybookOptions {
-  /** Use Codex Computer Use instead of any browser MCP (overrides browserMcp). */
-  computerUse?: boolean;
-  /** Headless browser MCP when Computer Use is off. */
-  browserMcp?: "playwright" | "chrome-devtools";
-  /** Bulk run: open a new tab in the shared Chrome window (Computer Use). */
-  bulk?: boolean;
 }
 
-/** Resolve the run playbook for Playwright MCP, Chrome DevTools MCP, or Computer Use. */
-export function getRunStoryPlaybook(options?: RunPlaybookOptions): string {
-  if (options?.computerUse) {
-    return options.bulk
-      ? RUN_STORY_PLAYBOOK_COMPUTER_USE_BULK
-      : RUN_STORY_PLAYBOOK_COMPUTER_USE_SINGLE;
-  }
-  if (options?.browserMcp === "chrome-devtools") {
-    return RUN_STORY_PLAYBOOK_CHROME_DEVTOOLS;
-  }
-  return RUN_STORY_PLAYBOOK;
-}
+export const RUN_STORY_PLAYBOOK = buildRunStoryPlaybook("private");
 
 export interface RunPromptPaths {
   runOutputDir: string;
@@ -210,46 +157,25 @@ ${BOWSER_STORY_FORMAT}
 - When login is required but credentials are missing, reply with plain prose only — no YAML.
 - When the story is complete, return ONLY the YAML document — no markdown fences, no explanation.`;
 
-export const GENERATE_STORY_PLAYBOOK = `You are generating a Bowser YAML v2 UI story by exploring a website with Playwright MCP.
+export function buildGenerateStoryPlaybook(browserMode: BrowserMode): string {
+  const browserDescription =
+    browserMode === "existing-chrome"
+      ? `- Use ONLY the Playwright MCP server named "playwright". It is connected to a user-selected Chrome tab with the user's existing authenticated session.
+- Reuse the selected tab. Do not close unrelated tabs or clear cookies, storage, or browser data.
+- In existing-Chrome mode, do NOT use \`browser_click\`. Use \`browser_run_code_unsafe\` with an exact locator and \`click({ force: true, noWaitAfter: true, timeout: 5000 })\`, then snapshot to confirm the page changed.`
+      : `- Use ONLY the Playwright MCP server named "playwright". It runs headless in an isolated browser.`;
+  return `You are generating a Bowser YAML v2 UI story by exploring a website with Playwright MCP.
 
 ## Browser tool
-- Use ONLY the Playwright MCP server named "playwright". It runs headless.
-- Do NOT use the Codex Browser plugin, the in-app browser, computer use, Chrome DevTools MCP, or any other browser-driving tool.
+${browserDescription}
+- Do NOT use the Codex Browser plugin, the in-app browser, computer use, or any other browser-driving tool.
 - Do not use any MCP server other than "playwright".
 
 ${GENERATE_STORY_TASK}`;
-
-const GENERATE_STORY_PLAYBOOK_CHROME_DEVTOOLS = `You are generating a Bowser YAML v2 UI story by exploring a website with Chrome DevTools MCP.
-
-## Browser tool
-- Use ONLY the Chrome DevTools MCP server named "chrome-devtools". It runs headless Google Chrome.
-- Do NOT use the Playwright MCP server, the Codex Browser plugin, the in-app browser, computer use, or any other browser-driving tool.
-- Do not use any MCP server other than "chrome-devtools".
-
-${GENERATE_STORY_TASK}`;
-
-const GENERATE_STORY_PLAYBOOK_COMPUTER_USE = `You are generating a Bowser YAML v2 UI story by exploring a website with Codex Computer Use.
-
-## Browser tool
-- Start with @Computer. Use Codex Computer Use to operate the desktop like a human (see, click, type, scroll).
-- Do NOT use Playwright MCP, Chrome DevTools MCP, Playwright CLI, the Codex in-app @Browser, Cursor, or any headless/automation browser.
-- Prefer an **already open Google Chrome** window. Open a **new tab** there for exploration; only open a new Chrome window if Chrome is not running.
-
-${GENERATE_STORY_TASK}`;
-
-export interface GeneratePlaybookOptions {
-  computerUse?: boolean;
-  browserMcp?: "playwright" | "chrome-devtools";
 }
 
-/** Resolve the generate-exploration playbook for the selected browser backend. */
-export function getGenerateStoryPlaybook(options?: GeneratePlaybookOptions): string {
-  if (options?.computerUse) return GENERATE_STORY_PLAYBOOK_COMPUTER_USE;
-  if (options?.browserMcp === "chrome-devtools") {
-    return GENERATE_STORY_PLAYBOOK_CHROME_DEVTOOLS;
-  }
-  return GENERATE_STORY_PLAYBOOK;
-}
+export const GENERATE_STORY_PLAYBOOK =
+  buildGenerateStoryPlaybook("private");
 
 export const DRAFT_REVISION_PLAYBOOK = `IMPORTANT: This is a TEXT-ONLY revision. Do NOT open a browser, run shell commands, install packages, or use any MCP/tools.
 
@@ -269,17 +195,13 @@ export interface GeneratePromptContext {
   isFirstTurn: boolean;
   /** True while no draft YAML exists yet — browser exploration is allowed. */
   exploring: boolean;
-  computerUse?: boolean;
-  browserMcp?: "playwright" | "chrome-devtools";
+  browserMode?: BrowserMode;
 }
 
 /** Build the full prompt for a generate conversation turn. */
 export function buildGeneratePrompt(ctx: GeneratePromptContext): string {
   const base = ctx.exploring
-    ? getGenerateStoryPlaybook({
-        computerUse: ctx.computerUse,
-        browserMcp: ctx.browserMcp,
-      })
+    ? buildGenerateStoryPlaybook(ctx.browserMode ?? "private")
     : DRAFT_REVISION_PLAYBOOK;
   const parts = [base, "\n\n## User request\n", ctx.userMessage.trim()];
   if (ctx.transcript.trim()) {

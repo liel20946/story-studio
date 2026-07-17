@@ -5,7 +5,7 @@
 // ============================================================================
 
 // ---------- Stories ----------
-export type BowserStoryMode = "recorded" | "generated";
+export type BowserStoryMode = "recorded" | "generated" | "manual";
 
 export interface StorySummary {
   name: string; // composite: site-slug--story-id
@@ -30,14 +30,14 @@ export interface StoryDetail extends StorySummary {
   steps: string[];
   assertions: string[];
   workflow: string[];
+  /** Per-story mandatory execution rules injected into the agent prompt. */
+  globalRules: string;
   raw: string;
 }
 
 // ---------- Runs ----------
 export type RunStatus = "passed" | "failed" | "cancelled" | "error" | "blocked";
 export type AgentProvider = "codex" | "claude-code";
-/** Browser MCP used for recording/running/generating when Computer Use is off. */
-export type BrowserMcp = "playwright" | "chrome-devtools";
 
 export interface RunStep {
   index: number;
@@ -127,14 +127,33 @@ export interface RecordingProgress {
 export interface RecordingAvailability {
   agentAvailable: boolean;
   playwrightAvailable: boolean;
-  /** Playwright Chromium or system Chrome — enough to record via codegen. */
+  /** Playwright Chromium — enough to record via codegen. */
   browserInstalled: boolean;
-  /** Google Chrome (not Chromium) — required for Chrome DevTools MCP / Computer Use. */
-  chromeInstalled: boolean;
-  /** Selected browser backend needs Google Chrome. */
-  needsChrome: boolean;
-  /** Playwright codegen path — false when DevTools / Computer Use records in Chrome. */
-  requiresPlaywright: boolean;
+}
+
+export type SetupItemId =
+  | "codex"
+  | "claude"
+  | "playwright"
+  | "playwright-mcp"
+  | "chromium";
+
+export interface SetupItem {
+  id: SetupItemId;
+  label: string;
+  description: string;
+  ready: boolean;
+  detail?: string;
+  installable: boolean;
+  downloadUrl?: string;
+}
+
+export interface SetupStatus {
+  items: SetupItem[];
+  /** At least one agent CLI, Playwright CLI, MCP, and Chromium are ready. */
+  ready: boolean;
+  playwrightVersion: string;
+  playwrightMcpVersion: string;
 }
 
 import type {
@@ -150,6 +169,7 @@ import type { ColorThemePalette } from "../../../src/lib/color-themes.js";
 export type ThemePreference = "system" | "light" | "dark";
 export type { ColorThemeId } from "../../../src/lib/color-themes.js";
 export type { CodexModel, CodexEffort, ClaudeModel, ClaudeEffort };
+export type BrowserMode = "private" | "existing-chrome";
 
 export interface AppSettings {
   agentProvider: AgentProvider; // which CLI runs stories (default: codex)
@@ -159,6 +179,7 @@ export interface AppSettings {
   codexEffort: CodexEffort;
   claudeModel: ClaudeModel;
   claudeEffort: ClaudeEffort;
+  browserMode: BrowserMode;
   storiesDir: string;
   runsDir: string;
   theme: ThemePreference; // app appearance (dark is the default look)
@@ -169,10 +190,6 @@ export interface AppSettings {
   colorThemeContrastLight: number;
   colorThemeContrastDark: number;
   usePointerCursors: boolean;
-  /** Browser MCP for recording, running, and generating (Playwright or Chrome DevTools). */
-  browserMcp: BrowserMcp;
-  /** When true and provider is Codex, Computer Use overrides browserMcp. */
-  codexComputerUse: boolean;
   startingUrl: string; // pre-filled Start URL when recording a new story
   runHook: string;
 }
@@ -206,8 +223,6 @@ export interface BulkRunOptions {
   storyIds?: string[];
   headed?: boolean;
   baseUrlOverride?: string;
-  /** How many story agents may run at once (1–8). Defaults to 3. */
-  maxParallel?: number;
   /** Optional free-text condition; when matched against a finished story, remaining work stops. */
   stopCondition?: string;
   /** Per-story variable run plans — expands each story into multiple bulk items. */
@@ -223,7 +238,6 @@ export type BulkStopCause = "user" | "condition";
 export interface BulkSessionSnapshot {
   bulkId: string;
   status: BulkSessionStatus;
-  maxParallel: number;
   stopCondition: string;
   stopReason?: string;
   /** Why the bulk stopped — drives the status pill in the UI. */

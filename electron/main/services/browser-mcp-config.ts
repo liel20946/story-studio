@@ -1,269 +1,186 @@
-import { existsSync, readdirSync } from "fs";
+import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
-import type { BrowserMcp } from "./contract-types.js";
+import { playwrightMcpPackageSpec } from "./setup-versions.js";
+import { buildPlaywrightEnv, resolveNpxCommand } from "./playwright-runtime.js";
+import {
+  resolveInstalledMcpCli,
+  resolveNodeCommand,
+} from "./playwright-mcp-install.js";
+import type { BrowserMode } from "./contract-types.js";
+import { getSettingsValue } from "../handlers/settings.js";
+import { readBrowserExtensionToken } from "./browser-extension-auth.js";
 
-/** Effective browser backend after Computer Use override. */
-export type EffectiveBrowserTool = BrowserMcp | "computer-use";
-
-export function resolveEffectiveBrowserTool(options: {
-  browserMcp?: BrowserMcp | null;
-  computerUse?: boolean;
-}): EffectiveBrowserTool {
-  if (options.computerUse) return "computer-use";
-  return options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
+/** MCP server flags only (no launcher/package spec) — shared by npx + local-install launches. */
+export function mcpServerFlags(
+  outputDir?: string,
+  browserMode: BrowserMode = getSettingsValue().browserMode,
+): string[] {
+  // Playwright MCP expects comma-separated "width,height"; an "x"-separated
+  // value throws "Invalid viewport size format" at startup.
+  const flags =
+    browserMode === "existing-chrome"
+      ? [
+          "--extension",
+          "--timeout-action",
+          "10000",
+          "--timeout-navigation",
+          "30000",
+        ]
+      : ["--headless", "--isolated", "--viewport-size=1920,1080"];
+  if (outputDir) flags.push("--output-dir", outputDir);
+  return flags;
 }
 
-/** True when the selected browser backend needs Google Chrome installed. */
-export function needsGoogleChrome(options: {
-  browserMcp?: BrowserMcp | null;
-  computerUse?: boolean;
-}): boolean {
-  return Boolean(options.computerUse) || options.browserMcp === "chrome-devtools";
+export function playwrightMcpArgs(
+  outputDir?: string,
+  browserMode?: BrowserMode,
+): string[] {
+  const pkg = playwrightMcpPackageSpec();
+  // Pinned package + flag order for the npx `-y` launch (fallback path).
+  return ["-y", pkg, ...mcpServerFlags(outputDir, browserMode)];
 }
 
-const PLAYWRIGHT_MCP_ARGS = [
-  "-y",
-  "@playwright/mcp@latest",
-  "--headless",
-  "--isolated",
-  "--viewport-size=1920x1080",
-] as const;
+export interface PlaywrightMcpServerLaunch {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  /** Passed only to the parent process; never serialized into persisted MCP config files. */
+  secretEnv: Record<string, string>;
+}
 
-export function chromeDevToolsMcpArgs(options?: {
-  /** Attach to an existing Chrome debugging endpoint (headed recording). */
-  browserUrl?: string;
-  /**
-   * Connect to the user's already-running Chrome (Chrome 144+ with
-   * chrome://inspect/#remote-debugging enabled). Prefer this for recording.
-   */
-  autoConnect?: boolean;
-}): string[] {
-  const args = ["-y", "chrome-devtools-mcp@latest"];
-  if (options?.browserUrl) {
-    args.push(`--browser-url=${options.browserUrl}`);
-  } else if (options?.autoConnect) {
-    args.push("--autoConnect");
-  } else {
-    args.push("--headless", "--isolated");
+export interface PlaywrightMcpLaunchOptions {
+  browserMode?: BrowserMode;
+}
+
+export async function playwrightMcpSecretEnv(
+  browserMode: BrowserMode = getSettingsValue().browserMode,
+): Promise<Record<string, string>> {
+  if (browserMode !== "existing-chrome") return {};
+  const token = await readBrowserExtensionToken();
+  return token ? { PLAYWRIGHT_MCP_EXTENSION_TOKEN: token } : {};
+}
+
+/**
+ * Full MCP launch spec for agent child processes.
+ *
+ * Prefers the app-managed local install (`node <cli> …`) so the MCP starts
+ * without an `npx -y` registry round-trip on every run. Falls back to the
+ * original `npx -y @playwright/mcp@<pinned>` launch when the local install or a
+ * resolvable node binary is unavailable, so runs never break.
+ */
+export async function buildPlaywrightMcpServerLaunch(
+  outputDir?: string,
+  options: PlaywrightMcpLaunchOptions = {},
+): Promise<PlaywrightMcpServerLaunch> {
+  const browserMode = options.browserMode ?? getSettingsValue().browserMode;
+  const baseEnv = buildPlaywrightEnv();
+  const env: Record<string, string> = {
+    PATH: baseEnv.PATH ?? "",
+    HOME: baseEnv.HOME ?? os.homedir(),
+  };
+  const secretEnv = await playwrightMcpSecretEnv(browserMode);
+
+  const cli = await resolveInstalledMcpCli();
+  const node = cli ? await resolveNodeCommand() : null;
+  if (cli && node) {
+    return {
+      command: node,
+      args: [cli, ...mcpServerFlags(outputDir, browserMode)],
+      env,
+      secretEnv,
+    };
+  }
+
+  const command = await resolveNpxCommand();
+  return {
+    command,
+    args: playwrightMcpArgs(outputDir, browserMode),
+    env,
+    secretEnv,
+  };
+}
+
+/**
+ * Codex `-c` overrides that register the Playwright MCP INLINE (command + args).
+ *
+ * Story runs pass `--ignore-user-config` to stay isolated from the user's global
+ * ~/.codex/config.toml (notably `[features] multi_agent = true`, which would fan a
+ * single story out to parallel sub-agents). But that flag also makes codex ignore
+ * the project `.codex/config.toml`, so the MCP would not register and no browser
+ * tool would be available. Injecting the server here via `-c` gives codex the MCP
+ * regardless of user/project config. Reuses the fast local node+cli launch when
+ * available, falling back to npx.
+ */
+export async function buildCodexPlaywrightMcpConfigArgs(
+  outputDir?: string,
+): Promise<string[]> {
+  const launch = await buildPlaywrightMcpServerLaunch(outputDir);
+  const args = [
+    "-c",
+    "features.js_repl=false",
+    "-c",
+    "mcp_servers.playwright.enabled=true",
+    "-c",
+    `mcp_servers.playwright.command=${JSON.stringify(launch.command)}`,
+    "-c",
+    `mcp_servers.playwright.args=${JSON.stringify(launch.args)}`,
+    "-c",
+    "mcp_servers.playwright.startup_timeout_sec=120",
+    "-c",
+    "mcp_servers.playwright.tool_timeout_sec=45",
+  ];
+  for (const [key, value] of Object.entries(launch.env)) {
+    args.push(
+      "-c",
+      `mcp_servers.playwright.env.${key}=${JSON.stringify(value)}`,
+    );
   }
   return args;
 }
 
-/** Locate the bundled SkyComputerUseClient MCP helper. */
-export function findComputerUseHelper(): {
-  command: string;
-  cwd: string;
-  args: string[];
-} | null {
-  const home = os.homedir();
-  const relativeHelper =
-    "Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient";
-  const searchRoots: string[] = [];
-
-  const cacheRoot = path.join(home, ".codex/plugins/cache/openai-bundled/computer-use");
-  if (existsSync(cacheRoot)) {
-    try {
-      for (const entry of readdirSync(cacheRoot)) {
-        searchRoots.push(path.join(cacheRoot, entry));
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  for (const root of [
-    "/Applications/Codex.app/Contents/Resources/plugins/openai-bundled/computer-use",
-    "/Applications/Codex.app/Contents/Resources/plugins/openai-bundled/plugins/computer-use",
-  ]) {
-    if (!existsSync(root)) continue;
-    searchRoots.push(root);
-    try {
-      for (const entry of readdirSync(root)) {
-        searchRoots.push(path.join(root, entry));
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  for (const dir of searchRoots) {
-    const command = path.join(dir, relativeHelper);
-    if (existsSync(command)) {
-      return { command, cwd: dir, args: ["mcp"] };
-    }
-  }
-  return null;
-}
-
-function codexHomeDir(): string {
-  const fromEnv = process.env.CODEX_HOME?.trim();
-  if (fromEnv) return fromEnv;
-  return path.join(os.homedir(), ".codex");
-}
-
-/** Codex `-c` overrides for the selected browser MCP. */
-export function buildCodexMcpConfigArgs(
-  browserMcp: BrowserMcp = "playwright",
-  options?: { browserUrl?: string; autoConnect?: boolean },
-): string[] {
-  if (browserMcp === "chrome-devtools") {
-    const mcpArgs = chromeDevToolsMcpArgs({
-      browserUrl: options?.browserUrl,
-      autoConnect: options?.autoConnect,
-    });
-    return [
-      "-c",
-      "mcp_servers.chrome-devtools.enabled=true",
-      "-c",
-      'mcp_servers.chrome-devtools.command="npx"',
-      "-c",
-      `mcp_servers.chrome-devtools.args=${JSON.stringify(mcpArgs)}`,
-      "-c",
-      "mcp_servers.chrome-devtools.startup_timeout_sec=60",
-      "-c",
-      "features.js_repl=false",
-    ];
-  }
-  return [
-    "-c",
-    "mcp_servers.playwright.enabled=true",
-    "-c",
-    'mcp_servers.playwright.command="npx"',
-    "-c",
-    `mcp_servers.playwright.args=${JSON.stringify([...PLAYWRIGHT_MCP_ARGS])}`,
-    "-c",
-    "mcp_servers.playwright.startup_timeout_sec=60",
-    "-c",
-    "features.js_repl=false",
-  ];
-}
-
-/**
- * Codex `-c` overrides for Computer Use runs.
- * Explicitly wires the SkyComputerUseClient MCP helper when found so CLI
- * sessions (including Story Studio) can load Computer Use without relying
- * solely on plugin discovery.
- */
-export function buildCodexComputerUseConfigArgs(): string[] {
-  const args = ["-c", "features.js_repl=false"];
-  const helper = findComputerUseHelper();
-  const home = codexHomeDir();
-  if (!helper) {
-    console.warn(
-      "[computer-use] SkyComputerUseClient not found under ~/.codex/plugins or Codex.app — relying on user Codex plugin config",
-    );
-    return args;
-  }
-
-  console.log("[computer-use] wiring MCP helper", {
-    command: helper.command,
-    cwd: helper.cwd,
-  });
-
-  return [
-    ...args,
-    "-c",
-    "mcp_servers.computer-use.enabled=true",
-    "-c",
-    `mcp_servers.computer-use.command=${JSON.stringify(helper.command)}`,
-    "-c",
-    `mcp_servers.computer-use.args=${JSON.stringify(helper.args)}`,
-    "-c",
-    `mcp_servers.computer-use.cwd=${JSON.stringify(helper.cwd)}`,
-    "-c",
-    `mcp_servers.computer-use.env.CODEX_HOME=${JSON.stringify(home)}`,
-    "-c",
-    `mcp_servers.computer-use.env.CODEX_SQLITE_HOME=${JSON.stringify(path.join(home, "sqlite"))}`,
-    "-c",
-    "mcp_servers.computer-use.startup_timeout_sec=60",
-  ];
-}
-
-/** Claude `--mcp-config` JSON for the selected browser MCP. */
-export function buildClaudeMcpConfigJson(
-  browserMcp: BrowserMcp = "playwright",
-  options?: { browserUrl?: string; autoConnect?: boolean },
-): string {
-  if (browserMcp === "chrome-devtools") {
-    return JSON.stringify({
-      mcpServers: {
-        "chrome-devtools": {
-          command: "npx",
-          args: chromeDevToolsMcpArgs({
-            browserUrl: options?.browserUrl,
-            autoConnect: options?.autoConnect,
-          }),
-        },
-      },
-    });
-  }
+export async function buildClaudeMcpConfigJson(outputDir?: string): Promise<string> {
+  const launch = await buildPlaywrightMcpServerLaunch(outputDir);
   return JSON.stringify({
     mcpServers: {
       playwright: {
-        command: "npx",
-        args: [...PLAYWRIGHT_MCP_ARGS],
+        type: "stdio",
+        command: launch.command,
+        args: launch.args,
+        env: launch.env,
       },
     },
   });
 }
 
-export function projectCodexConfigToml(
-  browserMcp: BrowserMcp = "playwright",
-  options?: { browserUrl?: string; autoConnect?: boolean },
-): string {
-  if (browserMcp === "chrome-devtools") {
-    return `[mcp_servers.chrome-devtools]
-command = "npx"
-args = ${JSON.stringify(
-      chromeDevToolsMcpArgs({
-        browserUrl: options?.browserUrl,
-        autoConnect: options?.autoConnect,
-      }),
-    )}
-enabled = true
-startup_timeout_sec = 60
+export async function writeClaudeMcpConfigFile(
+  configDir: string,
+  outputDir?: string,
+): Promise<string> {
+  const mcpPath = path.join(configDir, "story-studio-mcp.json");
+  const contents = await buildClaudeMcpConfigJson(outputDir);
+  await fs.writeFile(mcpPath, contents, "utf-8");
+  console.log("[mcp] wrote Claude MCP config", { mcpPath, command: JSON.parse(contents).mcpServers.playwright.command });
+  return mcpPath;
+}
 
-[features]
-js_repl = false
-`;
-  }
+export async function projectCodexConfigToml(): Promise<string> {
+  // Claude / absolute-npx paths still use the resolved launch spec.
+  const launch = await buildPlaywrightMcpServerLaunch();
+  const envLines = Object.entries(launch.env)
+    .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
+    .join("\n");
   return `[mcp_servers.playwright]
-command = "npx"
-args = ${JSON.stringify([...PLAYWRIGHT_MCP_ARGS])}
+command = ${JSON.stringify(launch.command)}
+args = ${JSON.stringify(launch.args)}
 enabled = true
-startup_timeout_sec = 60
+startup_timeout_sec = 120
+tool_timeout_sec = 45
+
+[mcp_servers.playwright.env]
+${envLines}
 
 [features]
 js_repl = false
 `;
 }
-
-export function projectCodexComputerUseConfigToml(): string {
-  const helper = findComputerUseHelper();
-  const home = codexHomeDir();
-  if (!helper) {
-    return `[features]
-js_repl = false
-`;
-  }
-  return `[mcp_servers.computer-use]
-command = ${JSON.stringify(helper.command)}
-args = ${JSON.stringify(helper.args)}
-cwd = ${JSON.stringify(helper.cwd)}
-enabled = true
-startup_timeout_sec = 60
-
-[mcp_servers.computer-use.env]
-CODEX_HOME = ${JSON.stringify(home)}
-CODEX_SQLITE_HOME = ${JSON.stringify(path.join(home, "sqlite"))}
-
-[features]
-js_repl = false
-`;
-}
-
-/** @deprecated Prefer projectCodexComputerUseConfigToml() */
-export const PROJECT_CODEX_COMPUTER_USE_CONFIG = `[features]
-js_repl = false
-`;

@@ -2,6 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { spawn, type ChildProcess } from "child_process";
 import { broadcast } from "../broadcast.js";
+import { killDetachedAgentProcess } from "./agent-process-kill.js";
 import type {
   RunEvent,
   RunEventKind,
@@ -14,7 +15,8 @@ import type {
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
 import { writeRunMeta, deleteRunMeta } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
-import { getRunStoryPlaybook, buildRunPromptSuffix } from "./story-skill.js";
+import { buildRunStoryPlaybook, buildRunPromptSuffix } from "./story-skill.js";
+import { getSettingsValue } from "../handlers/settings.js";
 import {
   ensureRunOutputDir,
   getHeroScreenshotPath,
@@ -25,6 +27,7 @@ import {
 import {
   deletePersistedRunEvents,
   deleteRunPid,
+  ensureActionTimeline,
   flushPersistRunEvents,
   schedulePersistRunEvents,
   writeRunPid,
@@ -33,6 +36,7 @@ import {
   acquirePlaywrightSlot,
   releasePlaywrightSlot,
 } from "./playwright-slots.js";
+import { ensurePlaywrightReady } from "./playwright-preflight.js";
 import {
   RUN_OUTPUT_SCHEMA,
   acquireRunSlot,
@@ -42,14 +46,17 @@ import {
   DEFAULT_CLAUDE_EFFORT,
   DEFAULT_CLAUDE_MODEL,
   type AgentRunConfig,
-  type StoryRunOptions,
 } from "./agent-config.js";
-import { buildClaudeMcpConfigJson } from "./browser-mcp-config.js";
+import {
+  playwrightMcpSecretEnv,
+  writeClaudeMcpConfigFile,
+} from "./browser-mcp-config.js";
 import {
   markRunCancelled,
   settleRunningEvents,
 } from "./run-event-settle.js";
 import { buildClaudeSpawnEnv } from "./agent-spawn-env.js";
+import { classifyMcpTool } from "./mcp-tool-event.js";
 
 interface RunState {
   runId: string;
@@ -106,42 +113,6 @@ function isPlaywrightMcpTool(toolName: string): boolean {
   );
 }
 
-function toolNameToKind(toolName: string): RunEventKind {
-  if (toolName.includes("navigate")) return "navigate";
-  if (toolName.includes("click") || toolName.includes("press") || toolName.includes("select")) return "click";
-  if (toolName.includes("type") || toolName.includes("fill")) return "type";
-  if (toolName.includes("snapshot")) return "snapshot";
-  if (toolName.includes("screenshot")) return "screenshot";
-  if (toolName.includes("wait")) return "wait";
-  if (toolName.includes("evaluate")) return "evaluate";
-  return "tool";
-}
-
-function toolNameToLabel(toolName: string): string {
-  const bare = toolName.replace(/^mcp__playwright__|^playwright__browser[-_]?|^browser[-_]?/, "");
-  if (bare.includes("screenshot")) return "Screenshot";
-  return bare.charAt(0).toUpperCase() + bare.slice(1).replace(/[-_]/g, " ");
-}
-
-function extractToolInput(input: Record<string, unknown>): string | undefined {
-  if (typeof input["url"] === "string") return input["url"];
-  if (typeof input["element"] === "string") return input["element"];
-  if (typeof input["text"] === "string") return input["text"];
-  if (typeof input["value"] === "string") return input["value"];
-  if (typeof input["selector"] === "string") return input["selector"];
-  if (Array.isArray(input["fields"])) {
-    const names = (input["fields"] as Array<Record<string, unknown>>)
-      .map((f) => (f["name"] ?? f["ref"]) as string | undefined)
-      .filter((n): n is string => typeof n === "string");
-    if (names.length) return names.join(", ");
-  }
-  if (typeof input["function"] === "string" || typeof input["expression"] === "string") {
-    return undefined;
-  }
-  const json = JSON.stringify(input);
-  return json.length <= 80 ? json : undefined;
-}
-
 async function readResultJson(resultPath: string): Promise<Record<string, unknown> | null> {
   try {
     const data = await fs.readFile(resultPath, "utf-8");
@@ -180,6 +151,9 @@ function buildErrorResult(
 
 async function finalizeRun(result: RunResult, events: RunEvent[]): Promise<RunResult> {
   settleRunningEvents(events, result.status);
+  const withSteps = await ensureActionTimeline(result.runId, events);
+  events.length = 0;
+  events.push(...withSteps);
   await flushPersistRunEvents(result.runId, events);
   const enriched = await enrichRunResult(result);
   const record: RunRecord = { ...enriched, events };
@@ -261,9 +235,16 @@ function handleClaudeLine(
         if (!isPlaywrightMcpTool(toolName)) continue;
         const toolId = (block["id"] as string | undefined) ?? toolName;
         const input = (block["input"] as Record<string, unknown> | undefined) ?? {};
-        const kind = toolNameToKind(toolName);
-        const label = kind === "evaluate" ? "Thinking" : toolNameToLabel(toolName);
-        upsertToolEvent(state, events, toolId, kind, label, extractToolInput(input), "running");
+        const classified = classifyMcpTool(toolName, input);
+        upsertToolEvent(
+          state,
+          events,
+          toolId,
+          classified.kind,
+          classified.label,
+          classified.detail,
+          "running",
+        );
       } else if (blockType === "text") {
         const text = (block["text"] as string | undefined) ?? "";
         if (text.trim() && !text.trimStart().startsWith("{")) {
@@ -301,12 +282,8 @@ export async function startClaudeRun(
   claudeBinary: string,
   runHook?: string,
   agentConfig?: AgentRunConfig,
-  runOptions?: StoryRunOptions,
 ): Promise<RunResult> {
   const startedAt = Date.now();
-  const browserMcp = runOptions?.browserMcp === "chrome-devtools"
-    ? "chrome-devtools"
-    : "playwright";
   const model = agentConfig?.model ?? DEFAULT_CLAUDE_MODEL;
   const state: RunState = {
     runId,
@@ -343,7 +320,7 @@ export async function startClaudeRun(
     : await fs.readFile(storyFilePath, "utf-8").catch(() => "");
 
   const prompt =
-    getRunStoryPlaybook({ browserMcp }) +
+    buildRunStoryPlaybook(getSettingsValue().browserMode) +
     buildRunPromptSuffix({
       runOutputDir,
       screenshotsDir,
@@ -353,7 +330,11 @@ export async function startClaudeRun(
       runHook,
     });
 
-  const mcpConfig = buildClaudeMcpConfigJson(browserMcp);
+  const mcpConfigPath = await writeClaudeMcpConfigFile(
+    runOutputDir,
+    screenshotsDir,
+  );
+  const mcpSecretEnv = await playwrightMcpSecretEnv();
 
   const effort = agentConfig?.effort ?? DEFAULT_CLAUDE_EFFORT;
 
@@ -361,6 +342,7 @@ export async function startClaudeRun(
     "-p",
     prompt,
     "--dangerously-skip-permissions",
+    "--strict-mcp-config",
     "--model",
     state.agentModel,
     "--effort",
@@ -376,13 +358,12 @@ export async function startClaudeRun(
     "--add-dir",
     runOutputDir,
     "--mcp-config",
-    mcpConfig,
+    mcpConfigPath,
   ];
 
   console.log("[claude:run]", {
     runId,
     storyName,
-    browserMcp,
     claudeBinary,
     args: args.slice(0, 6),
   });
@@ -426,6 +407,60 @@ export async function startClaudeRun(
     return finalizeRun(cancelledResult, events);
   }
 
+  const prepEvent = (detail: string): void => {
+    const evt: RunEvent = {
+      runId,
+      seq: state.seq++,
+      ts: Date.now(),
+      kind: "status",
+      label: "Preparing",
+      detail,
+      status: "running",
+    };
+    events.push(evt);
+    broadcast("run:event", evt);
+    syncRunTimeline(runId, events);
+  };
+
+  prepEvent("Preparing browser environment…");
+  const prep = await ensurePlaywrightReady({
+    onProgress: (p) => prepEvent(p.message),
+  });
+  if (!prep.ok) {
+    releaseRunSlot();
+    const msg = prep.error ?? prep.message;
+    const failEvent: RunEvent = {
+      runId,
+      seq: state.seq++,
+      ts: Date.now(),
+      kind: "error",
+      label: "Browser unavailable",
+      detail: msg,
+      status: "failed",
+    };
+    events.push(failEvent);
+    broadcast("run:event", failEvent);
+    syncRunTimeline(runId, events);
+    return finalizeRun(
+      {
+        runId,
+        storyName,
+        storyTitle,
+        status: "error",
+        summary: "",
+        assertions: [],
+        screenshotPath,
+        screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+        startedAt,
+        finishedAt: Date.now(),
+        error: msg,
+        agentProvider: state.agentProvider,
+        agentModel: state.agentModel,
+      },
+      events,
+    );
+  }
+
   await acquirePlaywrightSlot();
 
   if (state.cancelled) {
@@ -460,7 +495,7 @@ export async function startClaudeRun(
 
     const child = spawn(claudeBinary, args, {
       cwd: runOutputDir,
-      env: buildClaudeSpawnEnv(),
+      env: { ...buildClaudeSpawnEnv(), ...mcpSecretEnv },
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -614,21 +649,10 @@ export function cancelClaudeRun(runId: string): boolean {
     return true;
   }
 
-  const proc = state.process;
-  const pid = proc.pid ?? 0;
-  const killGroup = (sig: NodeJS.Signals) => {
-    try {
-      process.kill(-pid, sig);
-    } catch {
-      try {
-        proc.kill(sig);
-      } catch {
-        // already dead
-      }
-    }
-  };
-  killGroup("SIGTERM");
-  setTimeout(() => killGroup("SIGKILL"), 3000);
-  console.log("[claude:run] cancel sent", { runId, pid });
+  killDetachedAgentProcess(state.process, {
+    escalationMs: 3000,
+    isStillActive: () => _runs.has(runId),
+  });
+  console.log("[claude:run] cancel sent", { runId, pid: state.process.pid ?? 0 });
   return true;
 }

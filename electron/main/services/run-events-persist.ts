@@ -1,7 +1,6 @@
 import * as fs from "fs/promises";
 import * as path from "path";
-import type { RunEvent, RunEventKind } from "./contract-types.js";
-import type { RunStep } from "./contract-types.js";
+import type { RunEvent, RunEventKind, RunStep } from "./contract-types.js";
 import { getRunOutputDir, loadRunSteps } from "./run-artifacts.js";
 import { getRunsDir } from "./paths.js";
 
@@ -96,10 +95,18 @@ function stepTextToKind(text: string): RunEventKind {
   if (/^Select\b/i.test(text)) return "click";
   if (/^Verify\b/i.test(text)) return "snapshot";
   if (/^Wait\b/i.test(text)) return "wait";
-  return "tool";
+  // Checkpoint screenshot slugs (step-N-{slug}.png) — infer from keywords.
+  const slug = text.toLowerCase();
+  if (/\bnavigate\b/.test(slug) || slug === "navigate") return "navigate";
+  if (/\b(verify|visible|selector|failure|compensation|wallet)\b/.test(slug)) return "snapshot";
+  if (/\b(click|open|dialog|submit|issue)\b/.test(slug)) return "click";
+  if (/\b(fill|form|login|password|email|amount)\b/.test(slug)) return "type";
+  return "snapshot";
 }
 
 function stepTextToLabel(text: string): string {
+  if (/^Press\b/i.test(text)) return "Press";
+  if (/^Select\b/i.test(text)) return "Select";
   const kind = stepTextToKind(text);
   if (kind === "navigate") return "Navigate";
   if (kind === "click") return "Click";
@@ -110,13 +117,18 @@ function stepTextToLabel(text: string): string {
 }
 
 function stepTextToDetail(text: string): string {
-  const stripped = text
+  let stripped = text
     .replace(/^Navigate to\s+/i, "")
     .replace(/^Click (?:the\s+)?/i, "")
     .replace(/^Fill (?:the\s+)?/i, "")
     .replace(/^Press\s+/i, "")
     .replace(/^Select\s+/i, "")
     .replace(/^Verify\s+/i, "");
+  // Keep the target field but never put typed values (credentials, customer
+  // data, etc.) into the timeline.
+  if (/^Fill\b/i.test(text)) {
+    stripped = stripped.replace(/\s+with\s+.+$/i, "");
+  }
   return stripped.trim() || text;
 }
 
@@ -130,9 +142,10 @@ export function runEventsFromSteps(runId: string, steps: RunStep[]): RunEvent[] 
         : step.status === "failed"
           ? ("failed" as const)
           : ("cancelled" as const);
+    const seq = step.index > 0 ? step.index : index + 1;
     return {
       runId,
-      seq: index + 1,
+      seq,
       ts: Number.isFinite(ts) ? ts : Date.now(),
       kind: stepTextToKind(step.text),
       label: stepTextToLabel(step.text),
@@ -140,6 +153,56 @@ export function runEventsFromSteps(runId: string, steps: RunStep[]): RunEvent[] 
       status,
     };
   });
+}
+
+function isBenignCodexStderrEvent(event: RunEvent): boolean {
+  if (event.kind !== "error" || !event.detail) return false;
+  return /reading additional input from stdin/i.test(event.detail);
+}
+
+/** True when the timeline already has browser-action rows (not just status/meta). */
+export function hasActionTimelineEvents(events: RunEvent[]): boolean {
+  return events.some(
+    (e) =>
+      e.kind !== "status" &&
+      e.kind !== "reasoning" &&
+      e.kind !== "evaluate" &&
+      e.kind !== "tool" &&
+      e.kind !== "message" &&
+      !isBenignCodexStderrEvent(e),
+  );
+}
+
+/** Fill a sparse MCP timeline from steps.json (Codex often runs a shell script instead). */
+export function ensureActionTimelineFromSteps(
+  runId: string,
+  events: RunEvent[],
+  steps: RunStep[],
+): RunEvent[] {
+  if (steps.length === 0) return events;
+
+  // Codex logs the full execution order as blocked when MCP never connected — showing
+  // those rows replaces the real setup shell timeline and looks like failed clicks.
+  if (steps.every((s) => s.status === "blocked")) return events;
+
+  const completedSteps = steps.filter((s) => s.status === "passed" || s.status === "failed");
+
+  // steps.json is the canonical story timeline. Raw MCP events include retries,
+  // snapshots, and exploratory calls that should not become user-facing steps.
+  if (completedSteps.length > 0) {
+    const meta = events.filter((e) => e.kind === "status");
+    return [...meta, ...runEventsFromSteps(runId, completedSteps)];
+  }
+
+  return events;
+}
+
+export async function ensureActionTimeline(
+  runId: string,
+  events: RunEvent[],
+): Promise<RunEvent[]> {
+  const steps = await loadRunSteps(runId);
+  return ensureActionTimelineFromSteps(runId, events, steps);
 }
 
 /** Load persisted timeline events, falling back to steps.json for older runs. */

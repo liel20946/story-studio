@@ -1,4 +1,4 @@
-import type { ColorThemePalette } from "./color-themes";
+import type { ColorThemeId, ColorThemePalette } from "./color-themes";
 import { DEFAULT_COLOR_THEME_CONTRAST } from "./color-theme-config";
 import { hexToRgb, mixHex } from "./color-utils";
 
@@ -107,11 +107,78 @@ function normalizeLightPalette(palette: ColorThemePalette): ColorThemePalette {
 const DARK_SIDEBAR_SURFACE_LIFT = 0.035;
 const LIGHT_SIDEBAR_SURFACE_LIFT = 0.035;
 
+/** Cursor Dark Anysphere — extracted from Cursor.app theme-cursor (see DESIGN.md). */
+function deriveCursorThemeVariables(
+  palette: ColorThemePalette,
+  mode: "light" | "dark",
+): Record<string, string> {
+  const accent = palette.accent;
+
+  if (mode === "dark") {
+    return {
+      "--bg": "#141414",
+      "--bg-secondary": "#181818",
+      "--bg-elevated": "#1c1c1c",
+      "--fg": "rgb(228 228 228 / 92%)",
+      "--theme-accent": accent,
+      "--accent": accent,
+      "--selection": "rgb(228 228 228 / 92%)",
+      "--color-text-primary": "rgb(228 228 228 / 92%)",
+      "--color-text-secondary": "rgb(228 228 228 / 55%)",
+      "--color-text-tertiary": "rgb(228 228 228 / 37%)",
+      "--color-text-quaternary": "rgb(228 228 228 / 25%)",
+      "--color-surface-control": "rgb(228 228 228 / 4%)",
+      "--color-surface-control-subtle": "rgb(228 228 228 / 4%)",
+      "--color-surface-hover": "rgb(228 228 228 / 7%)",
+      "--color-surface-well": "rgb(228 228 228 / 4%)",
+      "--color-surface-sidebar": "transparent",
+      "--color-surface-popover": "#141414",
+      "--color-border-separator": "rgb(228 228 228 / 7%)",
+      "--color-border-field": "rgb(228 228 228 / 15%)",
+      "--color-window-bg": "transparent",
+      "--glass-bg": "#141414",
+      "--glass-bg-elevated": "#181818",
+      "--accent-glow": "rgb(129 161 193 / 22%)",
+      "--accent-contrast": "#191c22",
+    };
+  }
+
+  return {
+    "--bg": "#f3f3f3",
+    "--bg-secondary": "#ffffff",
+    "--bg-elevated": "#ffffff",
+    "--fg": "#1e1e1e",
+    "--theme-accent": accent,
+    "--accent": accent,
+    "--selection": "#1e1e1e",
+    "--color-text-primary": "#1e1e1e",
+    "--color-text-secondary": "#5a5a5a",
+    "--color-text-tertiary": "#7a7a7a",
+    "--color-text-quaternary": "#9a9a9a",
+    "--color-surface-control": "rgb(0 0 0 / 6%)",
+    "--color-surface-control-subtle": "rgb(0 0 0 / 4%)",
+    "--color-surface-hover": "rgb(0 0 0 / 8%)",
+    "--color-surface-well": "rgb(0 0 0 / 4%)",
+    "--color-surface-sidebar": "transparent",
+    "--color-surface-popover": "rgb(255 255 255 / 92%)",
+    "--color-border-separator": "rgb(0 0 0 / 8%)",
+    "--color-border-field": "rgb(0 0 0 / 12%)",
+    "--color-window-bg": "transparent",
+    "--glass-bg": "rgb(255 255 255 / 55%)",
+    "--glass-bg-elevated": "rgb(255 255 255 / 85%)",
+    "--accent-glow": `rgb(from ${accent} r g b / 18%)`,
+  };
+}
+
 function deriveThemeVariables(
   palette: ColorThemePalette,
   mode: "light" | "dark",
   contrast = DEFAULT_COLOR_THEME_CONTRAST,
+  themeId?: ColorThemeId,
 ): Record<string, string> {
+  if (themeId === "cursor") {
+    return deriveCursorThemeVariables(palette, mode);
+  }
   const contrasted = applyPaletteContrast(palette, mode, contrast);
   const normalized =
     mode === "light" ? normalizeLightPalette(contrasted) : contrasted;
@@ -223,10 +290,11 @@ export function applyColorThemePalette(
   palette: ColorThemePalette,
   mode: "light" | "dark",
   contrast = DEFAULT_COLOR_THEME_CONTRAST,
+  themeId?: ColorThemeId,
 ): void {
   clearColorThemeOverrides();
 
-  const variables = deriveThemeVariables(palette, mode, contrast);
+  const variables = deriveThemeVariables(palette, mode, contrast, themeId);
   const root = document.documentElement;
   for (const [prop, value] of Object.entries(variables)) {
     root.style.setProperty(prop, value);

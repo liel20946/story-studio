@@ -11,6 +11,7 @@ import {
   Menu,
   nativeImage,
   screen,
+  safeStorage,
 } from "electron";
 
 export {
@@ -26,4 +27,5 @@ export {
   Menu,
   nativeImage,
   screen,
+  safeStorage,
 };

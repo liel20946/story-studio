@@ -85,17 +85,23 @@ function StoryRow({
   onToggle: () => void;
 }) {
   return (
-    <label
+    <div
       className={cn(
-        "flex cursor-pointer items-center gap-3 rounded-control px-3 py-2",
+        "flex items-center gap-2 rounded-control px-2 py-1.5",
         "hover:bg-surface-hover",
       )}
     >
       <Checkbox checked={checked} onCheckedChange={onToggle} />
-      <Text variant="regular" className="truncate">
-        {story.title}
-      </Text>
-    </label>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <Text variant="regular" className="truncate">
+          {story.title}
+        </Text>
+      </button>
+    </div>
   );
 }
 
@@ -120,26 +126,28 @@ function StorySelection({
         const allSelected =
           group.stories.length > 0 && selectedInGroup === group.stories.length;
         return (
-          <div key={group.id} className="flex flex-col">
-            <label className="mb-1 flex cursor-pointer items-center gap-2 px-1 py-0.5">
-              <Checkbox
-                checked={
-                  allSelected
-                    ? true
-                    : selectedInGroup > 0
-                      ? "indeterminate"
-                      : false
-                }
-                onCheckedChange={() => onToggleGroup(group, !allSelected)}
-              />
-              <Text variant="small-strong" color="secondary">
-                {group.name}
-              </Text>
-              <Text variant="small" color="tertiary">
-                {selectedInGroup}/{group.stories.length}
-              </Text>
-            </label>
-            <div className="flex flex-col">
+          <div key={group.id} className="content-card">
+            <div className="content-card-header">
+              <label className="flex min-w-0 cursor-pointer items-center gap-2">
+                <Checkbox
+                  checked={
+                    allSelected
+                      ? true
+                      : selectedInGroup > 0
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={() => onToggleGroup(group, !allSelected)}
+                />
+                <Text variant="small-strong" color="secondary">
+                  {group.name}
+                </Text>
+                <Text variant="small" color="tertiary">
+                  {selectedInGroup}/{group.stories.length}
+                </Text>
+              </label>
+            </div>
+            <div className="content-card-body">
               {group.stories.map((story) => (
                 <StoryRow
                   key={story.name}
@@ -611,16 +619,13 @@ export function ScheduledEditorView({ scheduleId }: { scheduleId?: string }) {
     <ScrollArea toolbar={<ScheduledToolbar title={title} actions={toolbarActions} />}>
       <div className="detail-view px-8 py-4 pb-8">
         <div className="detail-view-main min-w-0 flex-1">
-          <div className="codex-section">
-            <span className="section-label">Stories</span>
-            <StorySelection
-              groups={groups}
-              total={total}
-              selected={selected}
-              onToggleStory={toggleStory}
-              onToggleGroup={toggleGroup}
-            />
-          </div>
+          <StorySelection
+            groups={groups}
+            total={total}
+            selected={selected}
+            onToggleStory={toggleStory}
+            onToggleGroup={toggleGroup}
+          />
         </div>
         <ScheduleRail
           name={name}

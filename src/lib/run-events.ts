@@ -26,14 +26,74 @@ export function isMetaStatusEvent(event: RunEvent): boolean {
   return event.kind === "status";
 }
 
+/** Codex shell / setup / script rows — not browser actions. */
+export function isShellSetupEvent(event: RunEvent): boolean {
+  if (event.kind !== "message") return false;
+  const label = event.label ?? "";
+  return (
+    label === "Shell" ||
+    label === "Setup" ||
+    label === "Running story" ||
+    label === "Agent"
+  );
+}
+
+/** Browser checkpoint rows (Navigate / Click / Fill / Verify / …). */
+export function isActionEvent(event: RunEvent): boolean {
+  return (
+    event.kind === "navigate" ||
+    event.kind === "click" ||
+    event.kind === "type" ||
+    event.kind === "snapshot" ||
+    event.kind === "screenshot" ||
+    event.kind === "wait"
+  );
+}
+
+/** Delays are implementation details, not useful user-facing actions. */
+export function isWaitEvent(event: RunEvent): boolean {
+  return event.kind === "wait";
+}
+
+export function hasActionTimelineEvents(events: RunEvent[]): boolean {
+  return events.some(isActionEvent);
+}
+
 export function filterTimelineEvents(events: RunEvent[]): RunEvent[] {
   return events.filter(
     (e) =>
       !isBenignCodexStderrEvent(e) &&
       !isThinkingEvent(e) &&
       !isInternalToolEvent(e) &&
-      !isMetaStatusEvent(e),
+      !isMetaStatusEvent(e) &&
+      !isShellSetupEvent(e),
   );
+}
+
+/** Prefer the timeline source that already has browser actions during a live run. */
+export function pickLiveTimelineEvents(
+  storeEvents: RunEvent[],
+  polledEvents: RunEvent[],
+  isFinished: boolean,
+): RunEvent[] {
+  const store = filterTimelineEvents(storeEvents);
+  const polled = filterTimelineEvents(polledEvents);
+
+  // IPC events arrive immediately, but one MCP call may execute a whole script
+  // and therefore produce only one coarse row. The disk timeline is rebuilt
+  // from steps.json as each story step completes and contains the canonical,
+  // human-readable action descriptions. Prefer whichever source currently has
+  // more actions; on a tie prefer the polled source because it may already have
+  // replaced a raw selector with the corresponding story step.
+  const storeActionCount = store.filter(isActionEvent).length;
+  const polledActionCount = polled.filter(isActionEvent).length;
+  if (polledActionCount > 0 && polledActionCount >= storeActionCount) return polled;
+  if (storeActionCount > 0) return store;
+
+  // Finished records are also canonicalized from steps.json. Do not retain a
+  // sparse live MCP timeline merely because it contains one event.
+  if (isFinished && polled.length > 0) return polled;
+  return polled.length > 0 ? polled : store;
 }
 
 /** Best-effort story title from codex/claude "Starting" / "Reconnected" status rows. */

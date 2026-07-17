@@ -14,6 +14,8 @@ import {
   HistoryIcon,
   ClockIcon,
   BotIcon,
+  CircleDotIcon,
+  PencilLineIcon,
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,7 +37,14 @@ import {
   ToolbarRow,
   ToolbarActions,
   Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogBody,
+  DialogFooter,
   Input,
+  Field,
   AlertDialog,
   ContextMenu,
   ContextMenuTrigger,
@@ -50,10 +59,17 @@ import { MacTitlebarRow } from "./mac-traffic-lights";
 import { CommandSearch, useCommandSearchShortcut } from "./command-search";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
-import type { RunStatus, StorySummary, RunResult, GenerateConversationSummary } from "../lib/contract-types";
+import type {
+  RunStatus,
+  StorySummary,
+  StoryDetail,
+  RunResult,
+  GenerateConversationSummary,
+} from "../lib/contract-types";
 import {
   storiesList,
   storiesGet,
+  storiesCreate,
   onStoriesChanged,
   storiesDelete,
   runsList,
@@ -68,6 +84,7 @@ import {
   generateDelete,
   generateRename,
   onGenerateChanged,
+  settingsGet,
 } from "../lib/ipc";
 import type { ScheduledRun } from "../lib/contract-types";
 import { useActiveRunMap, useAllRuns } from "../lib/run-store";
@@ -568,6 +585,130 @@ function NameDialog({
   );
 }
 
+function CreateStoryDialog({
+  open,
+  onOpenChange,
+  onRecord,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRecord: () => void;
+  onCreated: (story: StoryDetail) => void;
+}) {
+  const [view, setView] = React.useState<"choose" | "manual">("choose");
+  const [title, setTitle] = React.useState("");
+  const [url, setUrl] = React.useState("");
+  const [isCreating, setIsCreating] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setView("choose");
+    setTitle("");
+    settingsGet()
+      .then((settings) => setUrl(settings.startingUrl))
+      .catch(() => setUrl(""));
+  }, [open]);
+
+  async function handleCreateManualStory() {
+    if (!title.trim() || isCreating) return;
+    setIsCreating(true);
+    try {
+      const story = await storiesCreate(title.trim(), url.trim() || "about:blank");
+      onOpenChange(false);
+      onCreated(story);
+    } catch (err) {
+      reportAppErrorFromUnknown("Failed to create story", err);
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="medium">
+        <DialogHeader>
+          <DialogTitle>{view === "choose" ? "New Story" : "Add Story Manually"}</DialogTitle>
+          <DialogDescription>
+            {view === "choose"
+              ? "Record browser actions or start from an editable template."
+              : "Create a template story, then edit its steps, variables, and assertions."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          {view === "choose" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="filled"
+                className="h-auto items-center justify-start gap-3 p-3 text-left"
+                onClick={onRecord}
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <CircleDotIcon className="size-4" />
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="leading-4">Record story</span>
+                  <span className="text-mini font-normal leading-3 text-tertiary">
+                    Capture actions in the browser
+                  </span>
+                </span>
+              </Button>
+              <Button
+                variant="filled"
+                className="h-auto items-center justify-start gap-3 p-3 text-left"
+                onClick={() => setView("manual")}
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <PencilLineIcon className="size-4" />
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="leading-4">Add manually</span>
+                  <span className="text-mini font-normal leading-3 text-tertiary">
+                    Edit a template immediately
+                  </span>
+                </span>
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Field label="Story name" orientation="vertical">
+                <Input
+                  autoFocus
+                  placeholder="e.g. Create gift card"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleCreateManualStory();
+                    }
+                  }}
+                  disabled={isCreating}
+                />
+              </Field>
+            </div>
+          )}
+        </DialogBody>
+        {view === "manual" ? (
+          <DialogFooter>
+            <Button variant="filled" onClick={() => setView("choose")} disabled={isCreating}>
+              Back
+            </Button>
+            <Button
+              variant="accent"
+              onClick={() => void handleCreateManualStory()}
+              disabled={!title.trim() || isCreating}
+            >
+              {isCreating ? <Loader2Icon className="size-4 animate-spin" /> : null}
+              Create Story
+            </Button>
+          </DialogFooter>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Dialog kinds — a SINGLE NameDialog instance handles all three (two mounted
 // Dialog roots could leave a lingering focus scope that made the New Section
 // dialog open unreliably).
@@ -825,6 +966,7 @@ export function AppSidebar() {
           : "stories",
   );
   const [commandSearchOpen, setCommandSearchOpen] = React.useState(false);
+  const [createStoryOpen, setCreateStoryOpen] = React.useState(false);
 
   const openCommandSearch = React.useCallback(() => {
     setCommandSearchOpen(true);
@@ -1174,7 +1316,7 @@ export function AppSidebar() {
       ? "New schedule"
       : tab === "generate"
         ? "New generation"
-        : "Record story";
+        : "New story";
 
   function handlePrimaryCreate() {
     if (tab === "scheduled") {
@@ -1182,11 +1324,11 @@ export function AppSidebar() {
     } else if (tab === "generate") {
       void handleNewGeneration();
     } else {
-      navigate({ to: "/record" });
+      setCreateStoryOpen(true);
     }
   }
 
-  // Window keyboard shortcuts for the toolbar actions: mod+N records a story
+  // Window keyboard shortcuts for the toolbar actions: mod+N creates a story
   // (or creates a schedule on the Scheduled tab), shift+mod+N creates a section,
   // shift+mod+R opens bulk run. Keyed off e.code so they're
   React.useEffect(() => {
@@ -1200,7 +1342,7 @@ export function AppSidebar() {
         } else if (tab === "generate") {
           navigate({ to: "/generate" });
         } else {
-          navigate({ to: "/record" });
+          setCreateStoryOpen(true);
         }
       } else if (e.code === "KeyN" && e.shiftKey) {
         if (!sidebarActionVisible("new-section", tab, hasStories)) return;
@@ -1412,6 +1554,29 @@ export function AppSidebar() {
         initialName={dialog.initialName}
         onSubmit={handleDialogSubmit}
         onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
+      />
+
+      <CreateStoryDialog
+        open={createStoryOpen}
+        onOpenChange={setCreateStoryOpen}
+        onRecord={() => {
+          setCreateStoryOpen(false);
+          navigate({ to: "/record" });
+        }}
+        onCreated={(story) => {
+          queryClient.setQueryData(["stories:get", story.name], story);
+          queryClient.setQueryData<StorySummary[]>(["stories:list"], (current) =>
+            current?.some((item) => item.name === story.name)
+              ? current
+              : [story, ...(current ?? [])],
+          );
+          void queryClient.invalidateQueries({ queryKey: ["stories:list"] });
+          navigate({
+            to: "/story/$name",
+            params: { name: story.name },
+            search: { edit: true },
+          });
+        }}
       />
 
       <CommandSearch

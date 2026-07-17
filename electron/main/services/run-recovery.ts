@@ -9,11 +9,12 @@ import type {
   RunResult,
   RunStatus,
 } from "./contract-types.js";
-import { getHeroScreenshotPath, enrichRunResult } from "./run-artifacts.js";
+import { getHeroScreenshotPath, enrichRunResult, loadRunSteps } from "./run-artifacts.js";
 import { markRunCancelled, settleRunningEvents } from "./run-event-settle.js";
 import {
   deletePersistedRunEvents,
   deleteRunPid,
+  ensureActionTimelineFromSteps,
   isProcessAlive,
   loadRecoverableRunEvents,
   readRunPid,
@@ -62,6 +63,10 @@ async function finalizeRecoveredRun(
   result: RunResult,
 ): Promise<void> {
   settleRunningEvents(events, result.status, false);
+  const steps = await loadRunSteps(meta.runId);
+  const withSteps = ensureActionTimelineFromSteps(meta.runId, events, steps);
+  events.length = 0;
+  events.push(...withSteps);
   const enriched = await enrichRunResult(result);
   const record: RunRecord = { ...enriched, events };
   await saveRun(record);

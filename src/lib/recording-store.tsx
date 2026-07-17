@@ -143,7 +143,7 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
     setState((s) => ({
       ...s,
       phase: "converting",
-      message: "Converting with AI…",
+      message: "Reading your Chrome tab with AI…",
     }));
     try {
       await recordingCancel();
@@ -153,13 +153,17 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const abort = React.useCallback(async () => {
+    const wasConverting = state.phase === "converting";
     setState(initialState);
     try {
       await recordingAbort();
     } catch {
       // UI already dismissed; backend cleanup is best-effort.
     }
-  }, []);
+    if (wasConverting) {
+      // recordingStart may still be in flight; it resolves with cancelled: true.
+    }
+  }, [state.phase]);
 
   const reset = React.useCallback(() => setState(initialState), []);
 

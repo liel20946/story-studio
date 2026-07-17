@@ -92,7 +92,7 @@ export function DialogContent({
       <DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50" />
       <DialogPrimitive.Content
         className={cn(
-          "dialog-surface fixed top-1/2 z-50 flex w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4",
+          "dialog-surface fixed top-1/2 z-50 flex w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4 outline-none",
           dialogCenterClass,
           sizeClass,
           className,
@@ -161,7 +161,7 @@ export function AlertDialog({
         />
         <AlertDialogPrimitive.Content
           className={cn(
-            "dialog-surface fixed top-1/2 z-50 flex w-full max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4",
+            "dialog-surface fixed top-1/2 z-50 flex w-full max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4 outline-none",
             "left-[calc(var(--sidebar-width,0px)+(100vw-var(--sidebar-width,0px))/2)]",
           )}
           onClick={(e) => e.stopPropagation()}

@@ -41,8 +41,7 @@ export function formatRecordingFailure(
   if (raw.includes("Codex conversion timed out")) {
     return {
       title: "Conversion timed out",
-      message:
-        "Codex took too long to convert the recording. Quit and restart Story Studio, verify Codex CLI works, then try again.",
+      message: "AI took too long converting your recording. Try again.",
       detail,
     };
   }

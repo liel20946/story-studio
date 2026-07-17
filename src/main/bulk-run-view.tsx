@@ -12,7 +12,7 @@ import {
   SquareIcon,
   RotateCcwIcon,
   SkipForwardIcon,
-  Layers2Icon,
+  VariableIcon,
 } from "lucide-react";
 import {
   ScrollArea,
@@ -26,7 +26,7 @@ import {
   Text,
   Checkbox,
   EmptyState,
-  Textarea,
+  Input,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
@@ -54,6 +54,7 @@ import { useRegisterRun, useAllRuns, useActiveRunMap } from "../lib/run-store";
 import {
   useBulkRun,
   type BulkLaunchedItem,
+  type BulkSessionState,
   readPersistedSession,
 } from "../lib/bulk-run-store";
 import { BulkVariablesModal } from "@/components/bulk/bulk-variables-modal";
@@ -96,8 +97,6 @@ function expandedRunCount(
   }
   return count;
 }
-
-const PARALLEL_OPTIONS = [1, 2, 3, 4, 5, 6] as const;
 
 // A section as rendered here: built-in "Stories" group + each user section.
 interface Group {
@@ -185,96 +184,67 @@ function StoryRow({
   return (
     <div
       className={cn(
-        "group/row flex items-center gap-2 rounded-control px-3 py-2",
+        "group/row flex items-center gap-2 rounded-control px-2 py-1.5",
         "hover:bg-surface-hover",
       )}
     >
-      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-        <Checkbox checked={checked} onCheckedChange={onToggle} />
+      <Checkbox checked={checked} onCheckedChange={onToggle} />
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
         <Text variant="regular" className="truncate">
           {story.title}
         </Text>
         {variableRunCount > 1 ? (
           <Badge color="blue">{variableRunCount} runs</Badge>
         ) : null}
-      </label>
+      </button>
       <Button
         variant="transparent"
         size="small"
         iconOnly
-        className="opacity-70 transition-opacity group-hover/row:opacity-100"
+        className="shrink-0 opacity-70 transition-opacity group-hover/row:opacity-100"
         aria-label={`Configure variable runs for ${story.title}`}
         onClick={(e) => {
           e.preventDefault();
           onConfigureVariables();
         }}
       >
-        <Layers2Icon className="size-4" />
+        <VariableIcon className="size-4" />
       </Button>
     </div>
   );
 }
 
 function BulkRunOptionsPanel({
-  maxParallel,
   stopCondition,
-  onMaxParallelChange,
   onStopConditionChange,
 }: {
-  maxParallel: string;
   stopCondition: string;
-  onMaxParallelChange: (value: string) => void;
   onStopConditionChange: (value: string) => void;
 }) {
   return (
-    <div className="mb-1 flex flex-col gap-5">
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="bulk-max-parallel" className="text-strong">
-          Parallel subagents
-        </label>
-        <Text variant="small" color="tertiary">
-          How many stories run at the same time.
-        </Text>
-        <select
-          id="bulk-max-parallel"
-          aria-label="Parallel subagents"
-          value={maxParallel}
-          onChange={(e) => onMaxParallelChange(e.target.value)}
-          className={cn(
-            "h-9 w-44 appearance-none rounded-control border border-field bg-control",
-            "bg-[length:12px] bg-[right_0.75rem_center] bg-no-repeat",
-            "px-3 pr-8 text-regular text-primary outline-none",
-            "focus:border-field",
-          )}
-          style={{
-            backgroundImage:
-              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
-          }}
-        >
-          {PARALLEL_OPTIONS.map((n) => (
-            <option key={n} value={String(n)}>
-              {n} at a time
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="bulk-stop-condition" className="text-strong">
-          Stop condition
-          <span className="ml-1.5 font-normal text-tertiary">(optional)</span>
-        </label>
-        <Text variant="small" color="tertiary">
-          When a finished story matches this text, no more stories are started.
-          Ones already running are left to finish.
-        </Text>
-        <Textarea
-          id="bulk-stop-condition"
-          value={stopCondition}
-          onChange={(e) => onStopConditionChange(e.target.value)}
-          placeholder='e.g. "stop on first failure"'
-          rows={2}
-          className="min-h-[64px] resize-y"
-        />
+    <div className="settings-group">
+      <div className="settings-group-body">
+        <div className="settings-row settings-row--stacked">
+          <div className="settings-row-copy">
+            <div className="settings-row-label">Stop condition</div>
+            <p className="settings-row-desc">
+              Optional natural-language rule to stop the batch early.
+            </p>
+          </div>
+          <div className="settings-row-control">
+            <Input
+              id="bulk-stop-condition"
+              value={stopCondition}
+              onChange={(e) => onStopConditionChange(e.target.value)}
+              placeholder='e.g. "stop on first failure"'
+              className="settings-input"
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -285,79 +255,75 @@ function SelectionView({
   total,
   selected,
   variablePlans,
-  maxParallel,
   stopCondition,
   onToggleStory,
   onToggleGroup,
   onConfigureVariables,
-  onMaxParallelChange,
   onStopConditionChange,
 }: {
   groups: Group[];
   total: number;
   selected: Set<string>;
   variablePlans: Record<string, BulkVariableRun[]>;
-  maxParallel: string;
   stopCondition: string;
   onToggleStory: (name: string) => void;
   onToggleGroup: (group: Group, select: boolean) => void;
   onConfigureVariables: (storyName: string) => void;
-  onMaxParallelChange: (value: string) => void;
   onStopConditionChange: (value: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-5 px-8 py-4 pb-8">
-      <BulkRunOptionsPanel
-        maxParallel={maxParallel}
-        stopCondition={stopCondition}
-        onMaxParallelChange={onMaxParallelChange}
-        onStopConditionChange={onStopConditionChange}
-      />
-      {groups.map((group) => {
-        const groupNames = group.stories.map((s) => s.name);
-        const selectedInGroup = groupNames.filter((n) =>
-          selected.has(n),
-        ).length;
-        const allSelected =
-          group.stories.length > 0 && selectedInGroup === group.stories.length;
-        return (
-          <div key={group.id} className="flex flex-col">
-            <label className="mb-1 flex cursor-pointer items-center gap-2 px-1 py-0.5">
-              <Checkbox
-                checked={
-                  allSelected
-                    ? true
-                    : selectedInGroup > 0
-                      ? "indeterminate"
-                      : false
-                }
-                onCheckedChange={() => onToggleGroup(group, !allSelected)}
-              />
-              <Text variant="small-strong" color="secondary">
-                {group.name}
-              </Text>
-              <Text variant="small" color="tertiary">
-                {selectedInGroup}/{group.stories.length}
-              </Text>
-            </label>
-            <div className="flex flex-col">
-              {group.stories.map((story) => (
-                <StoryRow
-                  key={story.name}
-                  story={story}
-                  checked={selected.has(story.name)}
-                  variableRunCount={variablePlans[story.name]?.length ?? 0}
-                  onToggle={() => onToggleStory(story.name)}
-                  onConfigureVariables={() => onConfigureVariables(story.name)}
-                />
-              ))}
+    <div className="flex justify-center px-6 py-4 pb-8">
+      <div className="flex w-full max-w-[34rem] flex-col gap-5">
+        <BulkRunOptionsPanel
+          stopCondition={stopCondition}
+          onStopConditionChange={onStopConditionChange}
+        />
+        {groups.map((group) => {
+          const groupNames = group.stories.map((s) => s.name);
+          const selectedInGroup = groupNames.filter((n) =>
+            selected.has(n),
+          ).length;
+          const allSelected =
+            group.stories.length > 0 && selectedInGroup === group.stories.length;
+          return (
+            <div key={group.id} className="content-card">
+              <div className="content-card-header">
+                <label className="flex min-w-0 cursor-pointer items-center gap-2">
+                  <Checkbox
+                    checked={
+                      allSelected
+                        ? true
+                        : selectedInGroup > 0
+                          ? "indeterminate"
+                          : false
+                    }
+                    onCheckedChange={() => onToggleGroup(group, !allSelected)}
+                  />
+                  <Text variant="small-strong" color="secondary">
+                    {group.name}
+                  </Text>
+                  <Text variant="small" color="tertiary">
+                    {selectedInGroup}/{group.stories.length}
+                  </Text>
+                </label>
+              </div>
+              <div className="content-card-body">
+                {group.stories.map((story) => (
+                  <StoryRow
+                    key={story.name}
+                    story={story}
+                    checked={selected.has(story.name)}
+                    variableRunCount={variablePlans[story.name]?.length ?? 0}
+                    onToggle={() => onToggleStory(story.name)}
+                    onConfigureVariables={() => onConfigureVariables(story.name)}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        );
-      })}
-      {total === 0 && (
-        <EmptyState title="No stories yet." />
-      )}
+          );
+        })}
+        {total === 0 && <EmptyState title="No stories yet." />}
+      </div>
     </div>
   );
 }
@@ -543,7 +509,6 @@ export function BulkRunView() {
   const [isStarting, setIsStarting] = React.useState(false);
   const [isStopping, setIsStopping] = React.useState(false);
   const [isResuming, setIsResuming] = React.useState(false);
-  const [maxParallel, setMaxParallel] = React.useState("3");
   const [stopCondition, setStopCondition] = React.useState("");
   const [variablePlans, setVariablePlans] = React.useState(readVariablePlans);
   const [variablesModalStory, setVariablesModalStory] = React.useState<string | null>(
@@ -581,7 +546,7 @@ export function BulkRunView() {
 
   // Keep showing the dashboard while any bulk story is still running or
   // skipped after a stop. Recover from sessionStorage if provider state was lost.
-  const displaySession = React.useMemo(() => {
+  const displaySession: BulkSessionState | null = React.useMemo(() => {
     if (session?.items.length) return session;
 
     const stored = readPersistedSession();
@@ -605,7 +570,6 @@ export function BulkRunView() {
           runId: r.runId,
           phase: "running" as BulkItemPhase,
         })),
-        maxParallel: 3,
         stopCondition: "",
         status: "running" as const,
       };
@@ -622,10 +586,9 @@ export function BulkRunView() {
     }
   }, [session, displaySession, setSession]);
 
-  // Sync maxParallel / stopCondition inputs from an active session when present.
+  // Sync stopCondition input from an active session when present.
   React.useEffect(() => {
     if (!session) return;
-    setMaxParallel(String(session.maxParallel || 3));
     setStopCondition(session.stopCondition || "");
   }, [session?.bulkId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -651,7 +614,6 @@ export function BulkRunView() {
         return {
           bulkId: snapshot.bulkId,
           items,
-          maxParallel: snapshot.maxParallel,
           stopCondition: snapshot.stopCondition,
           status: snapshot.status,
           stopReason: snapshot.stopReason,
@@ -795,7 +757,6 @@ export function BulkRunView() {
         .map((story) => [story.name, variablePlans[story.name]] as const)
         .filter(([, runs]) => runs?.length);
       const options = {
-        maxParallel: Number(maxParallel) || 3,
         stopCondition: stopCondition.trim() || undefined,
         variablePlans: planEntries.length ? Object.fromEntries(planEntries) : undefined,
       };
@@ -828,7 +789,6 @@ export function BulkRunView() {
       setSession({
         bulkId,
         items: launchedItems,
-        maxParallel: options.maxParallel,
         stopCondition: options.stopCondition ?? "",
         status: "running",
       });
@@ -850,7 +810,6 @@ export function BulkRunView() {
           const phase = snapshot.items.find((i) => i.runId === item.runId)?.phase;
           return { ...item, phase: phase ?? item.phase };
         }),
-        maxParallel: snapshot.maxParallel,
         stopCondition: snapshot.stopCondition,
         status: snapshot.status,
         stopReason: snapshot.stopReason,
@@ -875,7 +834,6 @@ export function BulkRunView() {
     setIsResuming(true);
     try {
       const options = {
-        maxParallel: session.maxParallel || Number(maxParallel) || 3,
         stopCondition:
           session.stopCondition.trim() || stopCondition.trim() || undefined,
         resumeItems: pendingItems.map((item) => ({
@@ -903,7 +861,6 @@ export function BulkRunView() {
             phase: "pending" as const,
           })),
         ],
-        maxParallel: result.maxParallel,
         stopCondition: result.stopCondition,
         status: "running",
         stopReason: undefined,
@@ -1033,12 +990,10 @@ export function BulkRunView() {
         total={total}
         selected={selected}
         variablePlans={variablePlans}
-        maxParallel={maxParallel}
         stopCondition={stopCondition}
         onToggleStory={toggleStory}
         onToggleGroup={toggleGroup}
         onConfigureVariables={setVariablesModalStory}
-        onMaxParallelChange={setMaxParallel}
         onStopConditionChange={setStopCondition}
       />
       <BulkVariablesModal

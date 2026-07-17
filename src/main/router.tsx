@@ -53,6 +53,9 @@ const storyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/story/$name",
   component: StoryView,
+  validateSearch: (search: Record<string, unknown>): { edit?: boolean } => ({
+    edit: search.edit === true || search.edit === "true" ? true : undefined,
+  }),
   staticData: { title: "Story" },
 });
 

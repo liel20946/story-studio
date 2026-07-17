@@ -12,6 +12,8 @@ import {
   deleteStoryFromSite,
   compositeStoryName,
   parseCompositeName,
+  siteSlugFromUrl,
+  slugify,
   loadSiteFile,
   saveSiteFile,
   watchBowserFiles,
@@ -166,6 +168,45 @@ export async function getStory(
   return getBowserStory(name, lastRunMap);
 }
 
+export async function createManualStory(
+  title: string,
+  url: string,
+): Promise<StoryDetail> {
+  const storyTitle = title.trim();
+  const startUrl = url.trim();
+  if (!storyTitle) throw new Error("Story name is required");
+  if (!startUrl) throw new Error("Start URL is required");
+
+  try {
+    new URL(startUrl);
+  } catch {
+    throw new Error("Start URL must be a valid URL");
+  }
+
+  const siteSlug = siteSlugFromUrl(startUrl);
+  const file = await loadSiteFile(siteSlug);
+  const baseId = slugify(storyTitle);
+  let storyId = baseId;
+  let suffix = 2;
+  while (file.stories.some((story) => story.id === storyId)) {
+    storyId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  await appendStoryToSite(siteSlug, {
+    id: storyId,
+    name: storyTitle,
+    url: startUrl,
+    mode: "manual",
+    workflow: "Navigate to the start URL\nDescribe the next action",
+    assertions: "@2 Verify the expected result",
+    variables: {},
+    created_at: Date.now(),
+  });
+
+  return getBowserStory(compositeStoryName(siteSlug, storyId), new Map());
+}
+
 export async function deleteStory(name: string): Promise<void> {
   const parsed = parseCompositeName(name);
   if (!parsed) throw new Error(`Invalid story name: ${name}`);
@@ -262,6 +303,7 @@ export async function updateStoryContent(
     steps: string[];
     variables: { key: string; value: string }[];
     assertions: string[];
+    globalRules: string;
   },
   lastRun?: StorySummary["lastRun"],
 ): Promise<StoryDetail> {
@@ -291,11 +333,14 @@ export async function updateStoryContent(
       .filter(([key]) => key.length > 0),
   );
 
+  const globalRules = content.globalRules.trim();
+  const { global_rules: _existingRules, ...existingWithoutRules } = existing;
   const entry = normalizeBowserEntryForStorage({
-    ...existing,
+    ...existingWithoutRules,
     workflow: steps.join("\n"),
     assertions: formatAssertionsBlock(assertions),
     variables,
+    ...(globalRules ? { global_rules: globalRules } : {}),
   });
 
   await updateStoryInSite(parsed.siteSlug, parsed.storyId, entry);
