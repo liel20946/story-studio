@@ -82,11 +82,22 @@
   letter-spacing: 0.01em;
 }
 
+/* Cursor-style seam between the sidebar and main pane. */
+.sidebar-chrome::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  z-index: 1;
+  width: 2px;
+  background: var(--color-border-separator);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
 /* Main pane — full height, square edges */
 .main-pane {
   background: var(--bg);
-  border: 1px solid var(--color-border-separator);
-  border-right: none;
   overflow: hidden;
 }
 
@@ -978,7 +989,7 @@
   gap: 1.25rem;
   width: 100%;
   min-width: 0;
-  padding: 1.25rem 1.25rem 1.5rem;
+  padding: 1.25rem clamp(1.25rem, 6vw, 4.5rem) 1.5rem;
   transition: opacity 280ms ease;
 }
 
@@ -1425,6 +1436,14 @@
   margin-top: 0;
 }
 
+.story-global-rules-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  overflow: hidden;
+  max-height: min(12rem, 40vh);
+}
+
 /* Content panels — single border, no inner dividers */
 .settings-group,
 .content-card {
@@ -1612,6 +1631,107 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+.setup-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--color-border-separator);
+  border-radius: 0.75rem;
+  background: var(--color-surface-raised);
+}
+
+.setup-summary-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.setup-summary-desc {
+  margin: 0.25rem 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.setup-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border-separator);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.setup-list--loading {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.setup-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border-top: 1px solid var(--color-border-separator);
+}
+
+.setup-item:first-child {
+  border-top: none;
+}
+
+.setup-item-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.setup-item-copy {
+  min-width: 0;
+}
+
+.setup-item-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.setup-item-desc {
+  margin: 0.2rem 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.setup-item-detail {
+  margin: 0.35rem 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup-item-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.text-success {
+  color: var(--color-status-success, #22c55e);
+}
+
+.text-warning {
+  color: var(--color-status-warning, #f59e0b);
 }
 
 .settings-group .settings-row {
@@ -2395,6 +2515,44 @@
     align-items: flex-start;
     gap: 2rem;
   }
+
+  /* Keep long run timelines inside the viewport and scroll the Actions card
+     independently instead of letting its bottom disappear below the window. */
+  .run-detail-view {
+    height: calc(100vh - 2.75rem);
+    min-height: 0;
+    box-sizing: border-box;
+    align-items: stretch;
+    padding-bottom: 1rem;
+  }
+
+  .run-detail-view .detail-view-main,
+  .run-actions-card {
+    min-height: 0;
+  }
+
+  .run-actions-card {
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+  }
+
+  .run-actions-card .content-card-header {
+    flex-shrink: 0;
+  }
+
+  .run-actions-placeholder {
+    flex-shrink: 0;
+    padding: 0.25rem 0.75rem 0.75rem;
+  }
+
+  .run-actions-card-body {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
 }
 
 .detail-view-main {
@@ -2429,7 +2587,7 @@
   grid-template-columns: 16px 6.25rem minmax(0, 1fr) 18px;
   align-items: center;
   column-gap: 0.5rem;
-  padding: 0.3rem 0;
+  padding: 0.3rem 0.5rem;
   font-size: 12px;
   line-height: 16px;
 }
@@ -2445,20 +2603,22 @@
   opacity: 0.85;
 }
 
-/* Story steps */
+/* Story steps — rows inside the Steps content-card (matches bulk-run row style).
+   Hover highlight only applies while editing — read-only rows aren't
+   clickable, so a hover fill would falsely suggest they are. */
 .story-step-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.3rem 0;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-control);
   font-size: 12px;
   line-height: 16px;
-  border-radius: 0;
-  transition: none;
+  transition: background-color 120ms ease;
 }
 
-.story-step-row:hover {
-  background: transparent;
+.story-step-row--editable:hover {
+  background: var(--color-surface-hover);
 }
 
 .story-step-num {
@@ -2881,6 +3041,12 @@
 .dialog-surface {
   border: 1px solid var(--color-border-separator);
   box-shadow: 0 16px 48px rgb(0 0 0 / 40%);
+  outline: none;
+}
+
+.dialog-surface:focus,
+.dialog-surface:focus-visible {
+  outline: none;
 }
 
 /* Toast — bottom-center pill, theme-aware, close on the right */

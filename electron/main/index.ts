@@ -1,10 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { app, BrowserWindow, Menu, protocol, net } from "./electron-api.js";
+import { app, BrowserWindow, Menu, protocol, net, nativeTheme } from "./electron-api.js";
 import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getMainWindowLoadOptions } from "./windows/window-paths.js";
 import { getMacWindowChromeOptions, applyMacWindowChrome } from "./windows/window-chrome.js";
+import { isCursorColorTheme, setSidebarVibrancy } from "./windows/window-vibrancy.js";
+import { getSettingsValue } from "./handlers/settings.js";
 import { disableReloadShortcut } from "./windows/disable-reload-shortcut.js";
 import { applyDefaultZoom } from "./windows/window-zoom.js";
 import {
@@ -21,6 +23,7 @@ import { listRuns, buildLastRunMap } from "./services/run-service.js";
 import { recoverOrphanedRuns } from "./services/run-recovery.js";
 import { logger } from "./logger.js";
 import { applyAppBranding, getAppIcon } from "./app-icon.js";
+import { prewarmPlaywrightInBackground } from "./services/playwright-preflight.js";
 import { checkForUpdatesManually, initAutoUpdates } from "./services/auto-update-service.js";
 import { startScheduleWatcher, stopScheduleWatcher } from "./services/schedule-service.js";
 
@@ -106,6 +109,17 @@ async function createMainWindow(): Promise<void> {
   } else {
     await mainWindow.loadFile(load.file, load.query ? { query: load.query } : undefined);
   }
+
+  const settings = getSettingsValue();
+  const resolvedMode =
+    settings.theme === "system"
+      ? nativeTheme.shouldUseDarkColors
+        ? "dark"
+        : "light"
+      : settings.theme;
+  const activeColorTheme =
+    resolvedMode === "light" ? settings.colorThemeLight : settings.colorThemeDark;
+  setSidebarVibrancy(mainWindow, isCursorColorTheme(activeColorTheme));
 }
 
 function setupApplicationMenu(): void {
@@ -197,6 +211,8 @@ app.whenReady().then(async () => {
   initAutoUpdates();
 
   await recoverOrphanedRuns();
+
+  prewarmPlaywrightInBackground();
 
   const runs = await listRuns();
   watchStories(buildLastRunMap(runs));

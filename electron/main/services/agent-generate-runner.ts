@@ -1,13 +1,14 @@
 import { spawn, type ChildProcess } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
-import type { AgentProvider, BrowserMcp } from "./contract-types.js";
+import type { AgentProvider } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
 import {
-  buildCodexComputerUseConfigArgs,
-  buildCodexMcpConfigArgs,
+  buildCodexPlaywrightMcpConfigArgs,
+  ensureCodexProjectConfig,
+  playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
-import { buildClaudeMcpConfigJson } from "./browser-mcp-config.js";
+import { writeClaudeMcpConfigFile } from "./browser-mcp-config.js";
 import {
   extractYamlFromAgentMessage,
   parseAgentMessageFromCodexStdout,
@@ -17,11 +18,14 @@ import {
   buildBaseAgentSpawnEnv,
   buildClaudeSpawnEnv,
 } from "./agent-spawn-env.js";
+import { killDetachedAgentProcess } from "./agent-process-kill.js";
 
 const GENERATE_TIMEOUT_MS = 8 * 60_000;
 const REVISION_TIMEOUT_MS = 2 * 60_000;
+/** Recording conversion — shorter than open-ended generate. */
+export const RECORDING_CONVERT_TIMEOUT_MS = 4 * 60_000;
 
-const _activeChildren = new Map<string, ChildProcess>();
+const _activeChildren = new Map<string, { process: ChildProcess }>();
 const _cancelledInvocations = new Set<string>();
 
 export class GenerateCancelledError extends Error {
@@ -33,14 +37,15 @@ export class GenerateCancelledError extends Error {
 
 export function cancelGenerateInvocation(invocationId: string): boolean {
   _cancelledInvocations.add(invocationId);
-  const child = _activeChildren.get(invocationId);
-  if (!child) return false;
-  try {
-    child.kill("SIGTERM");
-  } catch {
-    // ignore
-  }
-  _activeChildren.delete(invocationId);
+  const tracked = _activeChildren.get(invocationId);
+  if (!tracked) return false;
+
+  killDetachedAgentProcess(tracked.process, {
+    isStillActive: () => _activeChildren.has(invocationId),
+    onEscalate: () => {
+      console.log("[generate] SIGTERM ignored — escalating to SIGKILL", invocationId);
+    },
+  });
   return true;
 }
 
@@ -53,16 +58,14 @@ function buildCodexModelConfigArgs(agentConfig: AgentRunConfig): string[] {
   ];
 }
 
-function buildCodexSharedFlags(
-  agentConfig: AgentRunConfig,
-  options?: { ignoreUserConfig?: boolean },
-): string[] {
-  const ignoreUserConfig = options?.ignoreUserConfig !== false;
+function buildCodexSharedFlags(agentConfig: AgentRunConfig): string[] {
   return [
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
     "--json",
-    ...(ignoreUserConfig ? ["--ignore-user-config"] : []),
+    // Isolate from the user's global ~/.codex/config.toml — see codex-runner.ts
+    // for why (notably `[features] multi_agent = true`).
+    "--ignore-user-config",
     ...buildCodexModelConfigArgs(agentConfig),
   ];
 }
@@ -129,10 +132,9 @@ function spawnTracked(
     };
 
     const timer = setTimeout(() => {
-      try {
-        child?.kill("SIGTERM");
-      } catch {
-        // ignore
+      const tracked = _activeChildren.get(conversationId);
+      if (tracked) {
+        killDetachedAgentProcess(tracked.process);
       }
       finish(() => reject(new Error("Generation timed out. Try again.")));
     }, timeoutMs);
@@ -140,9 +142,10 @@ function spawnTracked(
     child = spawn(command, args, {
       cwd,
       env,
+      detached: true, // allows process group kill on cancel
       stdio: ["ignore", "pipe", "pipe"],
     });
-    _activeChildren.set(conversationId, child);
+    _activeChildren.set(conversationId, { process: child });
 
     child.stdout?.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf-8");
@@ -218,13 +221,8 @@ export interface GenerateInvokeOptions {
   systemPrompt?: string;
   /** One-off runs (e.g. title suggestion) that must not join the conversation session. */
   ephemeral?: boolean;
-  browserMcp?: BrowserMcp;
-  /** Codex only — overrides browserMcp and skips Playwright/Chrome DevTools MCP. */
-  computerUse?: boolean;
-  /** Attach Chrome DevTools MCP to an existing headed Chrome debugging URL. */
-  chromeBrowserUrl?: string;
-  /** Connect DevTools MCP to the user's already-running Chrome (recording). */
-  chromeAutoConnect?: boolean;
+  /** Override default exploring / revision timeouts (e.g. recording conversion). */
+  timeoutMs?: number;
   onProgress?: (message: string) => void;
 }
 
@@ -245,7 +243,8 @@ export async function invokeGenerateAgent(
   } = options;
 
   await fs.mkdir(outputDir, { recursive: true });
-  const timeoutMs = exploring ? GENERATE_TIMEOUT_MS : REVISION_TIMEOUT_MS;
+  const timeoutMs =
+    options.timeoutMs ?? (exploring ? GENERATE_TIMEOUT_MS : REVISION_TIMEOUT_MS);
 
   if (provider === "claude-code") {
     const message = await invokeClaude(options, timeoutMs);
@@ -282,25 +281,23 @@ async function invokeCodex(
     return parseAgentMessageFromCodexStdout(stdout);
   };
 
-  const computerUse = Boolean(options.computerUse);
-  const sharedFlags = buildCodexSharedFlags(agentConfig, {
-    ignoreUserConfig: !computerUse,
-  });
+  // Always isolate from the user's global ~/.codex/config.toml (see codex-runner.ts
+  // for why). Playwright access is self-contained via inline `-c mcp_servers.*`
+  // injection below, so exploring never depends on external Codex config.
+  const sharedFlags = buildCodexSharedFlags(agentConfig);
+  const mcpArgs = exploring ? await buildCodexPlaywrightMcpConfigArgs() : [];
 
-  const spawnEnv = buildBaseAgentSpawnEnv();
-  if (computerUse) {
-    const home = spawnEnv.HOME || process.env.HOME || "";
-    const codexHome = process.env.CODEX_HOME?.trim() || `${home}/.codex`;
-    spawnEnv.CODEX_HOME = codexHome;
-    spawnEnv.CODEX_SQLITE_HOME =
-      process.env.CODEX_SQLITE_HOME?.trim() || `${codexHome}/sqlite`;
-  }
+  const spawnEnv = {
+    ...buildBaseAgentSpawnEnv(),
+    ...(exploring ? await playwrightMcpSecretEnv() : {}),
+  };
 
   if (resumeSession && sessionId) {
     const args = [
       "exec",
       "resume",
       ...sharedFlags,
+      ...mcpArgs,
       "-o",
       lastMessagePath,
       sessionId,
@@ -321,16 +318,9 @@ async function invokeCodex(
     return { message };
   }
 
-  const browserMcp =
-    options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
-  const mcpArgs = exploring
-    ? computerUse
-      ? buildCodexComputerUseConfigArgs()
-      : buildCodexMcpConfigArgs(browserMcp, {
-          browserUrl: options.chromeBrowserUrl,
-          autoConnect: options.chromeAutoConnect,
-        })
-    : [];
+  if (exploring) {
+    await ensureCodexProjectConfig(outputDir);
+  }
 
   const args = [
     "exec",
@@ -404,17 +394,15 @@ async function invokeClaude(
     }
   }
 
-  if (exploring && !resumeSession && !options.computerUse) {
-    const browserMcp =
-      options.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
-    args.push(
-      "--mcp-config",
-      buildClaudeMcpConfigJson(browserMcp, {
-        browserUrl: options.chromeBrowserUrl,
-        autoConnect: options.chromeAutoConnect,
-      }),
-    );
+  if (exploring && !resumeSession) {
+    const mcpConfigPath = await writeClaudeMcpConfigFile(outputDir);
+    args.push("--strict-mcp-config", "--mcp-config", mcpConfigPath);
   }
+
+  const spawnEnv = {
+    ...buildClaudeSpawnEnv(),
+    ...(exploring ? await playwrightMcpSecretEnv() : {}),
+  };
 
   onProgress?.(exploring ? "Planning next moves" : "Reviewing your draft");
 
@@ -427,7 +415,7 @@ async function invokeClaude(
     exploring,
     onProgress,
     undefined,
-    buildClaudeSpawnEnv(),
+    spawnEnv,
   );
 }
 

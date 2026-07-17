@@ -9,6 +9,7 @@ export function getMacWindowChromeOptions(): Partial<BrowserWindowConstructorOpt
     transparent: true,
     backgroundColor: "#00000000",
     roundedCorners: true,
+    visualEffectState: "active",
     // Title bar is hidden; native traffic lights are suppressed in applyMacWindowChrome.
     titleBarStyle: "hidden",
   };

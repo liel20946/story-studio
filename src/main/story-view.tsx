@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useParams, useNavigate } from "@tanstack/react-router";
+import { useParams, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   PlayIcon,
@@ -98,6 +98,7 @@ type StoryEditDraft = {
   steps: string[];
   variables: { key: string; value: string }[];
   assertions: string[];
+  globalRules: string;
 };
 
 function isBlankAssertion(text: string): boolean {
@@ -111,6 +112,7 @@ function cleanDraftForSave(draft: StoryEditDraft): StoryEditDraft {
     steps: draft.steps.map((s) => s.trim()).filter((s) => s.length > 0),
     variables: draft.variables.filter((v) => v.key.trim().length > 0),
     assertions: draft.assertions.filter((a) => !isBlankAssertion(a)),
+    globalRules: draft.globalRules.trim(),
   };
 }
 
@@ -125,6 +127,7 @@ function storyToDraft(story: StoryDetail): StoryEditDraft {
           }))
         : [{ key: "", value: "" }],
     assertions: story.assertions.length > 0 ? [...story.assertions] : [""],
+    globalRules: story.globalRules ?? "",
   };
 }
 
@@ -133,6 +136,7 @@ function cloneDraft(draft: StoryEditDraft): StoryEditDraft {
     steps: [...draft.steps],
     variables: draft.variables.map((v) => ({ ...v })),
     assertions: [...draft.assertions],
+    globalRules: draft.globalRules,
   };
 }
 
@@ -141,6 +145,7 @@ function draftsEqual(a: StoryEditDraft, b: StoryEditDraft): boolean {
     a.steps.length === b.steps.length &&
     a.assertions.length === b.assertions.length &&
     a.variables.length === b.variables.length &&
+    a.globalRules === b.globalRules &&
     a.steps.every((step, i) => step === b.steps[i]) &&
     a.assertions.every((assertion, i) => assertion === b.assertions[i]) &&
     a.variables.every(
@@ -308,6 +313,8 @@ function isUndoShortcut(e: KeyboardEvent) {
 
 const storyEditInputClass =
   "min-w-0 w-full bg-transparent border-0 outline-none p-0 text-inherit font-inherit leading-inherit focus:ring-1 focus:ring-field/60 rounded-sm";
+
+const storyRailBodyTextClass = "text-[11px] leading-[15px] text-secondary";
 
 function focusInputAt(refs: React.RefObject<(HTMLInputElement | null)[]>, index: number) {
   requestAnimationFrame(() => {
@@ -518,12 +525,18 @@ function StoryLoadingShell({ title }: { title: string }) {
     >
       <div className="detail-view story-loading-shell">
         <div className="detail-view-main story-sections">
-          <div className="codex-section">
-            <span className="section-label">Steps</span>
-            <div className="story-loading-shell-lines" aria-hidden>
-              <span />
-              <span />
-              <span />
+          <div className="content-card">
+            <div className="content-card-header">
+              <Text variant="small-strong" color="secondary">
+                Steps
+              </Text>
+            </div>
+            <div className="content-card-body">
+              <div className="story-loading-shell-lines" aria-hidden>
+                <span />
+                <span />
+                <span />
+              </div>
             </div>
           </div>
         </div>
@@ -534,6 +547,7 @@ function StoryLoadingShell({ title }: { title: string }) {
 
 export function StoryView() {
   const { name } = useParams({ from: "/story/$name" });
+  const search = useSearch({ from: "/story/$name" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const registerRun = useRegisterRun();
@@ -554,6 +568,7 @@ export function StoryView() {
   const assertionInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
   const variableKeyInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
   const variableValueInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
+  const autoEditedStoryRef = React.useRef<string | null>(null);
 
   const storyQuery = useQuery({
     queryKey: ["stories:get", name],
@@ -581,6 +596,21 @@ export function StoryView() {
     storiesListQuery.data?.find((s) => s.name === name)?.title ?? name;
   const activeRun = useActiveRunForStory(name, story?.title);
   const isEditingThisStory = editingStoryName === name;
+
+  React.useEffect(() => {
+    if (!search.edit || !storyReady || !story) return;
+    if (autoEditedStoryRef.current === story.name) return;
+    autoEditedStoryRef.current = story.name;
+    beginEdit(storyToDraft(story));
+    setEditingStoryName(story.name);
+    requestAnimationFrame(() => stepInputRefs.current[0]?.focus());
+    navigate({
+      to: "/story/$name",
+      params: { name: story.name },
+      search: {},
+      replace: true,
+    });
+  }, [search.edit, storyReady, story, beginEdit, navigate]);
 
   // Stable color per variable name, reused across the Variables list and the
   // inline chips in Steps/Assertions.
@@ -631,6 +661,11 @@ export function StoryView() {
     apply((prev) => ({ ...prev, variables }));
   }
 
+  function updateDraftGlobalRules(globalRules: string, immediate = false) {
+    const apply = immediate ? setDraftNow : setDraft;
+    apply((prev) => ({ ...prev, globalRules }));
+  }
+
   async function handleRun() {
     if (!story || isStarting) return;
     // Already running in the background → jump to its live timeline.
@@ -678,6 +713,7 @@ export function StoryView() {
   }
 
   function handleRecordAgain() {
+    if (!story) return;
     const baseUrl = story.baseUrl ?? "";
     navigate({
       to: "/record",
@@ -816,48 +852,66 @@ export function StoryView() {
       <div className="detail-view">
         <div className="detail-view-main story-sections">
           {(isEditingThisStory && draft) || story.steps.length > 0 ? (
-            <Section title="Steps">
-              <ol className="flex flex-col">
-                {(isEditingThisStory && draft ? draft.steps : story.steps).map((step, i) => (
-                  <li key={i} className="story-step-row">
-                    <span className="story-step-num">{i + 1}</span>
-                    {isEditingThisStory && draft ? (
-                      <input
-                        ref={(el) => {
-                          stepInputRefs.current[i] = el;
-                        }}
-                        aria-label={`Step ${i + 1}`}
-                        value={step}
-                        onChange={(e) =>
-                          updateTextRow(
-                            i,
-                            e.target.value,
-                            draft.steps,
-                            (steps) => updateDraftSteps(steps),
-                          )
-                        }
-                        onBlur={commitCheckpoint}
-                        onKeyDown={(e) =>
-                          handleTextRowKeyDown(
-                            e,
-                            i,
-                            step,
-                            draft.steps,
-                            (steps, immediate) => updateDraftSteps(steps, immediate),
-                            stepInputRefs,
-                          )
-                        }
-                        className={cn(storyEditInputClass, "text-[12px] leading-[16px] text-secondary")}
-                      />
-                    ) : (
-                      <Text variant="small" color="secondary">
-                        <InlineCode text={step} colorMap={varColors.chip} />
-                      </Text>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </Section>
+            <div className="content-card">
+              <div className="content-card-header">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Text variant="small-strong" color="secondary">
+                    Steps
+                  </Text>
+                  <Text variant="small" color="tertiary">
+                    {(isEditingThisStory && draft ? draft.steps : story.steps).length}
+                  </Text>
+                </div>
+              </div>
+              <div className="content-card-body">
+                <ol className="flex flex-col">
+                  {(isEditingThisStory && draft ? draft.steps : story.steps).map((step, i) => (
+                    <li
+                      key={i}
+                      className={cn(
+                        "story-step-row",
+                        isEditingThisStory && "story-step-row--editable",
+                      )}
+                    >
+                      <span className="story-step-num">{i + 1}</span>
+                      {isEditingThisStory && draft ? (
+                        <input
+                          ref={(el) => {
+                            stepInputRefs.current[i] = el;
+                          }}
+                          aria-label={`Step ${i + 1}`}
+                          value={step}
+                          onChange={(e) =>
+                            updateTextRow(
+                              i,
+                              e.target.value,
+                              draft.steps,
+                              (steps) => updateDraftSteps(steps),
+                            )
+                          }
+                          onBlur={commitCheckpoint}
+                          onKeyDown={(e) =>
+                            handleTextRowKeyDown(
+                              e,
+                              i,
+                              step,
+                              draft.steps,
+                              (steps, immediate) => updateDraftSteps(steps, immediate),
+                              stepInputRefs,
+                            )
+                          }
+                          className={cn(storyEditInputClass, "text-[12px] leading-[16px] text-secondary")}
+                        />
+                      ) : (
+                        <Text variant="small" color="secondary">
+                          <InlineCode text={step} colorMap={varColors.chip} />
+                        </Text>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
           ) : (
             <EmptyState placement="inline" title="No steps yet." />
           )}
@@ -865,7 +919,8 @@ export function StoryView() {
 
         {((isEditingThisStory && draft) ||
           story.variables.length > 0 ||
-          story.assertions.length > 0) && (
+          story.assertions.length > 0 ||
+          story.globalRules.trim().length > 0) && (
           <div className="detail-rail detail-rail--card">
             {(isEditingThisStory && draft) || story.variables.length > 0 ? (
               <Section title="Variables">
@@ -920,7 +975,7 @@ export function StoryView() {
                             }
                             className={cn(
                               storyEditInputClass,
-                              "text-[11px] leading-[15px] text-secondary",
+                              storyRailBodyTextClass,
                             )}
                           />
                         </div>
@@ -933,6 +988,35 @@ export function StoryView() {
                       ),
                   )}
                 </div>
+              </Section>
+            ) : null}
+
+            {(isEditingThisStory && draft) || story.globalRules.trim().length > 0 ? (
+              <Section title="Global rules">
+                {isEditingThisStory && draft ? (
+                  <textarea
+                    aria-label="Global rules"
+                    value={draft.globalRules}
+                    onChange={(e) => updateDraftGlobalRules(e.target.value)}
+                    onBlur={commitCheckpoint}
+                    placeholder="Mandatory rules the agent must follow (waits, failure conditions, etc.)"
+                    rows={5}
+                    className={cn(
+                      "min-w-0 w-full bg-transparent border-0 outline-none p-0 focus:ring-1 focus:ring-field/60 rounded-sm",
+                      storyRailBodyTextClass,
+                      "story-global-rules-input resize-y min-h-[72px] max-h-[min(12rem,40vh)] overflow-y-auto",
+                    )}
+                  />
+                ) : (
+                  <div
+                    className={cn(
+                      "story-global-rules-preview whitespace-pre-wrap",
+                      storyRailBodyTextClass,
+                    )}
+                  >
+                    {story.globalRules}
+                  </div>
+                )}
               </Section>
             ) : null}
           </div>

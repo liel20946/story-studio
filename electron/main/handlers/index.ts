@@ -23,6 +23,7 @@ import { registerDraftHandlers } from "./drafts.js";
 import { registerSchedulesHandlers } from "./schedules.js";
 import { registerGenerateHandlers } from "./generate.js";
 import { registerBulkVariablesHandlers } from "./bulk-variables.js";
+import { registerSetupHandlers } from "./setup.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -67,6 +68,17 @@ export function registerHandlers(): void {
     }
   });
 
+  ipcMain.handle("window:setSidebarVibrancy", async (event, params: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const enabled =
+      typeof params === "object" &&
+      params !== null &&
+      (params as { enabled?: boolean }).enabled === true;
+    const { setSidebarVibrancy } = await import("../windows/window-vibrancy.js");
+    setSidebarVibrancy(win, enabled);
+  });
+
   // Copy arbitrary text to the system clipboard (used by the variable-table
   // copy buttons in the story detail view). NOTE: the channel is app-namespaced
   // ("app:copyText") because the native API already registers "clipboard:*"
@@ -94,6 +106,7 @@ export function registerHandlers(): void {
   registerSchedulesHandlers();
   registerGenerateHandlers();
   registerBulkVariablesHandlers();
+  registerSetupHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 }

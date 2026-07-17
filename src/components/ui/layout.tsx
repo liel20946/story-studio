@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const SIDEBAR_WIDTH_KEY = "story-studio-sidebar-width-v1";
 const DEFAULT_SIDEBAR_WIDTH = 248;
-const MIN_SIDEBAR_WIDTH = 200;
+const MIN_SIDEBAR_WIDTH = 248;
 const MAX_SIDEBAR_WIDTH = 420;
 /** Matches SplitView `gap-x-1.5` — handle sits on the main-pane seam. */
 const SPLIT_GAP_PX = 6;
@@ -91,17 +91,14 @@ export function SplitView({
 
   return (
     <div
-      className={cn("relative flex h-full min-h-0 bg-surface-sidebar", className)}
+      className={cn("split-view relative flex h-full min-h-0 bg-surface-sidebar", className)}
       style={{ "--sidebar-width": `${width + SPLIT_GAP_PX}px` } as React.CSSProperties}
     >
       <div
-        className="relative shrink-0 min-h-0 flex flex-col bg-surface-sidebar"
+        className="sidebar-chrome relative shrink-0 min-h-0 flex flex-col bg-surface-sidebar"
         style={{ width: width + SPLIT_GAP_PX }}
       >
-        <aside
-          className="min-h-0 flex flex-1 flex-col overflow-hidden"
-          style={{ width }}
-        >
+        <aside className="min-h-0 flex flex-1 flex-col overflow-hidden w-full">
           {sidebar}
         </aside>
       </div>

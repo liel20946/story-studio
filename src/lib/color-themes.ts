@@ -18,8 +18,15 @@ export interface ColorThemeDefinition {
  * Paired light/dark values from Codex app.asar presets and official theme families.
  */
 export const DEFAULT_COLOR_THEME_ID = "raycast" as const;
+export const DEFAULT_DARK_COLOR_THEME_ID = "cursor" as const;
 
 export const COLOR_THEMES: ColorThemeDefinition[] = [
+  {
+    id: "cursor",
+    name: "Cursor",
+    light: { accent: "#3b82f6", ink: "#1e1e1e", surface: "#f3f3f3" },
+    dark: { accent: "#81a1c1", ink: "#e4e4e4", surface: "#141414" },
+  },
   {
     id: "codex",
     name: "Codex",
@@ -108,7 +115,14 @@ export const COLOR_THEMES: ColorThemeDefinition[] = [
 
 export type ColorThemeId = (typeof COLOR_THEMES)[number]["id"];
 
+/** Themes only selectable in dark mode (e.g. Cursor with native vibrancy). */
+const DARK_ONLY_COLOR_THEME_IDS = new Set<ColorThemeId>(["cursor"]);
+
 const THEME_BY_ID = new Map(COLOR_THEMES.map((theme) => [theme.id, theme]));
+
+export function defaultColorThemeForMode(mode: ThemeMode): ColorThemeId {
+  return mode === "dark" ? DEFAULT_DARK_COLOR_THEME_ID : DEFAULT_COLOR_THEME_ID;
+}
 
 export function isColorThemeId(value: unknown): value is ColorThemeId {
   return typeof value === "string" && THEME_BY_ID.has(value);
@@ -119,12 +133,25 @@ export function parseColorThemeId(
   fallback: ColorThemeId = DEFAULT_COLOR_THEME_ID,
 ): ColorThemeId {
   if (value === "default") {
-    return DEFAULT_COLOR_THEME_ID;
+    return fallback;
   }
   return isColorThemeId(value) ? value : fallback;
 }
 
-export function colorThemesForMode(_mode: ThemeMode): ColorThemeDefinition[] {
+export function parseColorThemeIdForMode(
+  value: unknown,
+  mode: ThemeMode,
+  fallback?: ColorThemeId,
+): ColorThemeId {
+  const resolvedFallback = fallback ?? defaultColorThemeForMode(mode);
+  const parsed = parseColorThemeId(value, resolvedFallback);
+  return colorThemeAvailable(parsed, mode) ? parsed : resolvedFallback;
+}
+
+export function colorThemesForMode(mode: ThemeMode): ColorThemeDefinition[] {
+  if (mode === "light") {
+    return COLOR_THEMES.filter((theme) => !DARK_ONLY_COLOR_THEME_IDS.has(theme.id));
+  }
   return COLOR_THEMES;
 }
 
@@ -139,9 +166,11 @@ export function resolveColorThemePalette(
 
 export function colorThemeAvailable(
   themeId: ColorThemeId,
-  _mode: ThemeMode,
+  mode: ThemeMode,
 ): boolean {
-  return THEME_BY_ID.has(themeId);
+  if (!THEME_BY_ID.has(themeId)) return false;
+  if (mode === "light" && DARK_ONLY_COLOR_THEME_IDS.has(themeId)) return false;
+  return true;
 }
 
 export function getColorThemeDefinition(

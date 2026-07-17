@@ -3,6 +3,7 @@ import { ipcMain, dialog, shell } from "../electron-api.js";
 import {
   listStories,
   getStory,
+  createManualStory,
   deleteStory,
   importStories,
   exportStories,
@@ -13,6 +14,7 @@ import {
   renameStory,
   type ImportMode,
 } from "../services/stories-service.js";
+import type { StoryDetail } from "../services/contract-types.js";
 import {
   listRuns,
   buildLastRunMap,
@@ -38,6 +40,19 @@ export function registerStoriesHandlers(): void {
     const { name } = params as { name: string };
     const lastRunMap = await getLastRunMap();
     return getStory(name, lastRunMap);
+  });
+
+  ipcMain.handle("stories:create", async (_event, params: unknown) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      typeof (params as Record<string, unknown>)["title"] !== "string" ||
+      typeof (params as Record<string, unknown>)["url"] !== "string"
+    ) {
+      throw new Error("stories:create requires { title: string, url: string }");
+    }
+    const { title, url } = params as { title: string; url: string };
+    return createManualStory(title, url);
   });
 
   ipcMain.handle("stories:delete", async (_event, params: unknown) => {
@@ -79,6 +94,8 @@ export function registerStoriesHandlers(): void {
           steps: p["steps"] as string[],
           variables: p["variables"] as { key: string; value: string }[],
           assertions: p["assertions"] as string[],
+          globalRules:
+            typeof p["globalRules"] === "string" ? p["globalRules"] : "",
         },
         lastRun,
       );

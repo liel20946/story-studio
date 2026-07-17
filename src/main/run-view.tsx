@@ -37,7 +37,13 @@ import {
   Text,
   toast,
 } from "@/components/ui";
-import { runsGet, runCancel, clipboardWriteText, runsLiveScreenshots } from "../lib/ipc";
+import {
+  runsGet,
+  runCancel,
+  clipboardWriteText,
+  runsLiveScreenshots,
+  runsLiveTimeline,
+} from "../lib/ipc";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type {
@@ -51,7 +57,11 @@ import type {
 import { formatAgentModelLabel, formatAgentProviderLabel } from "../lib/agent-config";
 import { useRun } from "../lib/run-store";
 import { formatRunLogs } from "../lib/format-run-logs";
-import { filterTimelineEvents } from "../lib/run-events";
+import {
+  filterTimelineEvents,
+  isActionEvent,
+  pickLiveTimelineEvents,
+} from "../lib/run-events";
 import { useRunScreenshotIndex } from "../lib/use-run-screenshot-index";
 import { ScreenshotImage, ScreenshotLightbox } from "../components/screenshot-image";
 import { RailAssertionLine } from "../components/rail-assertion-line";
@@ -208,27 +218,43 @@ function eventIcon(kind: RunEventKind): React.ReactNode {
   }
 }
 
-// Collapse consecutive events that read as the same action (same kind + same
-// detail + same label) into one row with a ×N count instead of stacking up.
-// The merged row keeps the first event's identity but adopts the LAST event's
-// status (so a still-running tail stays a spinner).
+// Cap how many distinct detail values we stitch together for a merged row —
+// beyond this it reads better as "and N more" than as a wall of refs.
+const MAX_MERGED_DETAILS = 4;
+
+function formatMergedDetail(details: string[]): string {
+  if (details.length <= MAX_MERGED_DETAILS) return details.join(", ");
+  const shown = details.slice(0, MAX_MERGED_DETAILS);
+  return `${shown.join(", ")}, +${details.length - MAX_MERGED_DETAILS} more`;
+}
+
+// Browser actions must remain individual rows: grouping three navigations or
+// clicks into one changing ×N row makes the live timeline look unstable and
+// hides the actual execution order. Collapse only non-action diagnostics.
 function collapseEvents(events: RunEvent[]): { event: RunEvent; count: number }[] {
-  const groups: { event: RunEvent; count: number }[] = [];
+  const groups: { event: RunEvent; count: number; details: string[] }[] = [];
   for (const event of events) {
     const prev = groups[groups.length - 1];
     if (
       prev &&
+      !isActionEvent(event) &&
+      !isActionEvent(prev.event) &&
       prev.event.kind === event.kind &&
-      prev.event.label === event.label &&
-      (prev.event.detail ?? "") === (event.detail ?? "")
+      prev.event.label === event.label
     ) {
       prev.count += 1;
       prev.event = { ...prev.event, status: event.status };
+      if (event.detail && prev.details[prev.details.length - 1] !== event.detail) {
+        prev.details.push(event.detail);
+      }
     } else {
-      groups.push({ event, count: 1 });
+      groups.push({ event, count: 1, details: event.detail ? [event.detail] : [] });
     }
   }
-  return groups;
+  return groups.map(({ event, count, details }) => ({
+    event: count > 1 ? { ...event, detail: formatMergedDetail(details) } : event,
+    count,
+  }));
 }
 
 // ---------- single timeline row ----------
@@ -408,7 +434,7 @@ function useLiveRunScreenshotPaths(runId: string, enabled: boolean) {
     queryFn: () => runsLiveScreenshots(runId),
     enabled,
     staleTime: 0,
-    refetchInterval: enabled ? 1500 : false,
+    refetchInterval: enabled ? 750 : false,
     refetchIntervalInBackground: true,
     retry: 2,
   });
@@ -463,10 +489,10 @@ function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
   const stepShots =
     result.steps?.filter((s) => s.screenshot).map((s) => s.screenshot as string) ?? [];
   const galleryPaths =
-    stepShots.length > 0
-      ? stepShots
-      : result.screenshotPaths?.length
-        ? result.screenshotPaths
+    result.screenshotPaths?.length
+      ? result.screenshotPaths
+      : stepShots.length > 0
+        ? stepShots
         : result.screenshotPath
           ? [result.screenshotPath]
           : [];
@@ -525,7 +551,6 @@ function RunStatusHeader({
     <div className="run-rail-meta">
       {running ? (
         <>
-          <Loader2Icon className="size-3 shrink-0 animate-spin text-accent" />
           <Badge color="blue" size="xs">
             Running
           </Badge>
@@ -576,15 +601,36 @@ function LiveRunView({ runId }: { runId: string }) {
   // Run state lives in the app-root store so it survives navigation away from
   // and back to this view — the timeline keeps accumulating in the background.
   const run = useRun(runId);
-  const events = filterTimelineEvents(run?.events ?? []);
   const result = run?.result ?? null;
+  const isFinished = result !== null;
+  const rawEvents = run?.events ?? [];
+  const latestStatus = [...rawEvents].reverse().find((e) => e.kind === "status");
+  const liveTimelineQuery = useQuery({
+    queryKey: ["runs:liveTimeline", runId],
+    queryFn: () => runsLiveTimeline(runId),
+    enabled: !isFinished,
+    staleTime: 0,
+    refetchInterval: !isFinished ? 500 : false,
+    refetchIntervalInBackground: true,
+    retry: 2,
+  });
+  // IPC supplies immediate MCP activity while the poll picks up canonical
+  // steps.json rows, including scripts that batch many browser operations into
+  // one tool call. Failed attempts stay visible instead of disappearing.
+  const events = pickLiveTimelineEvents(
+    rawEvents,
+    liveTimelineQuery.data?.events ?? [],
+    isFinished,
+  );
   const startedAt = run?.startedAt ?? Date.now();
   const [isCancelling, setIsCancelling] = React.useState(false);
-  const bottomRef = React.useRef<HTMLDivElement>(null);
+  const actionsBodyRef = React.useRef<HTMLDivElement>(null);
 
-  // Auto-scroll as events arrive
+  // Auto-scroll only the Actions body. scrollIntoView would also move the
+  // outer page and could push the top of the card above the viewport.
   React.useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const body = actionsBodyRef.current;
+    body?.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
   }, [events.length]);
 
   async function handleCancel() {
@@ -598,14 +644,11 @@ function LiveRunView({ runId }: { runId: string }) {
     }
   }
 
-  const isFinished = result !== null;
   const agentProvider = result?.agentProvider ?? run?.agentProvider;
   const agentModel = result?.agentModel ?? run?.agentModel;
 
   return (
     <ScrollArea
-      autoScrollToBottom
-      autoScrollDeps={[events.length]}
       toolbar={
         <Toolbar titlebar surface="main" seamless>
           <ToolbarRow inset="main" className="main-titlebar-row detail-view-toolbar">
@@ -645,24 +688,39 @@ function LiveRunView({ runId }: { runId: string }) {
     >
       {/* Two-column run detail: the action timeline (main flow) on the left,
           status + assertions + screenshot on a right rail. */}
-      <div className="detail-view">
+      <div className="detail-view run-detail-view">
         <div className="detail-view-main">
-          <Section title="Actions">
-            {events.length === 0 && !isFinished && (
-              <Text variant="small" color="tertiary" className="py-3">
-                Starting run…
-              </Text>
+          <div className="content-card run-actions-card">
+            <div className="content-card-header">
+              <div className="flex min-w-0 items-center gap-2">
+                <Text variant="small-strong" color="secondary">
+                  Actions
+                </Text>
+                {events.length > 0 && (
+                  <Text variant="small" color="tertiary">
+                    {events.length}
+                  </Text>
+                )}
+              </div>
+            </div>
+            {events.length === 0 && !isFinished ? (
+              <div className="content-card-body run-actions-placeholder">
+                <Text variant="small" color="tertiary">
+                  {latestStatus?.detail ?? "Starting run…"}
+                </Text>
+              </div>
+            ) : (
+              <div ref={actionsBodyRef} className="content-card-body run-actions-card-body">
+                {collapseEvents(events).map(({ event, count }) => (
+                  <TimelineRow
+                    key={`${event.seq}-${event.runId}`}
+                    event={event}
+                    count={count}
+                  />
+                ))}
+              </div>
             )}
-
-            {collapseEvents(events).map(({ event, count }) => (
-              <TimelineRow
-                key={`${event.seq}-${event.runId}`}
-                event={event}
-                count={count}
-              />
-            ))}
-          </Section>
-          <div ref={bottomRef} />
+          </div>
         </div>
 
         <div className="detail-rail detail-rail--card">
@@ -690,6 +748,7 @@ function HistoricalRunView({
   runId: string;
   record: RunRecord;
 }) {
+  const events = filterTimelineEvents(record.events);
   return (
     <ScrollArea
       toolbar={
@@ -715,17 +774,29 @@ function HistoricalRunView({
     >
       {/* Two-column run detail: action timeline on the left, status +
           assertions + screenshot on a right rail. */}
-      <div className="detail-view">
+      <div className="detail-view run-detail-view">
         <div className="detail-view-main">
-          <Section title="Actions">
-            {collapseEvents(filterTimelineEvents(record.events)).map(({ event, count }) => (
-              <TimelineRow
-                key={`${event.seq}-${event.runId}`}
-                event={event}
-                count={count}
-              />
-            ))}
-          </Section>
+          <div className="content-card run-actions-card">
+            <div className="content-card-header">
+              <div className="flex min-w-0 items-center gap-2">
+                <Text variant="small-strong" color="secondary">
+                  Actions
+                </Text>
+                <Text variant="small" color="tertiary">
+                  {events.length}
+                </Text>
+              </div>
+            </div>
+            <div className="content-card-body run-actions-card-body">
+              {collapseEvents(events).map(({ event, count }) => (
+                <TimelineRow
+                  key={`${event.seq}-${event.runId}`}
+                  event={event}
+                  count={count}
+                />
+              ))}
+            </div>
+          </div>
         </div>
         <div className="detail-rail detail-rail--card">
           <RunStatusHeader

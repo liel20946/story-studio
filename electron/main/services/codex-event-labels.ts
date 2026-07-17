@@ -4,6 +4,8 @@ export const GENERATE_STATUS = {
   THINKING: "Thinking",
   BROWSING: "Browsing the site",
   INTERACTING: "Interacting with the page",
+  /** Tab recording conversion — observing the user's Chrome tab via MCP. */
+  OBSERVING_CHROME: "Observing your Chrome tab",
   RECORDING_STEPS: "Recording steps",
   DRAFTING_STORY: "Drafting story",
   WRITING_YAML: "Writing story YAML",
@@ -43,7 +45,7 @@ function mcpToolToStatus(toolName: string, exploring: boolean): GenerateStatus {
   ) {
     return exploring ? GENERATE_STATUS.INTERACTING : GENERATE_STATUS.REVIEWING_CHANGES;
   }
-  return exploring ? GENERATE_STATUS.RECORDING_STEPS : GENERATE_STATUS.REVIEWING_CHANGES;
+  return exploring ? GENERATE_STATUS.OBSERVING_CHROME : GENERATE_STATUS.REVIEWING_CHANGES;
 }
 
 function commandToStatus(command: string, exploring: boolean): GenerateStatus {
@@ -54,7 +56,7 @@ function commandToStatus(command: string, exploring: boolean): GenerateStatus {
     }
     return GENERATE_STATUS.UPDATING_DRAFT;
   }
-  return exploring ? GENERATE_STATUS.RECORDING_STEPS : GENERATE_STATUS.REVIEWING_CHANGES;
+  return exploring ? GENERATE_STATUS.OBSERVING_CHROME : GENERATE_STATUS.REVIEWING_CHANGES;
 }
 
 export function progressFromCodexEvent(
@@ -92,7 +94,7 @@ export function progressFromCodexEvent(
     if (typeof command === "string" && command.trim()) {
       return commandToStatus(command.trim(), exploring);
     }
-    return exploring ? GENERATE_STATUS.RECORDING_STEPS : GENERATE_STATUS.REVIEWING_CHANGES;
+    return exploring ? GENERATE_STATUS.OBSERVING_CHROME : GENERATE_STATUS.REVIEWING_CHANGES;
   }
 
   return null;

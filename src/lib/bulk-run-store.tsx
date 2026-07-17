@@ -26,7 +26,6 @@ export interface BulkLaunchedItem {
 export interface BulkSessionState {
   bulkId: string;
   items: BulkLaunchedItem[];
-  maxParallel: number;
   stopCondition: string;
   status: BulkSessionStatus;
   stopReason?: string;
@@ -45,7 +44,6 @@ export function readPersistedSession(): BulkSessionState | null {
     return {
       bulkId: obj.bulkId,
       items: obj.items as BulkLaunchedItem[],
-      maxParallel: typeof obj.maxParallel === "number" ? obj.maxParallel : 3,
       stopCondition: typeof obj.stopCondition === "string" ? obj.stopCondition : "",
       status: (obj.status as BulkSessionStatus) ?? "running",
       stopReason: obj.stopReason,
@@ -116,7 +114,6 @@ export function BulkRunProvider({ children }: { children: React.ReactNode }) {
         return {
           bulkId: prev?.bulkId ?? `local-${Date.now()}`,
           items,
-          maxParallel: prev?.maxParallel ?? 3,
           stopCondition: prev?.stopCondition ?? "",
           status: prev?.status ?? "running",
           stopReason: prev?.stopReason,

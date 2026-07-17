@@ -11,7 +11,7 @@
 
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { onRunEvent, onRunResult, runsActive } from "./ipc";
+import { onRunEvent, onRunResult, runsActive, runsGet } from "./ipc";
 import { reportAppErrorFromUnknown } from "./app-error";
 import type { RunEvent, RunResult, ActiveRunSnapshot, AgentProvider } from "./contract-types";
 import {
@@ -20,6 +20,7 @@ import {
   isThinkingEvent,
   metadataFromRunEvents,
   mergeRunEvents,
+  pickLiveTimelineEvents,
 } from "./run-events";
 
 export interface ActiveRunState {
@@ -107,13 +108,91 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  // Hydrate from the main process BEFORE subscribing to live events — otherwise
-  // the first event creates a nameless run entry that breaks the sidebar title
-  // and the story-row running indicator (which keys off storyName).
+  // Subscribe to live IPC first so events are not missed while hydrating.
   React.useEffect(() => {
     let cancelled = false;
-    let unsubEvent = () => {};
-    let unsubResult = () => {};
+
+    const unsubEvent = onRunEvent((ev) => {
+      if (isBenignCodexStderrEvent(ev) || isThinkingEvent(ev)) return;
+      setRuns((prev) => {
+        const existing = prev[ev.runId];
+        // Once completion is visible, freeze the timeline so late IPC events
+        // cannot add, remove, or regroup rows in the finished state.
+        if (existing?.result) return prev;
+        const base: ActiveRunState =
+          existing ?? {
+            runId: ev.runId,
+            storyName: "",
+            storyTitle: "",
+            startedAt: ev.ts,
+            events: [],
+            result: null,
+          };
+        const nextEvents = [...base.events];
+        const idx = nextEvents.findIndex((e) => e.seq === ev.seq);
+        if (idx >= 0) {
+          nextEvents[idx] = ev;
+        } else {
+          nextEvents.push(ev);
+          nextEvents.sort((a, b) => a.seq - b.seq);
+        }
+        const filtered = filterTimelineEvents(nextEvents);
+        const fromEvents = metadataFromRunEvents(filtered);
+        return {
+          ...prev,
+          [ev.runId]: {
+            ...base,
+            storyTitle: base.storyTitle || fromEvents.storyTitle || "",
+            events: filtered,
+          },
+        };
+      });
+    });
+
+    const unsubResult = onRunResult((res) => {
+      void (async () => {
+        let events: RunEvent[] = [];
+        try {
+          const record = await runsGet(res.runId);
+          events = filterTimelineEvents(record.events ?? []);
+        } catch (err) {
+          reportAppErrorFromUnknown("Failed to load run timeline", err);
+        }
+
+        if (cancelled) return;
+
+        setRuns((prev) => {
+          const existing = prev[res.runId];
+          const base: ActiveRunState =
+            existing ?? {
+              runId: res.runId,
+              storyName: res.storyName,
+              storyTitle: res.storyTitle,
+              startedAt: res.startedAt,
+              events: [],
+              result: null,
+            };
+          // The persisted record is canonicalized from steps.json at finalize
+          // time. Prefer it when it contains a fuller action sequence than the
+          // raw live MCP stream (one batched MCP call can represent many steps).
+          const mergedEvents = pickLiveTimelineEvents(base.events, events, true);
+          return {
+            ...prev,
+            [res.runId]: {
+              ...base,
+              storyName: base.storyName || res.storyName,
+              storyTitle: base.storyTitle || res.storyTitle,
+              agentProvider: res.agentProvider ?? base.agentProvider,
+              agentModel: res.agentModel ?? base.agentModel,
+              events: mergedEvents,
+              result: res,
+            },
+          };
+        });
+        queryClient.invalidateQueries({ queryKey: ["runs:list"] });
+        queryClient.invalidateQueries({ queryKey: ["stories:list"] });
+      })();
+    });
 
     void (async () => {
       try {
@@ -130,71 +209,6 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         reportAppErrorFromUnknown("Failed to restore active runs", err);
       }
-
-      if (cancelled) return;
-
-      unsubEvent = onRunEvent((ev) => {
-        if (isBenignCodexStderrEvent(ev) || isThinkingEvent(ev)) return;
-        setRuns((prev) => {
-          const existing = prev[ev.runId];
-          const base: ActiveRunState =
-            existing ?? {
-              runId: ev.runId,
-              storyName: "",
-              storyTitle: "",
-              startedAt: ev.ts,
-              events: [],
-              result: null,
-            };
-          const nextEvents = filterTimelineEvents([...base.events]);
-          const idx = nextEvents.findIndex((e) => e.seq === ev.seq);
-          if (idx >= 0) {
-            nextEvents[idx] = ev;
-          } else {
-            nextEvents.push(ev);
-            nextEvents.sort((a, b) => a.seq - b.seq);
-          }
-          const filtered = filterTimelineEvents(nextEvents);
-          const fromEvents = metadataFromRunEvents(filtered);
-          return {
-            ...prev,
-            [ev.runId]: {
-              ...base,
-              storyTitle: base.storyTitle || fromEvents.storyTitle || "",
-              events: filtered,
-            },
-          };
-        });
-      });
-
-      unsubResult = onRunResult((res) => {
-        setRuns((prev) => {
-          const existing = prev[res.runId];
-          const base: ActiveRunState =
-            existing ?? {
-              runId: res.runId,
-              storyName: res.storyName,
-              storyTitle: res.storyTitle,
-              startedAt: res.startedAt,
-              events: [],
-              result: null,
-            };
-          return {
-            ...prev,
-            [res.runId]: {
-              ...base,
-              storyName: base.storyName || res.storyName,
-              storyTitle: base.storyTitle || res.storyTitle,
-              agentProvider: res.agentProvider ?? base.agentProvider,
-              agentModel: res.agentModel ?? base.agentModel,
-              events: filterTimelineEvents(base.events),
-              result: res,
-            },
-          };
-        });
-        queryClient.invalidateQueries({ queryKey: ["runs:list"] });
-        queryClient.invalidateQueries({ queryKey: ["stories:list"] });
-      });
     })();
 
     return () => {

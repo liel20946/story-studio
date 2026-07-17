@@ -3,13 +3,19 @@ import * as os from "os";
 import * as path from "path";
 import { stringify as stringifyYaml } from "yaml";
 import { broadcast } from "../broadcast.js";
-import type { AgentProvider, GenerateConversation, GenerateMessage } from "./contract-types.js";
+import type {
+  AgentProvider,
+  BrowserMode,
+  GenerateConversation,
+  GenerateMessage,
+} from "./contract-types.js";
 import { getAgentRunConfig } from "./agent-config.js";
 import { resolveAgentBinary } from "./agent-provider.js";
 import {
   acquirePlaywrightSlot,
   releasePlaywrightSlot,
 } from "./playwright-slots.js";
+import { ensurePlaywrightReady } from "./playwright-preflight.js";
 import {
   normalizeBowserEntryForStorage,
   slugify,
@@ -33,7 +39,7 @@ import { getDraftsDir } from "./paths.js";
 import {
   buildGeneratePrompt,
   buildGenerateResumePrompt,
-  getGenerateStoryPlaybook,
+  buildGenerateStoryPlaybook,
 } from "./story-skill.js";
 import {
   cancelGenerateInvocation,
@@ -147,8 +153,7 @@ type GenerateSettings = {
   codexEffort: string;
   claudeModel: string;
   claudeEffort: string;
-  browserMcp?: "playwright" | "chrome-devtools";
-  codexComputerUse?: boolean;
+  browserMode: BrowserMode;
 };
 
 export interface AgentModelOverride {
@@ -314,11 +319,9 @@ export async function sendGenerateMessage(
   const exploring = !currentDraftYaml?.trim();
   const resumeSession = canResumeAgentSession(refreshed, agentSettings.agentProvider);
   const enteringRevision = resumeSession && !exploring;
-  const computerUse =
-    agentSettings.agentProvider === "codex" && Boolean(agentSettings.codexComputerUse);
-  const browserMcp =
-    agentSettings.browserMcp === "chrome-devtools" ? "chrome-devtools" : "playwright";
-  const generatePlaybook = getGenerateStoryPlaybook({ computerUse, browserMcp });
+  const generatePlaybook = buildGenerateStoryPlaybook(
+    agentSettings.browserMode,
+  );
 
   await setConversationGenerating(conversationId, true);
   broadcast("generate:progress", {
@@ -340,15 +343,13 @@ export async function sendGenerateMessage(
         currentDraftYaml,
         isFirstTurn,
         exploring,
-        computerUse,
-        browserMcp,
+        browserMode: agentSettings.browserMode,
       });
 
   const agentBinary = await resolveAgentBinary(
     agentSettings.agentProvider,
     agentSettings.codexBinaryPath,
     agentSettings.claudeBinaryPath,
-    { computerUse },
   );
   const agentConfig = getAgentRunConfig(agentSettings.agentProvider, agentSettings);
   const sessionId = resolveProviderSessionId(refreshed, agentSettings.agentProvider);
@@ -370,7 +371,15 @@ export async function sendGenerateMessage(
   let agentMessage = "";
   _activeGenerations.set(conversationId, { playwrightHeld: false });
   try {
-    if (exploring && !computerUse) {
+    if (exploring) {
+      const prep = await ensurePlaywrightReady({
+        onProgress: (p) => {
+          broadcast("generate:progress", { conversationId, message: p.message });
+        },
+      });
+      if (!prep.ok) {
+        throw new Error(prep.error ?? prep.message);
+      }
       await acquirePlaywrightSlot();
       playwrightHeld = true;
       _activeGenerations.set(conversationId, { playwrightHeld: true });
@@ -387,8 +396,6 @@ export async function sendGenerateMessage(
       sessionId,
       resumeSession,
       systemPrompt: resumeSession ? undefined : generatePlaybook,
-      browserMcp,
-      computerUse,
       onProgress: (message) => {
         broadcast("generate:progress", { conversationId, message });
       },

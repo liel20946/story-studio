@@ -148,26 +148,15 @@ export function RecordView() {
           setPrepPhase("error");
           setPrepMessage(message);
           reportAppError("Can't record", message);
-        } else if (avail.requiresPlaywright && !avail.playwrightAvailable) {
+        } else if (!avail.playwrightAvailable) {
           const message =
             "Playwright is not available, so recording can't start. Reinstall the app or check your setup.";
           setPrepPhase("error");
           setPrepMessage(message);
           reportAppError("Can't record", message);
-        } else if (avail.requiresPlaywright && !avail.browserInstalled) {
+        } else if (!avail.browserInstalled) {
           setPrepPhase("install-browser");
-          setPrepMessage(
-            "Playwright browser not found. Install Chromium below, or install Google Chrome.",
-          );
-        } else if (avail.needsChrome && !avail.chromeInstalled) {
-          const settings = normalizeAppSettings(getCachedAppSettings());
-          const message =
-            settings.agentProvider === "codex" && settings.codexComputerUse
-              ? "Google Chrome is required for Codex Computer Use. Install Google Chrome, then click Fix it."
-              : "Google Chrome is required for Chrome DevTools MCP. Install Google Chrome, then click Fix it.";
-          setPrepPhase("error");
-          setPrepMessage(message);
-          reportAppError("Can't record", message);
+          setPrepMessage("Playwright browser not found. Install Chromium below.");
         } else {
           setPrepPhase("ready");
           setPrepMessage("Ready to record.");
@@ -236,7 +225,6 @@ export function RecordView() {
                 playwrightAvailable: true,
                 browserInstalled: true,
                 agentAvailable: true,
-                chromeInstalled: prev.needsChrome ? true : prev.chromeInstalled,
               }
             : prev,
         );
@@ -264,7 +252,7 @@ export function RecordView() {
     void rec.stop();
   }
 
-  // Block dismiss only while conversion is in progress (brief, not cancellable).
+  // Block dismiss only while starting (brief).
   const isConverting = rec.active && rec.phase === "converting";
   const isRecordingSession =
     rec.active && ["starting", "recording"].includes(rec.phase);
@@ -289,15 +277,13 @@ export function RecordView() {
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
-      if (isRecordingSession) {
+      if (isRecordingSession || isConverting) {
         void rec.abort();
       } else if (rec.active) {
         rec.reset();
       }
-      if (!isConverting) {
-        setOpen(false);
-        navigate({ to: "/stories" });
-      }
+      setOpen(false);
+      navigate({ to: "/stories" });
     }
   }
 
@@ -309,14 +295,12 @@ export function RecordView() {
     <Dialog open={open} onOpenChange={handleOpenChange}>
     <DialogContent
       size="medium"
-      onEscapeKeyDown={() => !isConverting && handleOpenChange(false)}
+      onEscapeKeyDown={() => handleOpenChange(false)}
     >
       <DialogHeader>
         <DialogTitle>Record Story</DialogTitle>
         <DialogDescription>
-          Open a browser, perform your actions, navigate to the screen you want as
-          the final screenshot, then click Save Recording. Browser backend follows
-          Agent settings (Playwright, Chrome DevTools, or Computer Use).
+          Perform your actions, land on the final screen, then click Save Recording.
         </DialogDescription>
       </DialogHeader>
       <DialogBody>
@@ -395,9 +379,8 @@ export function RecordView() {
         <Button
           variant="filled"
           onClick={handleCancel}
-          disabled={isConverting}
         >
-          Cancel
+          {isConverting ? "Cancel conversion" : "Cancel"}
         </Button>
         {phase === "recording" ? (
           <Button variant="accent" onClick={handleStopRecording}>
@@ -411,7 +394,7 @@ export function RecordView() {
             disabled={!canStart || isActive || isDone || isChecking}
           >
             {phase === "converting" ? (
-              "Converting with AI…"
+              "Converting…"
             ) : phase === "starting" ? (
               "Starting…"
             ) : isDone ? (

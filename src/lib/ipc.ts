@@ -9,6 +9,8 @@ import type {
   RunRecord,
   AppSettings,
   RecordingAvailability,
+  SetupStatus,
+  SetupItemId,
   DraftDetail,
   BulkRunOptions,
   ScheduledRun,
@@ -30,6 +32,12 @@ export const storiesList = (): Promise<StorySummary[]> =>
 
 export const storiesGet = (name: string): Promise<StoryDetail> =>
   ipcInvoke("stories:get", { name });
+
+export const storiesCreate = (
+  title: string,
+  url: string,
+): Promise<StoryDetail> =>
+  ipcInvoke("stories:create", { title, url });
 
 export const storiesDelete = (name: string): Promise<{ ok: true }> =>
   ipcInvoke("stories:delete", { name });
@@ -67,6 +75,7 @@ export const storiesUpdate = (
     steps: string[];
     variables: { key: string; value: string }[];
     assertions: string[];
+    globalRules: string;
   },
 ): Promise<StoryDetail> => ipcInvoke("stories:update", { name, ...content });
 
@@ -94,6 +103,34 @@ export const recordingFixPrerequisites = (): Promise<{
   message: string;
   error?: string;
 }> => ipcInvoke("recording:fixPrerequisites");
+
+export const setupCheck = (): Promise<SetupStatus> => ipcInvoke("setup:check");
+
+export const setupInstall = (
+  item: SetupItemId,
+): Promise<{ ok: boolean; message: string; error?: string }> =>
+  ipcInvoke("setup:install", { item });
+
+export const setupOpenUrl = (url: string): Promise<{ ok: true }> =>
+  ipcInvoke("setup:openUrl", { url });
+
+export const browserExtensionTokenStatus = (): Promise<{
+  configured: boolean;
+}> => ipcInvoke("browser:extensionTokenStatus");
+
+export const browserSetExtensionToken = (
+  token: string,
+): Promise<{ configured: true }> =>
+  ipcInvoke("browser:setExtensionToken", { token });
+
+export const browserClearExtensionToken = (): Promise<{
+  configured: false;
+}> => ipcInvoke("browser:clearExtensionToken");
+
+export const browserTestExtensionConnection = (): Promise<{
+  ok: boolean;
+  message: string;
+}> => ipcInvoke("browser:testExtensionConnection");
 
 export const recordingStart = (params: {
   name: string;
@@ -134,7 +171,6 @@ export const runBulkStart = (
   }[];
   agentProvider: import("./contract-types").AgentProvider;
   agentModel: string;
-  maxParallel: number;
   stopCondition: string;
 }> => ipcInvoke("run:bulkStart", { storyNames, options });
 
@@ -173,7 +209,6 @@ export const runBulkResume = (
   }[];
   agentProvider: import("./contract-types").AgentProvider;
   agentModel: string;
-  maxParallel: number;
   stopCondition: string;
 }> => ipcInvoke("run:bulkResume", { bulkId, storyNames, options });
 
@@ -210,6 +245,11 @@ export const runsLiveScreenshots = (
 ): Promise<{ paths: string[] }> =>
   ipcInvoke("runs:liveScreenshots", { runId });
 
+export const runsLiveTimeline = (
+  runId: string,
+): Promise<{ events: import("./contract-types").RunEvent[] }> =>
+  ipcInvoke("runs:liveTimeline", { runId });
+
 export const settingsGet = (): Promise<AppSettings> =>
   ipcInvoke("settings:get");
 
@@ -234,6 +274,7 @@ export const settingsSet = (
       | "codexEffort"
       | "claudeModel"
       | "claudeEffort"
+      | "browserMode"
       | "theme"
       | "colorThemeLight"
       | "colorThemeDark"
@@ -242,8 +283,6 @@ export const settingsSet = (
       | "colorThemeContrastLight"
       | "colorThemeContrastDark"
       | "usePointerCursors"
-      | "browserMcp"
-      | "codexComputerUse"
       | "startingUrl"
       | "runHook"
     >

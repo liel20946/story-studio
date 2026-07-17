@@ -245,6 +245,11 @@ export function getAllCachedAgentCapabilities(): AgentCapabilitiesSnapshot {
   };
 }
 
+/** Whether the real model catalogs have finished loading (vs. still using fallbacks). */
+export function isAgentCapabilitiesWarmed(): boolean {
+  return _warmed;
+}
+
 export function normalizeAgentModelSettings(
   settings: {
     codexModel: string;
@@ -258,6 +263,14 @@ export function normalizeAgentModelSettings(
   claudeModel: string;
   claudeEffort: string;
 } {
+  // Capabilities haven't loaded yet — only the tiny fallback list is known, so
+  // validating against it now would wrongly reset a saved model/effort that's
+  // actually valid but just not in the fallback list. Trust the saved values
+  // until the real catalog is available.
+  if (!_warmed) {
+    return { ...settings };
+  }
+
   const codex = getCachedAgentCapabilities("codex");
   const claude = getCachedAgentCapabilities("claude-code");
 

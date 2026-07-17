@@ -146,7 +146,7 @@ export function BulkVariablesModal({
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent size="large" className="max-h-[min(88vh,760px)]">
         <DialogHeader>
-          <DialogTitle>Variable runs — {story.title}</DialogTitle>
+          <DialogTitle>Variable runs: {story.title}</DialogTitle>
           <DialogDescription>
             Describe how you want to run this story multiple times. The agent builds
             variable sets you can edit before saving.
@@ -173,7 +173,7 @@ export function BulkVariablesModal({
                     ))
                   ) : (
                     <Text variant="small" color="tertiary">
-                      No variables defined — the agent will infer keys from the workflow.
+                      No variables defined. The agent will infer keys from the workflow.
                     </Text>
                   )}
                 </div>

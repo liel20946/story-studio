@@ -7,7 +7,7 @@ import { getStoriesDir } from "./paths.js";
 
 // ---------- Bowser YAML v2 types ----------
 
-export type BowserStoryMode = "recorded" | "generated";
+export type BowserStoryMode = "recorded" | "generated" | "manual";
 
 export interface BowserAssertion {
   /** Number of workflow action steps completed before this assertion runs. */
@@ -23,6 +23,8 @@ export interface BowserStoryEntry {
   workflow: string;
   /** Multiline block — one assertion per line, optionally prefixed with @N (step index). */
   assertions?: string;
+  /** Multiline block — mandatory execution rules for the agent (highest priority). */
+  global_rules?: string;
   variables?: Record<string, string>;
   created_at?: number;
 }
@@ -482,6 +484,8 @@ function entryToDetail(
       .map((a) => a.text)
       .filter((text) => !isBlankAssertion(text)),
     workflow: workflowLines,
+    globalRules:
+      typeof normalized.global_rules === "string" ? normalized.global_rules : "",
     raw: rawYaml,
   };
 }
@@ -699,10 +703,20 @@ export function formatStoryForRun(
     resolvedVariables.length > 0
       ? `\n## Variables\n${resolvedVariables.map((v) => `- ${v.key}: ${v.value}`).join("\n")}\n`
       : "";
+  const globalRules = story.globalRules?.trim() ?? "";
+  const globalRulesBlock = globalRules
+    ? `\n## Global rules (MANDATORY — highest priority)\n` +
+      `These override conflicting playbook or hook guidance for this story.\n` +
+      `- Treat every rule below as mandatory.\n` +
+      `- When a rule requires waiting, poll until the condition is met or a reasonable timeout expires. Do not proceed on hope.\n` +
+      `- When a rule's failure condition occurs, stop immediately and mark the run failed (or blocked if the environment prevents progress).\n\n` +
+      `${globalRules}\n`
+    : "";
   return (
     `# ${story.title}\n\n` +
     `URL: ${story.baseUrl ?? ""}\n` +
     `Mode: ${story.mode ?? "recorded"}\n` +
+    globalRulesBlock +
     vars +
     `\n## Steps\n${steps.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
     `\n## Assertions\n${assertionLines.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +

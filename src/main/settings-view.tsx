@@ -9,10 +9,24 @@ import {
   toast,
   Switch,
 } from "@/components/ui";
-import { settingsGet, settingsSet } from "../lib/ipc";
+import {
+  browserClearExtensionToken,
+  browserExtensionTokenStatus,
+  browserSetExtensionToken,
+  browserTestExtensionConnection,
+  settingsGet,
+  settingsSet,
+  setupOpenUrl,
+} from "../lib/ipc";
 import type { AppSettings, AgentCapabilities } from "../lib/contract-types";
 import { useAgentCapabilities } from "../lib/agent-capabilities-store";
-import { FolderDownIcon, FolderOpenIcon, Loader2Icon } from "lucide-react";
+import {
+  CheckIcon,
+  FolderDownIcon,
+  FolderOpenIcon,
+  Loader2Icon,
+  XIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   SETTINGS_SECTION_LABELS,
@@ -23,13 +37,13 @@ import { LabeledSegment } from "../components/labeled-segment";
 import { SettingsSelect } from "../components/settings-select";
 import type {
   AgentProvider,
-  BrowserMcp,
   ThemePreference,
   ColorThemeId,
   CodexModel,
   CodexEffort,
   ClaudeModel,
   ClaudeEffort,
+  BrowserMode,
 } from "../lib/contract-types";
 import {
   getEffortSegmentOptions,
@@ -54,6 +68,7 @@ import {
 import { normalizeAppSettings } from "../lib/app-settings";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
 import { useSettingsSection } from "@/lib/use-settings-section";
+import { SetupPanel } from "../components/setup-panel";
 import {
   getCachedAppSettings,
   setCachedAppSettings,
@@ -127,8 +142,7 @@ function AgentPanel({
   codexEffort,
   claudeModel,
   claudeEffort,
-  browserMcp,
-  codexComputerUse,
+  browserMode,
   capabilities,
   capabilitiesError,
   onProviderChange,
@@ -136,16 +150,14 @@ function AgentPanel({
   onCodexEffortChange,
   onClaudeModelChange,
   onClaudeEffortChange,
-  onBrowserMcpChange,
-  onCodexComputerUseChange,
+  onBrowserModeChange,
 }: {
   provider: AgentProvider;
   codexModel: CodexModel;
   codexEffort: CodexEffort;
   claudeModel: ClaudeModel;
   claudeEffort: ClaudeEffort;
-  browserMcp: BrowserMcp;
-  codexComputerUse: boolean;
+  browserMode: BrowserMode;
   capabilities: AgentCapabilities | null;
   capabilitiesError?: string;
   onProviderChange: (provider: AgentProvider) => void;
@@ -153,9 +165,16 @@ function AgentPanel({
   onCodexEffortChange: (effort: CodexEffort) => void;
   onClaudeModelChange: (model: ClaudeModel) => void;
   onClaudeEffortChange: (effort: ClaudeEffort) => void;
-  onBrowserMcpChange: (browserMcp: BrowserMcp) => void;
-  onCodexComputerUseChange: (enabled: boolean) => void;
+  onBrowserModeChange: (mode: BrowserMode) => void;
 }) {
+  const [extensionToken, setExtensionToken] = useState("");
+  const [tokenConfigured, setTokenConfigured] = useState(false);
+  const [editingToken, setEditingToken] = useState(false);
+  const [savingToken, setSavingToken] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<
+    "success" | "error" | null
+  >(null);
   const model =
     provider === "claude-code" ? claudeModel : codexModel;
   const effort =
@@ -168,7 +187,62 @@ function AgentPanel({
       : capabilities?.source === "codex-catalog"
         ? "Codex model used when running stories."
         : "Codex model used when running stories.";
-  const mcpOverridden = provider === "codex" && codexComputerUse;
+
+  useEffect(() => {
+    if (browserMode !== "existing-chrome") return;
+    void browserExtensionTokenStatus()
+      .then(({ configured }) => setTokenConfigured(configured))
+      .catch((error) =>
+        reportAppErrorFromUnknown("Could not read extension token status", error),
+      );
+  }, [browserMode]);
+
+  const saveExtensionToken = async () => {
+    const token = extensionToken.trim();
+    if (!token) return;
+    setSavingToken(true);
+    try {
+      await browserSetExtensionToken(token);
+      setExtensionToken("");
+      setTokenConfigured(true);
+      setEditingToken(false);
+      toast.success("Chrome connection token saved securely.");
+    } catch (error) {
+      reportAppErrorFromUnknown("Could not save extension token", error);
+    } finally {
+      setSavingToken(false);
+    }
+  };
+
+  const clearExtensionToken = async () => {
+    setSavingToken(true);
+    try {
+      await browserClearExtensionToken();
+      setExtensionToken("");
+      setTokenConfigured(false);
+      setEditingToken(false);
+      toast.success("Chrome connection token removed.");
+    } catch (error) {
+      reportAppErrorFromUnknown("Could not remove extension token", error);
+    } finally {
+      setSavingToken(false);
+    }
+  };
+
+  const testExtensionConnection = async () => {
+    setTestingConnection(true);
+    setConnectionStatus(null);
+    try {
+      const result = await browserTestExtensionConnection();
+      setConnectionStatus(result.ok ? "success" : "error");
+      if (result.ok) toast.success(result.message);
+    } catch (error) {
+      setConnectionStatus("error");
+      reportAppErrorFromUnknown("Chrome connection test failed", error);
+    } finally {
+      setTestingConnection(false);
+    }
+  };
 
   return (
     <div className="settings-panel">
@@ -222,36 +296,142 @@ function AgentPanel({
         </SettingsRow>
 
         <SettingsRow
-          label="Browser MCP"
-          description={
-            mcpOverridden
-              ? "Overridden by Computer Use while that toggle is on."
-              : "Browser backend for recording, running, and generating stories."
-          }
+          label="Browser"
+          description="Use a private browser or your signed-in Chrome tab."
         >
-          <select
-            className="settings-select"
-            aria-label="Browser MCP"
-            value={browserMcp}
-            disabled={mcpOverridden}
-            onChange={(e) => onBrowserMcpChange(e.target.value as BrowserMcp)}
-          >
-            <option value="playwright">Playwright MCP</option>
-            <option value="chrome-devtools">Chrome DevTools MCP</option>
-          </select>
+          <LabeledSegment
+            value={browserMode}
+            options={[
+              { value: "private", label: "Private" },
+              { value: "existing-chrome", label: "Chrome tab" },
+            ]}
+            ariaLabel="Browser mode"
+            onChange={onBrowserModeChange}
+          />
         </SettingsRow>
 
-        {provider === "codex" ? (
-          <SettingsRow
-            label="Computer Use"
-            description="Override Browser MCP for recording, running, and generating. Uses Codex.app Computer Use (install the plugin; prefers the Codex.app CLI)."
-          >
-            <Switch
-              checked={codexComputerUse}
-              aria-label="Computer Use"
-              onCheckedChange={onCodexComputerUseChange}
-            />
-          </SettingsRow>
+        {browserMode === "existing-chrome" ? (
+          <>
+            <SettingsRow
+              label="Chrome extension"
+              description="Required for Chrome tab mode."
+            >
+              <Button
+                variant="filled"
+                size="small"
+                onClick={() =>
+                  void setupOpenUrl(
+                    "https://chromewebstore.google.com/detail/playwright-mcp-bridge/mmlmfjhmonkocbjadbfplnigmagldckm",
+                  )
+                }
+              >
+                Install extension
+              </Button>
+            </SettingsRow>
+
+            <SettingsRow
+              label="Connection token"
+              description="Optional. Skips approval prompts."
+              stacked
+            >
+              {tokenConfigured && !editingToken ? (
+                <div className="flex w-full items-center justify-between rounded-control border border-separator bg-control px-3 py-2">
+                  <div className="flex items-center gap-2 text-small text-primary">
+                    <CheckIcon className="size-4 text-green-500" />
+                    Token saved securely
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="transparent"
+                      size="small"
+                      onClick={() => setEditingToken(true)}
+                    >
+                      Replace
+                    </Button>
+                    <Button
+                      variant="transparent"
+                      size="small"
+                      disabled={savingToken}
+                      onClick={() => void clearExtensionToken()}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex w-full items-center gap-2">
+                  <Input
+                    type="password"
+                    className="settings-input min-w-0 flex-1"
+                    placeholder="Paste token from the extension"
+                    value={extensionToken}
+                    autoFocus={editingToken}
+                    onChange={(event) => setExtensionToken(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && extensionToken.trim()) {
+                        void saveExtensionToken();
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="filled"
+                    size="small"
+                    disabled={!extensionToken.trim() || savingToken}
+                    onClick={() => void saveExtensionToken()}
+                  >
+                    {savingToken ? "Saving…" : "Save"}
+                  </Button>
+                  {tokenConfigured ? (
+                    <Button
+                      variant="transparent"
+                      size="small"
+                      disabled={savingToken}
+                      onClick={() => {
+                        setExtensionToken("");
+                        setEditingToken(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+            </SettingsRow>
+
+            <SettingsRow
+              label="Connection"
+              description="Check that Story Studio can access Chrome."
+            >
+              <div className="flex items-center gap-2">
+                {connectionStatus === "success" ? (
+                  <CheckIcon
+                    className="size-4 text-green-500"
+                    aria-label="Connected"
+                  />
+                ) : connectionStatus === "error" ? (
+                  <XIcon
+                    className="size-4 text-red-500"
+                    aria-label="Connection failed"
+                  />
+                ) : null}
+                <Button
+                  variant="filled"
+                  size="small"
+                  disabled={testingConnection}
+                  onClick={() => void testExtensionConnection()}
+                >
+                  {testingConnection ? (
+                    <>
+                      <Loader2Icon className="size-3.5 animate-spin" />
+                      Connecting…
+                    </>
+                  ) : (
+                    "Test connection"
+                  )}
+                </Button>
+              </div>
+            </SettingsRow>
+          </>
         ) : null}
 
         {capabilitiesError ? (
@@ -570,27 +750,14 @@ export function SettingsView() {
     }
   };
 
-  const handleBrowserMcpChange = async (browserMcp: BrowserMcp) => {
-    if (browserMcp === resolvedSettings.browserMcp) return;
-    setAppSettings((prev) => (prev ? { ...prev, browserMcp } : prev));
+  const handleBrowserModeChange = async (browserMode: BrowserMode) => {
+    if (browserMode === resolvedSettings.browserMode) return;
+    setAppSettings((prev) => (prev ? { ...prev, browserMode } : prev));
     try {
-      const updated = await settingsSet({ browserMcp });
-      commitAppSettings(updated);
+      commitAppSettings(await settingsSet({ browserMode }));
     } catch (error) {
       void refreshAppSettings();
-      reportAppErrorFromUnknown("Failed to set Browser MCP", error);
-    }
-  };
-
-  const handleCodexComputerUseChange = async (codexComputerUse: boolean) => {
-    if (codexComputerUse === resolvedSettings.codexComputerUse) return;
-    setAppSettings((prev) => (prev ? { ...prev, codexComputerUse } : prev));
-    try {
-      const updated = await settingsSet({ codexComputerUse });
-      commitAppSettings(updated);
-    } catch (error) {
-      void refreshAppSettings();
-      reportAppErrorFromUnknown("Failed to set Computer Use", error);
+      reportAppErrorFromUnknown("Failed to set browser mode", error);
     }
   };
 
@@ -795,6 +962,8 @@ export function SettingsView() {
         <div className="settings-page-inner">
           <h1 className="settings-page-title">{pageTitle}</h1>
 
+          {activeSection === "setup" ? <SetupPanel /> : null}
+
           {activeSection === "appearance" ? (
             <AppearancePanel
               settings={resolvedSettings}
@@ -815,8 +984,7 @@ export function SettingsView() {
               codexEffort={resolvedSettings.codexEffort}
               claudeModel={resolvedSettings.claudeModel}
               claudeEffort={resolvedSettings.claudeEffort}
-              browserMcp={resolvedSettings.browserMcp}
-              codexComputerUse={resolvedSettings.codexComputerUse}
+              browserMode={resolvedSettings.browserMode}
               capabilities={agentCapabilities}
               capabilitiesError={capabilitiesError ?? settingsError ?? undefined}
               onProviderChange={handleProviderChange}
@@ -824,8 +992,7 @@ export function SettingsView() {
               onCodexEffortChange={handleCodexEffortChange}
               onClaudeModelChange={handleClaudeModelChange}
               onClaudeEffortChange={handleClaudeEffortChange}
-              onBrowserMcpChange={handleBrowserMcpChange}
-              onCodexComputerUseChange={handleCodexComputerUseChange}
+              onBrowserModeChange={handleBrowserModeChange}
             />
           ) : null}
 

@@ -32,18 +32,46 @@ export function resolveRunArtifactPath(runId: string, artifactPath: string): str
   return path.join(getRunOutputDir(runId), artifactPath);
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve a step screenshot path, including legacy run-root checkpoint files. */
+export async function resolveStepScreenshotPath(
+  runId: string,
+  screenshotPath: string,
+): Promise<string | null> {
+  const direct = resolveRunArtifactPath(runId, screenshotPath);
+  if (await fileExists(direct)) return direct;
+
+  const basename = path.basename(screenshotPath);
+  const runRoot = path.join(getRunOutputDir(runId), basename);
+  if (await fileExists(runRoot)) return runRoot;
+
+  const screenshotsDir = path.join(getRunScreenshotsDir(runId), basename);
+  if (await fileExists(screenshotsDir)) return screenshotsDir;
+
+  return null;
+}
+
 export async function loadRunSteps(runId: string): Promise<RunStep[]> {
   try {
     const raw = await fs.readFile(getRunStepsPath(runId), "utf-8");
     const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
     if (!Array.isArray(parsed)) return [];
-    return parsed.map((step) => {
+    const steps: RunStep[] = [];
+    for (const step of parsed) {
       const screenshot = step["screenshot"];
-      const screenshotPath =
-        typeof screenshot === "string"
-          ? resolveRunArtifactPath(runId, screenshot)
-          : (screenshot as string | null | undefined);
-      return {
+      let screenshotPath: string | null = null;
+      if (typeof screenshot === "string" && screenshot.trim().length > 0) {
+        screenshotPath = await resolveStepScreenshotPath(runId, screenshot);
+      }
+      steps.push({
         index: Number(step["index"] ?? 0),
         text: String(step["text"] ?? ""),
         status: (step["status"] as RunStep["status"]) ?? "passed",
@@ -53,25 +81,26 @@ export async function loadRunSteps(runId: string): Promise<RunStep[]> {
         finishedAt:
           (step["finishedAt"] as string | undefined) ??
           (step["finished_at"] as string | undefined),
-        screenshot: screenshotPath ?? null,
+        screenshot: screenshotPath,
         error: (step["error"] as string | null | undefined) ?? null,
-      };
-    });
+      });
+    }
+    return steps;
   } catch {
     return [];
   }
 }
 
-export async function collectScreenshotPaths(runId: string): Promise<string[]> {
-  return collectPngPathsByMtime(getRunScreenshotsDir(runId));
-}
+const SCREENSHOT_EXTENSIONS = new Set([".png", ".jpeg", ".jpg", ".webp"]);
 
-async function collectPngPathsByMtime(dir: string): Promise<string[]> {
+async function collectImagePathsByMtime(dir: string): Promise<string[]> {
   try {
     const files = await fs.readdir(dir);
-    const pngs = files.filter((f) => f.endsWith(".png"));
+    const images = files.filter((file) =>
+      SCREENSHOT_EXTENSIONS.has(path.extname(file).toLowerCase()),
+    );
     const withMtime = await Promise.all(
-      pngs.map(async (f) => {
+      images.map(async (f) => {
         const full = path.join(dir, f);
         const stat = await fs.stat(full);
         return { full, mtime: stat.mtimeMs };
@@ -84,8 +113,36 @@ async function collectPngPathsByMtime(dir: string): Promise<string[]> {
   }
 }
 
-async function collectPngPathsSince(dir: string, sinceMs: number): Promise<string[]> {
-  const paths = await collectPngPathsByMtime(dir);
+function dedupePaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const full of paths) {
+    const key = path.resolve(full);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(full);
+  }
+  return out;
+}
+
+async function collectRunCheckpointImages(runId: string): Promise<string[]> {
+  const runRoot = getRunOutputDir(runId);
+  const screenshotsDir = getRunScreenshotsDir(runId);
+  const fromScreenshots = await collectImagePathsByMtime(screenshotsDir);
+  const fromRoot = await collectImagePathsByMtime(runRoot);
+  const checkpointRoot = fromRoot.filter((full) => {
+    const base = path.basename(full).toLowerCase();
+    return base.startsWith("step-") || base === "hero.png";
+  });
+  return dedupePaths([...fromScreenshots, ...checkpointRoot]);
+}
+
+export async function collectScreenshotPaths(runId: string): Promise<string[]> {
+  return collectRunCheckpointImages(runId);
+}
+
+async function collectImagePathsSince(dir: string, sinceMs: number): Promise<string[]> {
+  const paths = await collectImagePathsByMtime(dir);
   if (paths.length === 0 || sinceMs <= 0) return paths;
   const filtered: string[] = [];
   for (const full of paths) {
@@ -101,15 +158,14 @@ async function collectPngPathsSince(dir: string, sinceMs: number): Promise<strin
 
 /** Screenshot paths written so far during an in-flight run. */
 export async function collectLiveScreenshotPaths(runId: string): Promise<string[]> {
-  // Checkpoint PNGs land in screenshots/ long before steps.json is written at run end.
-  const fromDir = await collectScreenshotPaths(runId);
-  if (fromDir.length > 0) return fromDir;
+  const fromDirs = await collectRunCheckpointImages(runId);
+  if (fromDirs.length > 0) return fromDirs;
 
   // Back-compat: when the agent cwd was the runs root, Playwright wrote to runs/screenshots/.
   const meta = await readRunMeta(runId);
   if (meta) {
     const legacyDir = path.join(getRunsDir(), "screenshots");
-    const legacy = await collectPngPathsSince(legacyDir, meta.startedAt);
+    const legacy = await collectImagePathsSince(legacyDir, meta.startedAt);
     if (legacy.length > 0) return legacy;
   }
 
@@ -120,12 +176,8 @@ export async function collectLiveScreenshotPaths(runId: string): Promise<string[
   if (fromSteps.length > 0) return fromSteps;
 
   const hero = getHeroScreenshotPath(runId);
-  try {
-    await fs.access(hero);
-    return [hero];
-  } catch {
-    return [];
-  }
+  if (await fileExists(hero)) return [hero];
+  return [];
 }
 
 export async function enrichRunResult<T extends { runId: string; screenshotPath?: string }>(
@@ -133,18 +185,20 @@ export async function enrichRunResult<T extends { runId: string; screenshotPath?
 ): Promise<T & { steps?: RunStep[]; screenshotPaths?: string[] }> {
   const steps = await loadRunSteps(result.runId);
   const screenshotPaths = await collectScreenshotPaths(result.runId);
-  const screenshotPath =
+  let screenshotPath =
     result.screenshotPath && !path.isAbsolute(result.screenshotPath)
       ? resolveRunArtifactPath(result.runId, result.screenshotPath)
       : result.screenshotPath;
+  if (screenshotPath && !(await fileExists(screenshotPath))) {
+    const resolved = await resolveStepScreenshotPath(result.runId, screenshotPath);
+    screenshotPath = resolved ?? undefined;
+  }
   if (steps.length === 0 && !screenshotPath) {
     const legacy = path.join(getRunsDir(), `${result.runId}.png`);
-    try {
-      await fs.access(legacy);
+    if (await fileExists(legacy)) {
       return { ...result, screenshotPath: legacy, steps, screenshotPaths };
-    } catch {
-      return { ...result, steps, screenshotPaths };
     }
+    return { ...result, steps, screenshotPaths };
   }
   return { ...result, screenshotPath, steps, screenshotPaths };
 }

@@ -4,7 +4,7 @@ import { stringify as stringifyYaml } from "yaml";
 import type { AgentProvider } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
 import { BOWSER_STORY_FORMAT } from "./story-skill.js";
-import { invokeGenerateAgent } from "./agent-generate-runner.js";
+import { invokeGenerateAgent, GenerateCancelledError } from "./agent-generate-runner.js";
 import {
   normalizeBowserEntryForStorage,
   validateBowserEntry,
@@ -54,37 +54,6 @@ export function buildRecordingConversionPrompt(
     `${storyHintLines(url, options)}\n\n` +
     `Return ONLY the YAML document — no markdown fences, no explanation. Do not write any file.\n\n` +
     `Script:\n${script}`
-  );
-}
-
-/** Prompt for Chrome DevTools / Computer Use recordings (no codegen script). */
-export function buildObservedRecordingConversionPrompt(
-  url: string,
-  tool: "chrome-devtools" | "computer-use",
-  options?: StoryHints,
-): string {
-  const toolBlock =
-    tool === "computer-use"
-      ? `## Observation tool — @Computer\n` +
-        `- Start with @Computer. Inspect the **already open** Google Chrome tab from this recording.\n` +
-        `- Do NOT open a new Chrome window or a new tab. Use the existing tab the user just finished in.\n` +
-        `- Reconstruct the user's flow from the final page, URL, visible UI, and back/forward history when available.\n` +
-        `- Do NOT use Playwright MCP, Chrome DevTools MCP, Playwright CLI, the Codex in-app @Browser, Cursor, or headless browsers.\n`
-      : `## Observation tool — Chrome DevTools MCP\n` +
-        `- Use Chrome DevTools MCP connected to the user's **already running** Google Chrome (autoConnect).\n` +
-        `- Find the existing tab for this recording (started at the URL below). Do NOT open a new Chrome window or a fresh browser.\n` +
-        `- Inspect the current page, navigation history, and DOM to reconstruct the user's flow.\n` +
-        `- Do NOT use Playwright MCP, Computer Use, Cursor, or headless browsers.\n`;
-
-  return (
-    `You are converting a just-finished manual browser recording into an intent-level Bowser YAML v2 story.\n\n` +
-    `${toolBlock}\n` +
-    `The user started at ${url} and performed actions in their existing Google Chrome, ending on the page they want as the final screenshot.\n` +
-    `Reconstruct the workflow they performed — do not invent unrelated steps.\n\n` +
-    `${BOWSER_STORY_FORMAT}\n\n` +
-    `${RECORDING_YAML_REQUIREMENTS}` +
-    `${storyHintLines(url, options)}\n\n` +
-    `Return ONLY the YAML document — no markdown fences, no explanation. Do not write any file.`
   );
 }
 
@@ -189,10 +158,7 @@ async function invokeConversionAgent(
     agentBinary: string;
     agentConfig: AgentRunConfig;
     exploring: boolean;
-    browserMcp?: "playwright" | "chrome-devtools";
-    computerUse?: boolean;
-    chromeBrowserUrl?: string;
-    chromeAutoConnect?: boolean;
+    timeoutMs?: number;
   },
   onProgress?: (message: string) => void,
 ): Promise<string> {
@@ -203,9 +169,6 @@ async function invokeConversionAgent(
     model: options.agentConfig.model,
     storyId: options.storyId,
     exploring: options.exploring,
-    computerUse: options.computerUse,
-    browserMcp: options.browserMcp,
-    chromeAutoConnect: options.chromeAutoConnect,
   });
 
   onProgress?.("Converting recording using AI…");
@@ -221,14 +184,12 @@ async function invokeConversionAgent(
       agentConfig: options.agentConfig,
       exploring: options.exploring,
       ephemeral: true,
-      browserMcp: options.browserMcp,
-      computerUse: options.computerUse,
-      chromeBrowserUrl: options.chromeBrowserUrl,
-      chromeAutoConnect: options.chromeAutoConnect,
+      timeoutMs: options.timeoutMs,
       onProgress: (message) => onProgress?.(message),
     });
     return invokeResult.message;
   } catch (err) {
+    if (err instanceof GenerateCancelledError) throw err;
     const label = agentProviderLabel(options.provider);
     const detail = err instanceof Error ? err.message : String(err);
     if (detail.includes("timed out")) {
@@ -272,56 +233,6 @@ export async function convertRecordingWithAgent(
       agentBinary: options.agentBinary,
       agentConfig: options.agentConfig,
       exploring: false,
-    },
-    onProgress,
-  );
-
-  return finalizeConvertedYaml(agentMessage, outputDir, options);
-}
-
-/** Convert a headed Chrome / Computer Use recording by observing the live session. */
-export async function convertObservedRecordingWithAgent(
-  outputDir: string,
-  options: {
-    url: string;
-    name?: string;
-    storyId?: string;
-    siteSlug: string;
-    provider: AgentProvider;
-    agentBinary: string;
-    agentConfig: AgentRunConfig;
-    tool: "chrome-devtools" | "computer-use";
-    chromeBrowserUrl?: string;
-  },
-  onProgress?: (message: string) => void,
-): Promise<{ draftYaml: string }> {
-  await fs.mkdir(outputDir, { recursive: true });
-
-  const convertPrompt = buildObservedRecordingConversionPrompt(
-    options.url,
-    options.tool,
-    {
-      name: options.name,
-      storyId: options.storyId,
-      siteSlug: options.siteSlug,
-    },
-  );
-
-  const computerUse = options.tool === "computer-use";
-  const agentMessage = await invokeConversionAgent(
-    convertPrompt,
-    outputDir,
-    {
-      name: options.name,
-      storyId: options.storyId,
-      provider: options.provider,
-      agentBinary: options.agentBinary,
-      agentConfig: options.agentConfig,
-      exploring: true,
-      browserMcp: computerUse ? undefined : "chrome-devtools",
-      computerUse,
-      chromeBrowserUrl: options.chromeBrowserUrl,
-      chromeAutoConnect: !computerUse && !options.chromeBrowserUrl,
     },
     onProgress,
   );

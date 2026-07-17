@@ -12,7 +12,7 @@ import type {
   BulkStopCause,
   RunResult,
 } from "./contract-types.js";
-import type { AgentRunConfig, StoryRunOptions } from "./agent-config.js";
+import type { AgentRunConfig } from "./agent-config.js";
 
 export interface BulkStoryInput {
   runId: string;
@@ -31,7 +31,6 @@ interface BulkItemState extends BulkStoryInput {
 interface BulkSession {
   bulkId: string;
   status: BulkSessionStatus;
-  maxParallel: number;
   stopCondition: string;
   stopReason?: string;
   stopCause?: BulkStopCause;
@@ -40,26 +39,16 @@ interface BulkSession {
   agentBinary: string;
   runHook?: string;
   agentConfig?: AgentRunConfig;
-  runOptions?: StoryRunOptions;
   /** Resolvers waiting for stop/cancel to finish cancelling in-flight work. */
   abort: boolean;
 }
 
-const DEFAULT_MAX_PARALLEL = 3;
-const HARD_MAX_PARALLEL = 8;
-
 const _sessions = new Map<string, BulkSession>();
-
-function clampParallel(n: number | undefined): number {
-  if (typeof n !== "number" || !Number.isFinite(n)) return DEFAULT_MAX_PARALLEL;
-  return Math.max(1, Math.min(HARD_MAX_PARALLEL, Math.floor(n)));
-}
 
 function toSnapshot(session: BulkSession): BulkSessionSnapshot {
   return {
     bulkId: session.bulkId,
     status: session.status,
-    maxParallel: session.maxParallel,
     stopCondition: session.stopCondition,
     stopReason: session.stopReason,
     stopCause: session.stopCause,
@@ -89,7 +78,6 @@ async function persistPlan(session: BulkSession): Promise<void> {
         status: session.status,
         stopReason: session.stopReason,
         stopCause: session.stopCause,
-        maxParallel: session.maxParallel,
         stopCondition: session.stopCondition,
         startedAt: Date.now(),
         storyCount: session.items.length,
@@ -108,9 +96,11 @@ async function persistPlan(session: BulkSession): Promise<void> {
 }
 
 /**
- * Bulk runs start one independent agent process per story, limited by
- * maxParallel. An optional stopCondition can halt remaining work; skipped
- * stories can later be resumed via resumeBulkRun.
+ * Bulk runs start one independent agent process per story, all at once —
+ * the shared Run/Playwright slots (see playwright-slots.ts) naturally queue
+ * any excess beyond the hard process ceiling. An optional stopCondition can
+ * halt remaining (not-yet-started) work; skipped stories can later be
+ * resumed via resumeBulkRun.
  */
 export async function startBulkRun(
   bulkId: string,
@@ -120,19 +110,16 @@ export async function startBulkRun(
   runHook?: string,
   options?: BulkRunOptions,
   agentConfig?: AgentRunConfig,
-  runOptions?: StoryRunOptions,
 ): Promise<void> {
   const session: BulkSession = {
     bulkId,
     status: "running",
-    maxParallel: clampParallel(options?.maxParallel),
     stopCondition: options?.stopCondition?.trim() ?? "",
     items: stories.map((s) => ({ ...s, phase: "pending" as const })),
     provider,
     agentBinary,
     runHook,
     agentConfig,
-    runOptions: { ...runOptions, bulk: true },
     abort: false,
   };
   _sessions.set(bulkId, session);
@@ -143,7 +130,6 @@ export async function startBulkRun(
     bulkId,
     provider,
     storyCount: stories.length,
-    maxParallel: session.maxParallel,
     stopCondition: session.stopCondition || undefined,
     agentBinary,
   });
@@ -186,7 +172,6 @@ export async function resumeBulkRun(
   runHook?: string,
   options?: BulkRunOptions,
   agentConfig?: AgentRunConfig,
-  runOptions?: StoryRunOptions,
 ): Promise<void> {
   // Prefer extending the existing session when present; otherwise start fresh
   // with the same bulkId so the UI can keep tracking it.
@@ -198,7 +183,6 @@ export async function resumeBulkRun(
   const session: BulkSession = {
     bulkId,
     status: "running",
-    maxParallel: clampParallel(options?.maxParallel ?? existing?.maxParallel),
     stopCondition:
       options?.stopCondition?.trim() ?? existing?.stopCondition ?? "",
     items: [
@@ -209,7 +193,6 @@ export async function resumeBulkRun(
     agentBinary,
     runHook,
     agentConfig,
-    runOptions: { ...runOptions, bulk: true },
     abort: false,
   };
   // Clear previous skipped items that are being retried.
@@ -222,7 +205,6 @@ export async function resumeBulkRun(
   console.log("[bulk:resume]", {
     bulkId,
     storyCount: nextStories.length,
-    maxParallel: session.maxParallel,
   });
 
   await runBulkWorkers(session);
@@ -233,76 +215,64 @@ export function getBulkSession(bulkId: string): BulkSessionSnapshot | null {
   return session ? toSnapshot(session) : null;
 }
 
-async function runBulkWorkers(session: BulkSession): Promise<void> {
-  let cursor = 0;
+async function runBulkItem(session: BulkSession, item: BulkItemState): Promise<void> {
+  if (session.abort || item.phase !== "pending") return;
 
-  const worker = async () => {
-    while (!session.abort) {
-      const index = cursor++;
-      if (index >= session.items.length) return;
-      const item = session.items[index];
-      if (item.phase !== "pending") continue;
+  item.phase = "running";
+  publish(session);
 
-      item.phase = "running";
-      publish(session);
-
-      try {
-        const result = await startAgentRun(
-          session.provider,
-          item.runId,
-          item.storyName,
-          item.storyTitle,
-          item.storyContents,
-          session.agentBinary,
-          session.runHook,
-          session.agentConfig,
-          session.runOptions,
-        );
-        item.result = result;
-        // Don't overwrite skipped — stop/cancel may have already reserved this
-        // story for resume while the cancelled agent was winding down.
-        if (item.phase === "running") {
-          item.phase = "done";
-        }
-        publish(session);
-
-        if (
-          item.phase === "done" &&
-          !session.abort &&
-          session.status === "running" &&
-          shouldStopBulk(session.stopCondition, result)
-        ) {
-          // Stop starting new stories, but do not cancel siblings that are
-          // already running — let them finish naturally.
-          session.abort = true;
-          session.status = "stopped";
-          session.stopCause = "condition";
-          session.stopReason = `Stop condition matched after “${item.storyTitle}” (${result.status})`;
-          for (const other of session.items) {
-            if (other.phase === "pending") other.phase = "skipped";
-          }
-          publish(session);
-          return;
-        }
-      } catch (err) {
-        console.error("[bulk] child run error", {
-          bulkId: session.bulkId,
-          runId: item.runId,
-          err: String(err),
-        });
-        if (item.phase === "running") {
-          item.phase = "done";
-        }
-        publish(session);
-      }
+  try {
+    const result = await startAgentRun(
+      session.provider,
+      item.runId,
+      item.storyName,
+      item.storyTitle,
+      item.storyContents,
+      session.agentBinary,
+      session.runHook,
+      session.agentConfig,
+    );
+    item.result = result;
+    // Don't overwrite skipped — stop/cancel may have already reserved this
+    // story for resume while the cancelled agent was winding down.
+    if (item.phase === "running") {
+      item.phase = "done";
     }
-  };
+    publish(session);
 
-  const workers = Array.from(
-    { length: Math.min(session.maxParallel, session.items.length) },
-    () => worker(),
-  );
-  await Promise.all(workers);
+    if (
+      item.phase === "done" &&
+      !session.abort &&
+      session.status === "running" &&
+      shouldStopBulk(session.stopCondition, result)
+    ) {
+      // Stop starting new stories, but do not cancel siblings that are
+      // already running — let them finish naturally.
+      session.abort = true;
+      session.status = "stopped";
+      session.stopCause = "condition";
+      session.stopReason = `Stop condition matched after “${item.storyTitle}” (${result.status})`;
+      for (const other of session.items) {
+        if (other.phase === "pending") other.phase = "skipped";
+      }
+      publish(session);
+    }
+  } catch (err) {
+    console.error("[bulk] child run error", {
+      bulkId: session.bulkId,
+      runId: item.runId,
+      err: String(err),
+    });
+    if (item.phase === "running") {
+      item.phase = "done";
+    }
+    publish(session);
+  }
+}
+
+async function runBulkWorkers(session: BulkSession): Promise<void> {
+  const pending = session.items.filter((item) => item.phase === "pending");
+  await Promise.all(pending.map((item) => runBulkItem(session, item)));
 
   if (session.status === "running") {
     const anySkipped = session.items.some((i) => i.phase === "skipped");

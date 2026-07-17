@@ -357,6 +357,70 @@ body {
   background-color: var(--color-surface-sidebar);
 }
 
+/* Cursor Dark Anysphere — chrome #141414, sidebar vibrancy-hard overlay. */
+[data-color-theme="cursor"].dark {
+  --accent-contrast: #191c22;
+  --red: #e34671;
+  --green: #3fa266;
+  --blue: #81a1c1;
+  --orange: #f1b467;
+  --support-red-10: rgb(227 70 113 / 14%);
+  --support-green-10: rgb(63 162 102 / 14%);
+  --cursor-sidebar-tint: rgb(20 20 20 / 78%);
+}
+
+[data-color-theme="cursor"].mac-window-chrome #root {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-color-theme="cursor"] .split-view {
+  background-color: transparent;
+}
+
+[data-color-theme="cursor"].dark .sidebar-chrome {
+  background-color: var(--cursor-sidebar-tint);
+}
+
+[data-color-theme="cursor"].dark .sidebar-chrome .bg-surface-sidebar {
+  background-color: transparent;
+}
+
+[data-color-theme="cursor"]:not(.dark) .sidebar-chrome {
+  background-color: rgb(243 243 243 / 72%);
+}
+
+[data-color-theme="cursor"]:not(.dark) .sidebar-chrome .bg-surface-sidebar {
+  background-color: transparent;
+}
+
+[data-color-theme="cursor"] .main-pane {
+  background: var(--bg);
+  border: none;
+}
+
+[data-color-theme="cursor"].dark .sidebar-item-selected {
+  background: rgb(228 228 228 / 12%);
+}
+
+[data-color-theme="cursor"].dark .segment-control {
+  background: rgb(228 228 228 / 4%);
+}
+
+[data-color-theme="cursor"].dark .home-actions button.bg-accent,
+[data-color-theme="cursor"].dark button.bg-accent:not(:disabled) {
+  color: #191c22;
+}
+
+/* Non-macOS fallback — opaque chrome surface, no native vibrancy */
+html:not(.mac-window-chrome)[data-color-theme="cursor"].dark .sidebar-chrome {
+  background-color: #141414;
+}
+
+html:not(.mac-window-chrome)[data-color-theme="cursor"]:not(.dark) .sidebar-chrome {
+  background-color: #ececec;
+}
+
 .bg-main-surface {
   background: var(--bg);
 }
@@ -402,7 +466,9 @@ button:focus-visible,
 [role="radio"]:focus,
 [role="radio"]:focus-visible,
 [role="tab"]:focus,
-[role="tab"]:focus-visible {
+[role="tab"]:focus-visible,
+[role="dialog"]:focus,
+[role="dialog"]:focus-visible {
   outline: none;
 }
 

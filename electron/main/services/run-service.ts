@@ -2,6 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import type { RunRecord, RunResult } from "./contract-types.js";
 import { enrichRunResult, getRunOutputDir } from "./run-artifacts.js";
+import { ensureActionTimelineFromSteps } from "./run-events-persist.js";
 import { deleteRunMeta } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
 
@@ -39,7 +40,12 @@ export async function getRun(runId: string): Promise<RunRecord> {
   const record = _records.find((r) => r.runId === runId);
   if (!record) throw new Error(`Run not found: ${runId}`);
   const enriched = await enrichRunResult(record);
-  return { ...record, ...enriched };
+  const events = ensureActionTimelineFromSteps(
+    runId,
+    record.events,
+    enriched.steps ?? [],
+  );
+  return { ...record, ...enriched, events };
 }
 
 // Serialize saves so concurrent runs (the bulk runner finishes several at once)
