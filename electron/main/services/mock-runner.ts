@@ -1,5 +1,10 @@
 import { broadcast } from "../broadcast.js";
-import { acquireRunSlot, isRunSlotBusy, releaseRunSlot } from "./run-slots.js";
+import {
+  acquireRunSlot,
+  abandonRunSlotWait,
+  isRunSlotBusy,
+  releaseRunSlot,
+} from "./run-slots.js";
 import { buildScreenshotUrl, saveRun } from "./run-service.js";
 import { ensureRunOutputDir, getHeroScreenshotPath } from "./run-artifacts.js";
 import { writeRunMeta, deleteRunMeta, withRunVariables } from "./run-meta.js";
@@ -108,10 +113,13 @@ export async function startMockRun(
   return new Promise<RunResult>((resolve) => {
     state.resolve = resolve;
     void (async () => {
-      await acquireRunSlot();
+      const acquired = await acquireRunSlot(runId);
       const current = _mocks.get(runId);
+      if (!acquired) {
+        // Wait abandoned by cancel — finishMockRun already ran (or will).
+        return;
+      }
       if (!current) {
-        // Cancelled while still queued — slot was never marked held.
         releaseRunSlot();
         return;
       }
@@ -211,8 +219,10 @@ export function cancelMockRun(runId: string): boolean {
     clearTimeout(state.timer);
     state.timer = null;
   }
-  // Still waiting for a slot — leave the waiter to release when acquire resolves.
-  if (state.queued && !state.slotHeld) return true;
+  // Drop out of the run-slot queue immediately so Cancel clears Queued now.
+  if (state.queued && !state.slotHeld) {
+    abandonRunSlotWait(runId);
+  }
   void finishMockRun(runId);
   return true;
 }
