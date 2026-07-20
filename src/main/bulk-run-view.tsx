@@ -774,6 +774,8 @@ export function BulkRunView() {
             agentProvider: result.agentProvider,
             agentModel: result.agentModel,
             variableOverrides: item.variableOverrides,
+            // Pending bulk items wait for the serial run slot.
+            queued: true,
           });
         }
         bulkLaunched = result.items.map((item) => ({
@@ -849,6 +851,7 @@ export function BulkRunView() {
           agentProvider: result.agentProvider,
           agentModel: result.agentModel,
           variableOverrides: item.variableOverrides,
+          queued: true,
         });
       }
       const kept = session.items.filter(

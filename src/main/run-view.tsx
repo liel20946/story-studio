@@ -516,6 +516,8 @@ function useLiveRunScreenshotPaths(runId: string, enabled: boolean) {
   });
 }
 
+const EMPTY_SCREENSHOT_PATHS: string[] = [];
+
 // Live rail screenshot — shows the gallery with nav; jumps to the latest capture
 // (with a subtle reveal) when a new file lands on disk during the run.
 function LiveScreenshotsSection({
@@ -530,7 +532,7 @@ function LiveScreenshotsSection({
   onPathsChange?: (paths: string[]) => void;
 }) {
   const { data } = useLiveRunScreenshotPaths(runId, true);
-  const paths = data?.paths ?? [];
+  const paths = data?.paths ?? EMPTY_SCREENSHOT_PATHS;
   const [revealing, setRevealing] = React.useState(false);
   const prevLatestRef = React.useRef<string | undefined>(undefined);
 
@@ -836,7 +838,15 @@ function LiveRunView({ runId }: { runId: string }) {
   }, [runId]);
 
   const handlePathsChange = React.useCallback((paths: string[]) => {
-    setLivePaths(paths);
+    setLivePaths((prev) => {
+      if (
+        prev.length === paths.length &&
+        prev.every((p, i) => p === paths[i])
+      ) {
+        return prev;
+      }
+      return paths;
+    });
   }, []);
 
   // Keep action highlight in sync when the gallery index changes (nav / live jump).

@@ -128,7 +128,11 @@ export async function startMockRun(
         status: "running",
       });
       // Stagger so some stories finish before others — makes stop/resume demos clear.
-      const delay = 1400 + Math.floor(Math.random() * 900);
+      const delayEnv = Number(process.env.STORY_STUDIO_MOCK_RUN_MS);
+      const delay =
+        Number.isFinite(delayEnv) && delayEnv > 0
+          ? delayEnv
+          : 1400 + Math.floor(Math.random() * 900);
       current.timer = setTimeout(() => {
         void finishMockRun(runId);
       }, delay);

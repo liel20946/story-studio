@@ -51,6 +51,7 @@ async function main() {
     env: {
       ...process.env,
       STORY_STUDIO_MOCK_RUNS: "1",
+      STORY_STUDIO_MOCK_RUN_MS: "5000",
       ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
     },
     timeout: 120_000,
@@ -106,17 +107,22 @@ async function main() {
   // clickable; open the running one then wait — or open Runs tab for pills.
   await page.getByRole("tab", { name: "Runs" }).click({ force: true });
   await wait(500);
-  // Prefer a Queued pill in the sidebar Runs list
-  const queuedPill = page.getByText("Queued", { exact: true }).first();
-  if (await queuedPill.isVisible().catch(() => false)) {
-    await shot(app, "02-sidebar-queued-pill");
-    await queuedPill.click({ force: true });
-    await wait(800);
-    await shot(app, "03-run-view-queued");
-  } else {
-    await shot(app, "02-sidebar-queued-pill");
-    await shot(app, "03-run-view-queued");
-  }
+  await shot(app, "02-sidebar-queued-pill");
+
+  // Open a still-queued story from the Runs sidebar (prefer Checkout — last in queue).
+  const queuedRow = page
+    .locator('[data-sidebar] .group\\/row, aside .group\\/row, .group\\/row')
+    .filter({ hasText: /Checkout Flow/ })
+    .filter({ hasText: "Queued" })
+    .first();
+  await queuedRow.waitFor({ timeout: 8_000 });
+  await queuedRow.click({ force: true });
+  await page
+    .locator(".run-rail-meta")
+    .getByText("Queued", { exact: true })
+    .waitFor({ timeout: 8_000 });
+  await wait(400);
+  await shot(app, "03-run-view-queued");
 
   await app.close();
   console.log("done", outDir);

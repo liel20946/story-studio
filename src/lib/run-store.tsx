@@ -38,6 +38,14 @@ export interface ActiveRunState {
   queued?: boolean;
 }
 
+type RegisterRunAgent = {
+  agentProvider: AgentProvider;
+  agentModel: string;
+  variableOverrides?: Record<string, string>;
+  /** True when the run is waiting in the concurrency queue (e.g. bulk pending). */
+  queued?: boolean;
+};
+
 interface RunStoreValue {
   runs: Record<string, ActiveRunState>;
   /** Register a run as soon as it is started, before any events arrive. */
@@ -45,24 +53,18 @@ interface RunStoreValue {
     runId: string,
     storyName: string,
     storyTitle: string,
-    agent?: {
-      agentProvider: AgentProvider;
-      agentModel: string;
-      variableOverrides?: Record<string, string>;
-    },
+    agent?: RegisterRunAgent,
   ) => void;
 }
 
 
-function queuedFromEvents(events: RunEvent[], fallback?: boolean): boolean {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i];
-    if (e.kind !== "status") continue;
-    if (e.label === "Queued") return true;
-    // Any later status means the run has left the queue.
-    return false;
-  }
-  return fallback ?? false;
+/** Status rows are stripped from the timeline; track queue state from the live event. */
+function queuedAfterStatusEvent(
+  event: RunEvent,
+  previous?: boolean,
+): boolean | undefined {
+  if (event.kind !== "status") return previous;
+  return event.label === "Queued";
 }
 
 const RunStoreContext = React.createContext<RunStoreValue | null>(null);
@@ -92,11 +94,9 @@ function applySnapshot(
       agentModel: snapshot.agentModel ?? existing?.agentModel,
       variableOverrides:
         snapshot.variableOverrides ?? existing?.variableOverrides,
-      events: mergedEvents,
+      events: filterTimelineEvents(mergedEvents),
       result: null,
-      queued:
-        snapshot.queued ??
-        queuedFromEvents(mergedEvents, existing?.queued),
+      queued: snapshot.queued ?? existing?.queued,
     },
   };
 }
@@ -110,11 +110,7 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
       runId: string,
       storyName: string,
       storyTitle: string,
-      agent?: {
-        agentProvider: AgentProvider;
-        agentModel: string;
-        variableOverrides?: Record<string, string>;
-      },
+      agent?: RegisterRunAgent,
     ) => {
       setRuns((prev) => {
         const existing = prev[runId];
@@ -132,6 +128,7 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
               agent?.variableOverrides ?? existing?.variableOverrides,
             events: existing?.events ?? [],
             result: null,
+            queued: agent?.queued ?? existing?.queued,
           },
         };
       });
@@ -168,14 +165,14 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
           nextEvents.sort((a, b) => a.seq - b.seq);
         }
         const filtered = filterTimelineEvents(nextEvents);
-        const fromEvents = metadataFromRunEvents(filtered);
+        const fromEvents = metadataFromRunEvents(nextEvents);
         return {
           ...prev,
           [ev.runId]: {
             ...base,
             storyTitle: base.storyTitle || fromEvents.storyTitle || "",
             events: filtered,
-            queued: queuedFromEvents(filtered, base.queued),
+            queued: queuedAfterStatusEvent(ev, base.queued) ?? base.queued,
           },
         };
       });
@@ -277,7 +274,7 @@ export function useRegisterRun(): (
   runId: string,
   storyName: string,
   storyTitle: string,
-  agent?: { agentProvider: AgentProvider; agentModel: string },
+  agent?: RegisterRunAgent,
 ) => void {
   return useRunStore().registerRun;
 }
