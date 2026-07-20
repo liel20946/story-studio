@@ -134,6 +134,8 @@ export interface ActiveRunSnapshot {
   agentModel?: string;
   /** Effective variable values used for this run. */
   variableOverrides?: Record<string, string>;
+  /** True while waiting for the single-run concurrency slot. */
+  queued?: boolean;
 }
 
 export interface RecordingProgress {

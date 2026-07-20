@@ -97,11 +97,11 @@ async function persistPlan(session: BulkSession): Promise<void> {
 }
 
 /**
- * Bulk runs start one independent agent process per story, all at once —
- * the shared Run/Playwright slots (see playwright-slots.ts) naturally queue
- * any excess beyond the hard process ceiling. An optional stopCondition can
- * halt remaining (not-yet-started) work; skipped stories can later be
- * resumed via resumeBulkRun.
+ * Bulk runs queue stories and execute them one at a time (single shared run
+ * slot — parallel browser MCP needs distinct aliases). Pending items stay
+ * "queued" in the UI until their turn. An optional stopCondition can halt
+ * remaining (not-yet-started) work; skipped stories can later be resumed via
+ * resumeBulkRun.
  */
 export async function startBulkRun(
   bulkId: string,
@@ -273,8 +273,13 @@ async function runBulkItem(session: BulkSession, item: BulkItemState): Promise<v
 }
 
 async function runBulkWorkers(session: BulkSession): Promise<void> {
-  const pending = session.items.filter((item) => item.phase === "pending");
-  await Promise.all(pending.map((item) => runBulkItem(session, item)));
+  // Serial queue: one story at a time so remaining items stay pending/Queued
+  // and stop conditions can skip work that has not started yet.
+  for (const item of session.items) {
+    if (session.abort) break;
+    if (item.phase !== "pending") continue;
+    await runBulkItem(session, item);
+  }
 
   if (session.status === "running") {
     const anySkipped = session.items.some((i) => i.phase === "skipped");

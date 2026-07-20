@@ -37,11 +37,12 @@ import {
   releasePlaywrightSlot,
 } from "./playwright-slots.js";
 import { ensurePlaywrightReady } from "./playwright-preflight.js";
+import { RUN_OUTPUT_SCHEMA } from "./codex-runner.js";
 import {
-  RUN_OUTPUT_SCHEMA,
   acquireRunSlot,
+  isRunSlotBusy,
   releaseRunSlot,
-} from "./codex-runner.js";
+} from "./run-slots.js";
 import {
   DEFAULT_CLAUDE_EFFORT,
   DEFAULT_CLAUDE_MODEL,
@@ -86,6 +87,7 @@ export function listActiveClaudeRuns(): ActiveRunSnapshot[] {
     agentModel: state.agentModel,
     events: [...state.events],
     variableOverrides: state.variableOverrides,
+    queued: state.queued,
   }));
 }
 
@@ -376,18 +378,24 @@ export async function startClaudeRun(
 
   const events = state.events;
 
-  const startEvent: RunEvent = {
-    runId,
-    seq: state.seq++,
-    ts: Date.now(),
-    kind: "status",
-    label: "Starting",
-    detail: `Loading Claude Code for story: ${storyTitle}`,
-    status: "running",
+  const pushStatus = (label: string, detail: string): void => {
+    const evt: RunEvent = {
+      runId,
+      seq: state.seq++,
+      ts: Date.now(),
+      kind: "status",
+      label,
+      detail,
+      status: "running",
+    };
+    events.push(evt);
+    broadcast("run:event", evt);
+    syncRunTimeline(runId, events);
   };
-  events.push(startEvent);
-  broadcast("run:event", startEvent);
-  syncRunTimeline(runId, events);
+
+  if (isRunSlotBusy()) {
+    pushStatus("Queued", "Waiting for another run to finish…");
+  }
 
   await acquireRunSlot();
   state.queued = false;
@@ -412,6 +420,8 @@ export async function startClaudeRun(
     };
     return finalizeRun(cancelledResult, events);
   }
+
+  pushStatus("Starting", `Loading Claude Code for story: ${storyTitle}`);
 
   const prepEvent = (detail: string): void => {
     const evt: RunEvent = {

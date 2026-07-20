@@ -510,6 +510,8 @@ function useLiveRunScreenshotPaths(runId: string, enabled: boolean) {
   });
 }
 
+const EMPTY_SCREENSHOT_PATHS: string[] = [];
+
 // Live rail screenshot — shows the gallery with nav; jumps to the latest capture
 // (with a subtle reveal) when a new file lands on disk during the run.
 function LiveScreenshotsSection({
@@ -524,7 +526,7 @@ function LiveScreenshotsSection({
   onPathsChange?: (paths: string[]) => void;
 }) {
   const { data } = useLiveRunScreenshotPaths(runId, true);
-  const paths = data?.paths ?? [];
+  const paths = data?.paths ?? EMPTY_SCREENSHOT_PATHS;
   const [revealing, setRevealing] = React.useState(false);
   const prevLatestRef = React.useRef<string | undefined>(undefined);
 
@@ -704,10 +706,11 @@ function ActionsTimeline({
   );
 }
 // Rendered as the FIRST thing in the run body, above the Actions section.
-// While running it shows a blue "Running" badge + elapsed timer; once finished
-// it shows the run status badge + relative time.
+// While queued it shows a yellow "Queued" badge; while running a blue
+// "Running" badge + elapsed timer; once finished the run status badge.
 function RunStatusHeader({
   running,
+  queued,
   status,
   startedAt,
   finishedAt,
@@ -715,6 +718,7 @@ function RunStatusHeader({
   agentModel,
 }: {
   running: boolean;
+  queued?: boolean;
   status?: RunStatus;
   startedAt: number;
   finishedAt?: number;
@@ -723,7 +727,14 @@ function RunStatusHeader({
 }) {
   return (
     <div className="run-rail-meta">
-      {running ? (
+      {queued ? (
+        <>
+          <Badge color="yellow" size="xs">
+            Queued
+          </Badge>
+          <AgentPills agentProvider={agentProvider} agentModel={agentModel} />
+        </>
+      ) : running ? (
         <>
           <Badge color="blue" size="xs">
             Running
@@ -821,7 +832,15 @@ function LiveRunView({ runId }: { runId: string }) {
   }, [runId]);
 
   const handlePathsChange = React.useCallback((paths: string[]) => {
-    setLivePaths(paths);
+    setLivePaths((prev) => {
+      if (
+        prev.length === paths.length &&
+        prev.every((p, i) => p === paths[i])
+      ) {
+        return prev;
+      }
+      return paths;
+    });
   }, []);
 
   // Keep action highlight in sync when the gallery index changes (nav / live jump).
@@ -930,7 +949,10 @@ function LiveRunView({ runId }: { runId: string }) {
             {events.length === 0 && !isFinished ? (
               <div className="content-card-body run-actions-placeholder">
                 <Text variant="small" color="tertiary">
-                  {latestStatus?.detail ?? "Starting run…"}
+                  {latestStatus?.detail ??
+                    (run?.queued
+                      ? "Waiting for another run to finish…"
+                      : "Starting run…")}
                 </Text>
               </div>
             ) : (
@@ -947,6 +969,7 @@ function LiveRunView({ runId }: { runId: string }) {
         <div className="detail-rail detail-rail--card">
           <RunStatusHeader
             running={!isFinished}
+            queued={!isFinished && !!run?.queued}
             status={result?.status}
             startedAt={startedAt}
             finishedAt={result?.finishedAt}

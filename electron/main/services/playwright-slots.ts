@@ -1,7 +1,7 @@
 // Shared concurrency cap for Playwright MCP browser sessions. Each story agent
-// holds one slot while its browser is active. Bulk runs fire every story at
-// once (see bulk-runner.ts) and rely on this hard process ceiling to queue
-// any excess.
+// holds one slot while its browser is active. Story runs themselves are
+// serialized via the run slot (see codex-runner.ts); this still gates
+// generate / other Playwright consumers.
 import { getSettingsValue } from "../handlers/settings.js";
 
 export const MAX_CONCURRENT_PLAYWRIGHT = 8;

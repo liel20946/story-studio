@@ -39,7 +39,6 @@ import {
 import {
   acquirePlaywrightSlot,
   releasePlaywrightSlot,
-  MAX_CONCURRENT_PLAYWRIGHT,
 } from "./playwright-slots.js";
 import {
   buildCodexPlaywrightMcpConfigArgs,
@@ -61,35 +60,21 @@ import { classifyMcpTool } from "./mcp-tool-event.js";
 
 const execFileAsync = promisify(execFile);
 
-// How many agent processes may run AT ONCE (single-story + bulk). Playwright
-// sessions share the same hard ceiling — see playwright-slots.ts. Bulk runs
-// fire every story at once and rely on this ceiling to queue the excess.
-const MAX_CONCURRENT_RUNS = MAX_CONCURRENT_PLAYWRIGHT;
-let _activeRuns = 0;
-const _runWaiters: Array<() => void> = [];
+export {
+  MAX_CONCURRENT_RUNS,
+  isRunSlotBusy,
+  acquireRunSlot,
+  releaseRunSlot,
+} from "./run-slots.js";
+import {
+  isRunSlotBusy,
+  acquireRunSlot,
+  releaseRunSlot,
+} from "./run-slots.js";
 
-// Counting semaphore: every acquire is paired with exactly one release, so the
-// active count stays correct even for runs cancelled while still queued.
-export function acquireRunSlot(): Promise<void> {
-  if (_activeRuns < MAX_CONCURRENT_RUNS) {
-    _activeRuns++;
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => _runWaiters.push(resolve));
-}
-
-export function releaseRunSlot(): void {
-  const next = _runWaiters.shift();
-  if (next) next(); // hand the slot to the next queued run (count unchanged)
-  else _activeRuns = Math.max(0, _activeRuns - 1);
-}
-
-// Per-run state, keyed by runId, so multiple stories can run CONCURRENTLY (the
-// bulk runner fires several at once). Each run owns its own child process,
-// cancellation flag, timeline seq counter, and item->seq map. These were
-// previously module-level singletons — a second run would reset the first run's
-// seq counter (corrupting its timeline) and overwrite its process handle (so
-// cancel only hit the last-started run).
+// Per-run state, keyed by runId. Extra starts wait on the shared run slot
+// (see run-slots.ts) and show as Queued. Each in-flight run owns its own child
+// process, cancellation flag, timeline seq counter, and item->seq map.
 interface RunState {
   runId: string;
   storyName: string;
@@ -125,6 +110,7 @@ export function listActiveCodexRuns(): ActiveRunSnapshot[] {
     agentModel: state.agentModel,
     events: state.events.filter((e) => !isBenignCodexStderrEvent(e)),
     variableOverrides: state.variableOverrides,
+    queued: state.queued,
   }));
 }
 
@@ -350,21 +336,26 @@ export async function startRun(
 
   const events = state.events;
 
-  // Status event — run starting
-  const startEvent: RunEvent = {
-    runId,
-    seq: state.seq++,
-    ts: Date.now(),
-    kind: "status",
-    label: "Starting",
-    detail: `Loading codex for story: ${storyTitle}`,
-    status: "running",
+  const pushStatus = (label: string, detail: string): void => {
+    const evt: RunEvent = {
+      runId,
+      seq: state.seq++,
+      ts: Date.now(),
+      kind: "status",
+      label,
+      detail,
+      status: "running",
+    };
+    events.push(evt);
+    broadcast("run:event", evt);
+    syncRunTimeline(runId, events);
   };
-  events.push(startEvent);
-  broadcast("run:event", startEvent);
-  syncRunTimeline(runId, events);
 
-  // Wait for a codex exec slot, then (for Playwright mode) a Playwright MCP slot.
+  // One run at a time — waiters show as Queued until the slot frees.
+  if (isRunSlotBusy()) {
+    pushStatus("Queued", "Waiting for another run to finish…");
+  }
+
   await acquireRunSlot();
   state.queued = false;
 
@@ -388,6 +379,8 @@ export async function startRun(
     };
     return finalizeRun(cancelledResult, events);
   }
+
+  pushStatus("Starting", `Loading codex for story: ${storyTitle}`);
 
   // Browser readiness (Playwright CLI + MCP package + Chromium) is warmed once
   // in the background at app launch (prewarmPlaywrightInBackground) — matching
