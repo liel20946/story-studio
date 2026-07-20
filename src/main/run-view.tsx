@@ -2,7 +2,19 @@ import * as React from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
+  Link2Icon,
+  MousePointer2Icon,
+  TypeIcon,
+  ScanLineIcon,
+  ImageIcon,
   ClockIcon,
+  CheckIcon,
+  SparklesIcon,
+  TerminalIcon,
+  MessageSquareIcon,
+  TextIcon,
+  PlayIcon,
+  CircleAlertIcon,
   Loader2Icon,
   CheckCircle2Icon,
   XCircleIcon,
@@ -12,6 +24,7 @@ import {
   BookOpenIcon,
   RotateCcwIcon,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   ScrollArea,
   Toolbar,
@@ -34,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type {
   RunEvent,
+  RunEventKind,
   RunResult,
   RunRecord,
   RunStatus,
@@ -156,6 +170,45 @@ function formatDuration(ms: number): string {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+// ---------- icon map ----------
+// Monochrome, thin-stroke icons — color comes from `.timeline-icon-wrap`.
+function TimelineActionIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return <Icon className="size-3.5 shrink-0" strokeWidth={1.75} />;
+}
+
+function eventIcon(kind: RunEventKind): React.ReactNode {
+  switch (kind) {
+    case "navigate":
+      return <TimelineActionIcon icon={Link2Icon} />;
+    case "click":
+      return <TimelineActionIcon icon={MousePointer2Icon} />;
+    case "type":
+      return <TimelineActionIcon icon={TypeIcon} />;
+    case "snapshot":
+      return <TimelineActionIcon icon={ScanLineIcon} />;
+    case "screenshot":
+      return <TimelineActionIcon icon={ImageIcon} />;
+    case "wait":
+      return <TimelineActionIcon icon={ClockIcon} />;
+    case "assert":
+      return <TimelineActionIcon icon={CheckIcon} />;
+    case "evaluate":
+      return <TimelineActionIcon icon={SparklesIcon} />;
+    case "tool":
+      return <TimelineActionIcon icon={TerminalIcon} />;
+    case "message":
+      return <TimelineActionIcon icon={MessageSquareIcon} />;
+    case "reasoning":
+      return <TimelineActionIcon icon={TextIcon} />;
+    case "status":
+      return <TimelineActionIcon icon={PlayIcon} />;
+    case "error":
+      return <TimelineActionIcon icon={CircleAlertIcon} />;
+    default:
+      return <TimelineActionIcon icon={TerminalIcon} />;
+  }
 }
 
 // Cap how many distinct detail values we stitch together for a merged row —
@@ -285,7 +338,7 @@ function TimelineRow({
       aria-current={selected ? "true" : undefined}
       aria-label={`Action ${index + 1}: ${event.label}`}
     >
-      <span className="timeline-num">{index + 1}</span>
+      <div className="timeline-icon-wrap">{eventIcon(event.kind)}</div>
       <span className="truncate text-[12px] font-medium leading-[16px] text-primary">
         {event.label}
         {count > 1 && (
@@ -633,7 +686,7 @@ function ActionsTimeline({
   return (
     <div
       ref={scrollRef}
-      className="content-card-body run-actions-card-body timeline-list"
+      className="content-card-body run-actions-card-body"
     >
       {collapsed.map(({ event, count }, index) => (
         <TimelineRow
@@ -758,6 +811,12 @@ function LiveRunView({ runId }: { runId: string }) {
   // When the user picks an action, skip the reverse shot→action sync once so
   // multiple actions that share a screenshot stay independently selectable.
   const skipActionSyncRef = React.useRef(false);
+
+  React.useEffect(() => {
+    setSelectedActionIndex(0);
+    skipActionSyncRef.current = false;
+    setLivePaths([]);
+  }, [runId]);
 
   const handlePathsChange = React.useCallback((paths: string[]) => {
     setLivePaths(paths);
@@ -937,6 +996,11 @@ function HistoricalRunView({
   );
   const [selectedActionIndex, setSelectedActionIndex] = React.useState(0);
   const skipActionSyncRef = React.useRef(false);
+
+  React.useEffect(() => {
+    setSelectedActionIndex(0);
+    skipActionSyncRef.current = false;
+  }, [runId]);
 
   React.useEffect(() => {
     if (skipActionSyncRef.current) {

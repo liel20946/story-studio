@@ -2531,11 +2531,13 @@
     box-sizing: border-box;
     align-items: stretch;
     padding-bottom: 1rem;
+    gap: 1rem;
   }
 
   .run-detail-view .detail-view-main,
   .run-actions-card {
     min-height: 0;
+    height: 100%;
   }
 
   .run-actions-card {
@@ -2589,23 +2591,6 @@
   height: 0.875rem;
 }
 
-/* Numbered action list with a continuous connector through the index column. */
-.timeline-list {
-  position: relative;
-}
-
-.timeline-list::before {
-  content: "";
-  position: absolute;
-  /* content-card-body pad-x (0.25rem) + row pad-x (0.5rem) + half of 16px num */
-  left: calc(0.75rem + 8px);
-  top: 1.05rem;
-  bottom: 1.05rem;
-  width: 1px;
-  background: var(--color-border-separator);
-  pointer-events: none;
-}
-
 .timeline-row {
   display: grid;
   grid-template-columns: 16px 6.25rem minmax(0, 1fr) 18px;
@@ -2625,33 +2610,8 @@
   transition: background-color 120ms ease;
 }
 
-.timeline-row:hover {
-  background: var(--color-surface-hover);
-}
-
+.timeline-row:hover,
 .timeline-row--selected {
-  background: var(--color-surface-hover);
-}
-
-.timeline-num {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  border-radius: 4px;
-  font-size: 9px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-quaternary);
-  background: var(--color-surface-well);
-}
-
-.timeline-row:hover .timeline-num,
-.timeline-row--selected .timeline-num {
   background: var(--color-surface-hover);
 }
 
@@ -2725,6 +2685,33 @@
     align-self: flex-start;
     position: sticky;
     top: 1rem;
+  }
+}
+
+/* Run view: Actions + run-info cards split the row evenly (after rail defaults). */
+@media (min-width: 1024px) {
+  .run-detail-view {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .run-detail-view .detail-view-main {
+    min-width: 0;
+    width: auto;
+    max-width: none;
+  }
+
+  .run-detail-view .detail-rail.detail-rail--card {
+    width: auto;
+    max-width: none;
+    flex: unset;
+    align-self: stretch;
+    position: relative;
+    top: auto;
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }
 
