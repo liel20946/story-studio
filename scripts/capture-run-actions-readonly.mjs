@@ -78,8 +78,8 @@ async function main() {
     .filter({ hasText: "Login Flow" })
     .first()
     .click({ force: true });
-  await page.getByRole("button", { name: "Retry run" }).waitFor({ timeout: 15_000 });
-  await wait(800);
+  await page.getByText("Actions").first().waitFor({ timeout: 20_000 });
+  await wait(1000);
 
   // Click a middle action row — should not highlight or change selection.
   const rows = page.locator(".timeline-row");
