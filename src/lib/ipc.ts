@@ -79,6 +79,11 @@ export const storiesUpdate = (
   },
 ): Promise<StoryDetail> => ipcInvoke("stories:update", { name, ...content });
 
+export const storiesDuplicate = (
+  name: string,
+  title?: string,
+): Promise<StoryDetail> => ipcInvoke("stories:duplicate", { name, title });
+
 export const storiesRename = (
   name: string,
   title: string,
@@ -154,8 +159,13 @@ export const recordingAbort = (): Promise<{ ok: true }> =>
 
 export const runStart = (
   storyName: string,
-): Promise<{ runId: string; agentProvider: import("./contract-types").AgentProvider; agentModel: string }> =>
-  ipcInvoke("run:start", { storyName });
+  variableOverrides?: Record<string, string>,
+): Promise<{
+  runId: string;
+  agentProvider: import("./contract-types").AgentProvider;
+  agentModel: string;
+  variableOverrides?: Record<string, string>;
+}> => ipcInvoke("run:start", { storyName, variableOverrides });
 
 export const runBulkStart = (
   storyNames: string[],

@@ -21,6 +21,7 @@ export async function startAgentRun(
   agentBinary: string,
   runHook?: string,
   agentConfig?: AgentRunConfig,
+  variableOverrides?: Record<string, string>,
 ): Promise<RunResult> {
   _runProviders.set(runId, provider);
   if (mockRunsEnabled()) {
@@ -30,6 +31,7 @@ export async function startAgentRun(
       storyName,
       storyTitle,
       agentConfig?.model ?? "mock",
+      variableOverrides,
     );
   }
   if (provider === "claude-code") {
@@ -41,6 +43,7 @@ export async function startAgentRun(
       agentBinary,
       runHook,
       agentConfig,
+      variableOverrides,
     );
   }
   return startRun(
@@ -51,6 +54,7 @@ export async function startAgentRun(
     agentBinary,
     runHook,
     agentConfig,
+    variableOverrides,
   );
 }
 

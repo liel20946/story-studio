@@ -23,6 +23,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   BookOpenIcon,
+  RotateCcwIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -40,6 +41,7 @@ import {
 import {
   runsGet,
   runCancel,
+  runStart,
   clipboardWriteText,
   runsLiveScreenshots,
   runsLiveTimeline,
@@ -55,7 +57,7 @@ import type {
   AgentProvider,
 } from "../lib/contract-types";
 import { formatAgentModelLabel, formatAgentProviderLabel } from "../lib/agent-config";
-import { useRun } from "../lib/run-store";
+import { useRegisterRun, useRun } from "../lib/run-store";
 import { formatRunLogs } from "../lib/format-run-logs";
 import {
   filterTimelineEvents,
@@ -140,6 +142,60 @@ function ViewStoryButton({ storyName }: { storyName?: string }) {
     >
       <BookOpenIcon className="size-4" />
       View story
+    </Button>
+  );
+}
+
+// ---------- retry a finished run with the same variables ----------
+function RetryRunButton({
+  storyName,
+  storyTitle,
+  variableOverrides,
+}: {
+  storyName?: string;
+  storyTitle?: string;
+  variableOverrides?: Record<string, string>;
+}) {
+  const navigate = useNavigate();
+  const registerRun = useRegisterRun();
+  const [isStarting, setIsStarting] = React.useState(false);
+
+  if (!storyName) return null;
+
+  async function handleRetry() {
+    if (!storyName || isStarting) return;
+    setIsStarting(true);
+    try {
+      const { runId, agentProvider, agentModel, variableOverrides: startedVars } =
+        await runStart(storyName, variableOverrides);
+      registerRun(runId, storyName, storyTitle ?? storyName, {
+        agentProvider,
+        agentModel,
+        variableOverrides: startedVars ?? variableOverrides,
+      });
+      navigate({ to: "/run/$runId", params: { runId } });
+    } catch (err) {
+      reportAppErrorFromUnknown("Failed to retry run", err);
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
+  return (
+    <Button
+      variant="accent"
+      size="titlebar"
+      radius="full"
+      onClick={handleRetry}
+      disabled={isStarting}
+      aria-label="Retry run"
+    >
+      {isStarting ? (
+        <Loader2Icon className="size-4 animate-spin" />
+      ) : (
+        <RotateCcwIcon className="size-4" />
+      )}
+      Retry
     </Button>
   );
 }
@@ -483,7 +539,49 @@ function LiveScreenshotsSection({ runId }: { runId: string }) {
   );
 }
 
-// ---------- result panel: Assertions + step-linked screenshots ----------
+// ---------- run variables (values used for this specific run) ----------
+function isSecretVariableKey(key: string): boolean {
+  return /password|secret|token/i.test(key);
+}
+
+function RunVariablesSection({
+  variables,
+}: {
+  variables?: Record<string, string>;
+}) {
+  const entries = Object.entries(variables ?? {}).filter(([key]) => key.trim());
+  if (entries.length === 0) return null;
+
+  return (
+    <Section title="Variables">
+      <div className="flex flex-col">
+        {entries.map(([key, value]) => {
+          const secret = isSecretVariableKey(key);
+          return (
+            <div
+              key={key}
+              className="group/var flex items-center gap-1.5 py-0.5 min-w-0 rounded-control transition-colors hover:bg-surface-hover"
+            >
+              <span className="w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px] text-primary font-medium">
+                {key}
+              </span>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px]",
+                  value ? "text-secondary" : "text-quaternary",
+                )}
+              >
+                {value ? (secret ? "••••••" : value) : "empty"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+// ---------- result panel: Variables + Assertions + step-linked screenshots ----------
 function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
   const cancelled = result.status === "cancelled";
   const stepShots =
@@ -508,6 +606,8 @@ function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
 
   return (
     <>
+      <RunVariablesSection variables={result.variableOverrides} />
+
       <Section title="Assertions">
         <div className="flex flex-col">
           {result.assertions.map((a, i) => (
@@ -681,6 +781,13 @@ function LiveRunView({ runId }: { runId: string }) {
                   Cancel
                 </Button>
               )}
+              {isFinished && (
+                <RetryRunButton
+                  storyName={run?.storyName || result?.storyName}
+                  storyTitle={run?.storyTitle || result?.storyTitle}
+                  variableOverrides={result?.variableOverrides}
+                />
+              )}
             </ToolbarActions>
           </ToolbarRow>
         </Toolbar>
@@ -732,6 +839,11 @@ function LiveRunView({ runId }: { runId: string }) {
             agentProvider={agentProvider}
             agentModel={agentModel}
           />
+          {!isFinished && (
+            <RunVariablesSection
+              variables={run?.variableOverrides ?? result?.variableOverrides}
+            />
+          )}
           {!isFinished && <LiveScreenshotsSection runId={runId} />}
           {isFinished && result && <ResultPanel runId={runId} result={result} />}
         </div>
@@ -766,6 +878,11 @@ function HistoricalRunView({
                 startedAt={record.startedAt}
                 events={record.events}
                 result={record}
+              />
+              <RetryRunButton
+                storyName={record.storyName}
+                storyTitle={record.storyTitle}
+                variableOverrides={record.variableOverrides}
               />
             </ToolbarActions>
           </ToolbarRow>

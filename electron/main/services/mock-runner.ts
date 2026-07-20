@@ -1,7 +1,7 @@
 import { broadcast } from "../broadcast.js";
 import { buildScreenshotUrl, saveRun } from "./run-service.js";
 import { ensureRunOutputDir, getHeroScreenshotPath } from "./run-artifacts.js";
-import { writeRunMeta, deleteRunMeta } from "./run-meta.js";
+import { writeRunMeta, deleteRunMeta, withRunVariables } from "./run-meta.js";
 import type {
   ActiveRunSnapshot,
   AgentProvider,
@@ -31,6 +31,7 @@ interface MockRunState {
   cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   resolve: ((result: RunResult) => void) | null;
+  variableOverrides?: Record<string, string>;
 }
 
 const _mocks = new Map<string, MockRunState>();
@@ -49,6 +50,7 @@ export async function startMockRun(
   storyName: string,
   storyTitle: string,
   agentModel = "mock",
+  variableOverrides?: Record<string, string>,
 ): Promise<RunResult> {
   const startedAt = Date.now();
   await ensureRunOutputDir(runId);
@@ -59,6 +61,7 @@ export async function startMockRun(
     startedAt,
     agentProvider: provider,
     agentModel,
+    variableOverrides,
   });
 
   const state: MockRunState = {
@@ -72,6 +75,7 @@ export async function startMockRun(
     cancelled: false,
     timer: null,
     resolve: null,
+    variableOverrides,
   };
   _mocks.set(runId, state);
 
@@ -150,15 +154,16 @@ async function finishMockRun(runId: string): Promise<void> {
     agentModel: state.agentModel,
   };
 
-  await saveRun({ ...result, events: state.events });
-  broadcast("run:result", result);
+  const withVars = await withRunVariables(result);
+  await saveRun({ ...withVars, events: state.events });
+  broadcast("run:result", withVars);
   await deleteRunMeta(runId).catch(() => undefined);
 
   const resolve = state.resolve;
   state.resolve = null;
   state.timer = null;
   _mocks.delete(runId);
-  resolve(result);
+  resolve(withVars);
 }
 
 export function cancelMockRun(runId: string): boolean {
@@ -182,5 +187,6 @@ export function listActiveMockRuns(): ActiveRunSnapshot[] {
     events: s.events,
     agentProvider: s.agentProvider,
     agentModel: s.agentModel,
+    variableOverrides: s.variableOverrides,
   }));
 }

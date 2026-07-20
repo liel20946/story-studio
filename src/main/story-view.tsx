@@ -28,6 +28,7 @@ import {
   storiesGet,
   storiesList,
   storiesUpdate,
+  storiesDuplicate,
   clipboardWriteText,
   runStart,
 } from "../lib/ipc";
@@ -554,6 +555,7 @@ export function StoryView() {
   const [isStarting, setIsStarting] = React.useState(false);
   const [editingStoryName, setEditingStoryName] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isDuplicating, setIsDuplicating] = React.useState(false);
   const {
     draft,
     setDraft,
@@ -675,8 +677,13 @@ export function StoryView() {
     }
     setIsStarting(true);
     try {
-      const { runId, agentProvider, agentModel } = await runStart(story.name);
-      registerRun(runId, story.name, story.title, { agentProvider, agentModel });
+      const { runId, agentProvider, agentModel, variableOverrides } =
+        await runStart(story.name);
+      registerRun(runId, story.name, story.title, {
+        agentProvider,
+        agentModel,
+        variableOverrides,
+      });
       navigate({ to: "/run/$runId", params: { runId } });
     } catch (err) {
       reportAppErrorFromUnknown("Failed to start run", err);
@@ -710,6 +717,22 @@ export function StoryView() {
   function handleCancel() {
     setEditingStoryName(null);
     clearEdit();
+  }
+
+  async function handleDuplicate() {
+    if (!story || isDuplicating) return;
+    setIsDuplicating(true);
+    try {
+      const duplicatedTitle = `${story.title} (Copy)`;
+      const duplicated = await storiesDuplicate(story.name, duplicatedTitle);
+      queryClient.setQueryData(["stories:get", duplicated.name], duplicated);
+      void queryClient.invalidateQueries({ queryKey: ["stories:list"] });
+      navigate({ to: "/story/$name", params: { name: duplicated.name } });
+    } catch (err) {
+      reportAppErrorFromUnknown("Failed to duplicate story", err);
+    } finally {
+      setIsDuplicating(false);
+    }
   }
 
   function handleRecordAgain() {
@@ -823,6 +846,25 @@ export function StoryView() {
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Record again</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="transparent"
+                        size="titlebar"
+                        iconOnly
+                        onClick={handleDuplicate}
+                        aria-label="Duplicate story"
+                        disabled={isDuplicating}
+                      >
+                        {isDuplicating ? (
+                          <Loader2Icon className="size-4 animate-spin" />
+                        ) : (
+                          <CopyIcon className="size-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Duplicate story</TooltipContent>
                   </Tooltip>
                   <Button
                     variant={activeRun ? "filled" : "accent"}

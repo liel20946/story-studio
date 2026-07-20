@@ -679,6 +679,29 @@ export function storyEntryToMarkdown(entry: BowserStoryEntry): string {
   );
 }
 
+/**
+ * Resolve the effective variable map for a run: story defaults merged with
+ * any per-run overrides. Snapshot this onto the run so retry can reuse it
+ * even if the story YAML changes later.
+ */
+export function resolveRunVariables(
+  story: StoryDetail,
+  variableOverrides?: Record<string, string>,
+): Record<string, string> | undefined {
+  const keys = new Set<string>([
+    ...story.variables.map((v) => v.key),
+    ...Object.keys(variableOverrides ?? {}),
+  ]);
+  if (keys.size === 0) return undefined;
+
+  const resolved: Record<string, string> = {};
+  for (const key of keys) {
+    const fromStory = story.variables.find((v) => v.key === key)?.value ?? "";
+    resolved[key] = variableOverrides?.[key] ?? fromStory;
+  }
+  return resolved;
+}
+
 /** Format a story for agent run prompts (inline markdown). */
 export function formatStoryForRun(
   story: StoryDetail,
@@ -692,11 +715,13 @@ export function formatStoryForRun(
   const execution = story.workflow.length > 0 ? story.workflow : [...steps, ...assertionLines];
   const lastStep = execution[execution.length - 1] ?? "";
   const lastIndex = execution.length;
+  const resolvedMap = resolveRunVariables(story, variableOverrides);
   const resolvedVariables =
-    story.variables.length > 0
-      ? story.variables.map((v) => ({
-          ...v,
-          value: variableOverrides?.[v.key] ?? v.value,
+    resolvedMap && Object.keys(resolvedMap).length > 0
+      ? Object.entries(resolvedMap).map(([key, value]) => ({
+          key,
+          value,
+          secret: /password|secret|token/i.test(key),
         }))
       : [];
   const vars =

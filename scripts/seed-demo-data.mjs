@@ -144,6 +144,7 @@ function makeRun({
   finishedAt,
   events,
   steps,
+  variableOverrides,
 }) {
   const runBase = path.join(runsDir, runId);
   ensureDir(path.join(runBase, "screenshots"));
@@ -163,6 +164,7 @@ function makeRun({
     steps,
     agentProvider: "codex",
     agentModel: "gpt-5.4",
+    ...(variableOverrides ? { variableOverrides } : {}),
   };
 }
 
@@ -176,6 +178,10 @@ const runLoginPassed = makeRun({
     { text: "Dashboard heading is visible", passed: true },
     { text: "User menu shows test@example.com", passed: true },
   ],
+  variableOverrides: {
+    email: "test@example.com",
+    password: "password123",
+  },
   startedAt: now - 420_000,
   finishedAt: now - 12_000,
   events: [

@@ -2,7 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { getRunsDir } from "./paths.js";
 
-import type { AgentProvider } from "./contract-types.js";
+import type { AgentProvider, RunResult } from "./contract-types.js";
 
 export interface RunMeta {
   runId: string;
@@ -11,6 +11,17 @@ export interface RunMeta {
   startedAt: number;
   agentProvider?: AgentProvider;
   agentModel?: string;
+  /** Effective variable values used for this run (for retry). */
+  variableOverrides?: Record<string, string>;
+}
+
+/** Attach persisted run variables from meta onto a result before saving. */
+export async function withRunVariables(result: RunResult): Promise<RunResult> {
+  const meta = await readRunMeta(result.runId);
+  if (!meta?.variableOverrides || Object.keys(meta.variableOverrides).length === 0) {
+    return result;
+  }
+  return { ...result, variableOverrides: meta.variableOverrides };
 }
 
 export function getRunMetaPath(runId: string): string {

@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import type { BulkStoryRunRequest, BulkRunOptions, BulkVariableRun } from "./contract-types.js";
 import type { StoryDetail } from "./contract-types.js";
-import { formatStoryForRun } from "./bowser-stories-service.js";
+import { formatStoryForRun, resolveRunVariables } from "./bowser-stories-service.js";
 import type { BulkStoryInput } from "./bulk-runner.js";
 
 export interface BulkLaunchItem {
@@ -72,6 +72,7 @@ export function buildBulkStoryInputs(
       storyName: request.storyName,
       storyTitle,
       storyContents: formatStoryForRun(story, request.variableOverrides),
+      variableOverrides: resolveRunVariables(story, request.variableOverrides),
     });
   }
 

@@ -13,7 +13,7 @@ import type {
   ActiveRunSnapshot,
 } from "./contract-types.js";
 import { saveRun, buildScreenshotUrl } from "./run-service.js";
-import { writeRunMeta, deleteRunMeta } from "./run-meta.js";
+import { writeRunMeta, deleteRunMeta, withRunVariables } from "./run-meta.js";
 import { getRunsDir } from "./paths.js";
 import { buildRunStoryPlaybook, buildRunPromptSuffix } from "./story-skill.js";
 import { getSettingsValue } from "../handlers/settings.js";
@@ -71,6 +71,7 @@ interface RunState {
   seq: number;
   itemSeq: Map<string, number>;
   queued: boolean;
+  variableOverrides?: Record<string, string>;
 }
 
 const _runs = new Map<string, RunState>();
@@ -84,6 +85,7 @@ export function listActiveClaudeRuns(): ActiveRunSnapshot[] {
     agentProvider: state.agentProvider,
     agentModel: state.agentModel,
     events: [...state.events],
+    variableOverrides: state.variableOverrides,
   }));
 }
 
@@ -155,7 +157,8 @@ async function finalizeRun(result: RunResult, events: RunEvent[]): Promise<RunRe
   events.length = 0;
   events.push(...withSteps);
   await flushPersistRunEvents(result.runId, events);
-  const enriched = await enrichRunResult(result);
+  const withVars = await withRunVariables(result);
+  const enriched = await enrichRunResult(withVars);
   const record: RunRecord = { ...enriched, events };
   await saveRun(record);
   await deleteRunMeta(result.runId);
@@ -282,6 +285,7 @@ export async function startClaudeRun(
   claudeBinary: string,
   runHook?: string,
   agentConfig?: AgentRunConfig,
+  variableOverrides?: Record<string, string>,
 ): Promise<RunResult> {
   const startedAt = Date.now();
   const model = agentConfig?.model ?? DEFAULT_CLAUDE_MODEL;
@@ -298,6 +302,7 @@ export async function startClaudeRun(
     seq: 0,
     itemSeq: new Map<string, number>(),
     queued: true,
+    variableOverrides,
   };
   _runs.set(runId, state);
   await writeRunMeta({
@@ -307,6 +312,7 @@ export async function startClaudeRun(
     startedAt,
     agentProvider: "claude-code",
     agentModel: model,
+    variableOverrides,
   });
 
   const runsDir = getRunsDir();
