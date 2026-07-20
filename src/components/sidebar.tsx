@@ -94,8 +94,7 @@ import {
   type StorySection,
 } from "../lib/sections-store";
 
-const RECENT_RUNS = 15;
-// Sections show this many rows at first, revealing another page per "Show more".
+// Sections / Runs show this many rows at first, revealing another page per "Show more".
 const PAGE_SIZE = 7;
 
 // A text-only expander control: no row-style background highlight, just the
@@ -1126,15 +1125,14 @@ export function AppSidebar() {
       .filter((r) => !activeIds.has(r.runId))
       .map((r) => ({ ...r, isRunning: false, isQueued: false }));
 
-    return [...activeRows, ...historyRows]
-      .sort((a, b) => {
-        const aLive = a.isRunning || a.isQueued;
-        const bLive = b.isRunning || b.isQueued;
-        const aTime = aLive ? a.startedAt : a.finishedAt;
-        const bTime = bLive ? b.startedAt : b.finishedAt;
-        return bTime - aTime;
-      })
-      .slice(0, RECENT_RUNS);
+    // Full history; ExpandableRows handles Show more / less in the sidebar.
+    return [...activeRows, ...historyRows].sort((a, b) => {
+      const aLive = a.isRunning || a.isQueued;
+      const bLive = b.isRunning || b.isQueued;
+      const aTime = aLive ? a.startedAt : a.finishedAt;
+      const bTime = bLive ? b.startedAt : b.finishedAt;
+      return bTime - aTime;
+    });
   }, [runsQuery.data, allRuns]);
 
   // Group stories by section. Assignments pointing at a deleted section fall

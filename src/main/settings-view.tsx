@@ -323,11 +323,7 @@ function AgentPanel({
 
         <SettingsRow
           label="Browser"
-          description={
-            provider === "codex"
-              ? "Private browser, Playwright Chrome bridge, or Codex Chrome extension."
-              : "Private browser or Playwright Chrome bridge."
-          }
+          description="How Story Studio opens the browser for runs."
         >
           <LabeledSegment
             value={
@@ -481,7 +477,7 @@ function AgentPanel({
           <>
             <SettingsRow
               label="Codex extension"
-              description="Install the official Codex Chrome extension. Runs use an isolated Codex home (Chrome + node_repl only)."
+              description="Chrome extension for Codex browser runs."
             >
               <Button
                 variant="filled"
@@ -718,7 +714,7 @@ function DataPanel({
         </SettingsRow>
         <SettingsRow
           label="Export stories"
-          description="Copy all .yaml files to a folder on your computer."
+          description="Export stories as Story Studio YAML."
         >
           <Button
             variant="filled"

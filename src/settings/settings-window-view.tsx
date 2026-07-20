@@ -205,7 +205,7 @@ export function SettingsWindowView() {
 
             <Field
               label="Export stories"
-              description="Copy all .yaml files to a folder on your computer."
+              description="Export stories as Story Studio YAML."
             >
               <Button
                 variant="filled"

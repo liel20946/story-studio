@@ -1,0 +1,189 @@
+#!/usr/bin/env node
+/**
+ * Seed 28 history runs and capture Runs-tab pagination past the old 15 cap.
+ *   STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-run-history-pagination.mjs
+ */
+import { createRequire } from "node:module";
+import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
+import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
+
+const require = createRequire(import.meta.url);
+const { _electron: electron } = require("playwright");
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(__dirname, "..");
+const outDir = path.join(
+  process.env.CURSOR_ARTIFACTS_DIR || "/opt/cursor/artifacts",
+  "screenshots",
+);
+fs.mkdirSync(outDir, { recursive: true });
+
+const RUN_COUNT = 28;
+const STATUSES = ["passed", "failed", "cancelled", "passed", "error"];
+const TITLES = [
+  "Issue Store Credit",
+  "Gift Card Create",
+  "Create Shopify Order",
+  "Login Flow",
+  "Checkout Flow",
+  "Refund Order",
+];
+
+function userDataDir() {
+  return path.join(os.homedir(), ".config/Story Studio");
+}
+
+function ensureCursorThemeSettings() {
+  const settingsPath = path.join(userDataDir(), "settings.json");
+  let current = {};
+  try {
+    current = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  } catch {
+    // fresh
+  }
+  const next = {
+    ...current,
+    theme: "dark",
+    colorThemeDark: "cursor",
+    colorThemePaletteDark: null,
+    browserMode: "private",
+    agentProvider: "codex",
+  };
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
+}
+
+function seedManyRuns() {
+  const runsDir = path.join(userDataDir(), "runs");
+  fs.mkdirSync(runsDir, { recursive: true });
+  const runsJson = path.join(runsDir, "runs.json");
+  let existing = [];
+  try {
+    existing = JSON.parse(fs.readFileSync(runsJson, "utf8"));
+  } catch {
+    existing = [];
+  }
+  const prefix = "hist-page-";
+  existing = existing.filter((r) => !String(r.runId).startsWith(prefix));
+  const now = Date.now();
+  const seeded = [];
+  for (let i = 0; i < RUN_COUNT; i++) {
+    const startedAt = now - (i + 1) * 60_000;
+    const finishedAt = startedAt + 12_000;
+    const title = TITLES[i % TITLES.length];
+    seeded.push({
+      runId: `${prefix}${String(i).padStart(2, "0")}-${randomUUID().slice(0, 8)}`,
+      storyName: title.toLowerCase().replace(/\s+/g, "-"),
+      storyTitle: title,
+      status: STATUSES[i % STATUSES.length],
+      summary: i % 3 === 1 ? "Assertion failed" : "All assertions passed",
+      assertions: [],
+      startedAt,
+      finishedAt,
+      agentProvider: "codex",
+      agentModel: "gpt-5.6-terra",
+      events: [],
+    });
+  }
+  fs.writeFileSync(runsJson, `${JSON.stringify([...seeded, ...existing], null, 2)}\n`);
+  console.log(`seeded ${RUN_COUNT} runs into`, runsJson);
+}
+
+function electronExec() {
+  const electronPath = path.dirname(require.resolve("electron"));
+  const relative = fs.readFileSync(path.join(electronPath, "path.txt"), "utf8").trim();
+  return path.join(electronPath, "dist", relative);
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function shot(app, name) {
+  const file = path.join(outDir, `${name}.png`);
+  const png = await app.evaluate(async ({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    if (!w) return null;
+    w.setBounds({ x: 20, y: 20, width: 1440, height: 900 });
+    w.show();
+    w.focus();
+    await new Promise((r) => setTimeout(r, 150));
+    const img = await w.capturePage();
+    return img.toPNG().toString("base64");
+  });
+  if (!png) throw new Error("capturePage failed");
+  fs.writeFileSync(file, Buffer.from(png, "base64"));
+  console.log("wrote", file);
+}
+
+async function clickShowMoreUntil(page, minClicks) {
+  for (let i = 0; i < minClicks; i++) {
+    const btn = page.getByRole("button", { name: "Show more" });
+    if ((await btn.count()) === 0) break;
+    await btn.click({ force: true });
+    await wait(250);
+  }
+}
+
+async function main() {
+  ensureCursorThemeSettings();
+  seedManyRuns();
+
+  const app = await electron.launch({
+    executablePath: electronExec(),
+    args: [root],
+    env: {
+      ...process.env,
+      STORY_STUDIO_MOCK_RUNS: "1",
+      ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
+    },
+    timeout: 120_000,
+  });
+
+  const page = await app.firstWindow();
+  page.setDefaultTimeout(30_000);
+  await page.waitForLoadState("domcontentloaded");
+  await wait(3500);
+
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    if (!w) return;
+    w.setMinimumSize(1200, 800);
+    w.setSize(1440, 900);
+    w.center();
+    w.show();
+  });
+  await wait(600);
+
+  await page.getByRole("tab", { name: "Runs" }).click({ force: true });
+  await wait(800);
+  await shot(app, "01-runs-tab-initial-page");
+
+  // PAGE_SIZE=7 → need 2 clicks to pass the old 15-run hard cap (21 visible).
+  await clickShowMoreUntil(page, 2);
+  await wait(400);
+  await shot(app, "02-runs-tab-past-15");
+
+  // Keep expanding until Show more is gone — proves full history is reachable.
+  await clickShowMoreUntil(page, 10);
+  await wait(400);
+  // Scroll sidebar to bottom so Show less + oldest rows are visible.
+  await page.evaluate(() => {
+    const scroller = document.querySelector("aside .sidebar-scroll");
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  });
+  await wait(300);
+  // Nudge hover so the thin overlay scrollbar is visible in the shot.
+  await page.locator(".sidebar-scroll").hover({ force: true }).catch(() => {});
+  await wait(150);
+  await shot(app, "03-runs-tab-fully-expanded");
+
+  await app.close();
+  console.log("done");
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
