@@ -37,6 +37,11 @@ Ground truth: a working release (e.g. v1.4.8) has both the asset and the yml `ur
 
 - macOS on Apple Silicon.
 - Node `>=20` (repo uses Node 24 locally).
+- **Developer ID Application signing** — required for auto-update. Squirrel.Mac’s Restart /
+  `quitAndInstall` does nothing for unsigned zips (this is what broke CI releases 1.5.8–1.5.11).
+  Local Mac publishes work when the cert is in your keychain; GitHub Actions needs the same cert
+  as secrets (`CSC_LINK` = base64 `.p12`, `CSC_KEY_PASSWORD`). The Release macOS workflow **fails**
+  if those secrets are missing — never ship an unsigned build as latest.
 - GitHub auth for publishing, one of:
   - `gh auth login -h github.com`, or
   - `GH_TOKEN` env var with `repo` scope.
@@ -48,6 +53,8 @@ Ground truth: a working release (e.g. v1.4.8) has both the asset and the yml `ur
     GH_TOKEN=$(gh auth token) npm run dist:publish
     ```
 - Bump `version` in `package.json` before releasing. Never reuse a version number for different bits.
+  Next release after the unsigned CI streak must be a **new** signed version (e.g. 1.5.12), published
+  from Mac or from CI with signing secrets. `v1.5.7` was restored as Latest until then.
 
 ## Build (no publish)
 
