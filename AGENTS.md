@@ -3,6 +3,18 @@
 Operational guide for building and releasing Story Studio without breaking auto-update.
 Read this before shipping a new version.
 
+## Pull request screenshots (required)
+
+Before creating or updating a PR after UI or user-visible changes:
+
+1. Capture screenshots of **every** visible change (settings, story/run views, generate, etc.).
+2. Prefer the existing Electron capture pattern (`scripts/capture-*.mjs` with
+   `STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/…`) and write PNGs under
+   `/opt/cursor/artifacts/screenshots/`.
+3. **Show the screenshots** in the PR description (and in the agent response) so
+   reviewers can see the result without running the app.
+4. Do not open/update a PR for visual work until those screenshots are attached.
+
 ## What this app is
 
 - Electron + React (electron-vite) macOS app, Apple Silicon (`arm64`).
