@@ -12,7 +12,7 @@ import {
   SquareIcon,
   RotateCcwIcon,
   SkipForwardIcon,
-  VariableIcon,
+  BracesIcon,
 } from "lucide-react";
 import {
   ScrollArea,
@@ -204,15 +204,15 @@ function StoryRow({
       <Button
         variant="transparent"
         size="small"
-        iconOnly
-        className="shrink-0 opacity-70 transition-opacity group-hover/row:opacity-100"
+        className="shrink-0 gap-1.5 text-mini text-secondary opacity-90 transition-opacity group-hover/row:opacity-100 hover:text-primary"
         aria-label={`Configure variable runs for ${story.title}`}
         onClick={(e) => {
           e.preventDefault();
           onConfigureVariables();
         }}
       >
-        <VariableIcon className="size-4" />
+        <BracesIcon className="size-3.5 opacity-80" />
+        Variables
       </Button>
     </div>
   );
