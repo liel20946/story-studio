@@ -108,23 +108,36 @@ export async function checkForUpdatesManually(): Promise<void> {
     return;
   }
 
-  if (downloadedVersion) {
-    await promptRestartToInstall(downloadedVersion);
-    return;
-  }
-
   try {
+    // Always re-check the remote so we don't get stuck prompting for a
+    // previously downloaded version (e.g. 1.5.8) after a newer one ships.
     const result = await autoUpdater.checkForUpdates();
     const latestVersion = result?.updateInfo.version;
     const currentVersion = app.getVersion();
 
     if (!latestVersion || latestVersion === currentVersion) {
+      downloadedVersion = null;
       await dialog.showMessageBox({
         type: "info",
         title: "No Updates",
         message: "You're running the latest version of Story Studio.",
       });
       return;
+    }
+
+    if (downloadedVersion === latestVersion) {
+      await promptRestartToInstall(downloadedVersion);
+      return;
+    }
+
+    // A newer build is available than whatever we already staged — clear the
+    // stale prompt target; update-downloaded will fire when the new zip lands.
+    if (downloadedVersion && downloadedVersion !== latestVersion) {
+      logger.info(
+        "updates",
+        `Discarding staged ${downloadedVersion}; fetching ${latestVersion}`,
+      );
+      downloadedVersion = null;
     }
 
     await dialog.showMessageBox({
