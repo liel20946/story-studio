@@ -2598,21 +2598,11 @@
   column-gap: 0.5rem;
   width: 100%;
   padding: 0.3rem 0.5rem;
-  border: none;
   border-radius: var(--radius-control);
-  background: transparent;
-  font: inherit;
   font-size: 12px;
   line-height: 16px;
   text-align: left;
   color: inherit;
-  cursor: pointer;
-  transition: background-color 120ms ease;
-}
-
-.timeline-row:hover,
-.timeline-row--selected {
-  background: var(--color-surface-hover);
 }
 
 .timeline-icon-wrap {
