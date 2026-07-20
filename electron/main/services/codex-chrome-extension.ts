@@ -44,6 +44,8 @@ function looksLikeProfileDir(name: string): boolean {
 /**
  * Detect whether the Codex Chrome extension is installed in any local Chrome
  * profile. No tokens — presence of the extension directory is enough.
+ * Note: this does NOT prove Codex CLI can drive Chrome. Standalone `codex exec`
+ * often fails with "Browser is not available: extension" even when files exist.
  */
 export async function probeCodexChromeExtension(): Promise<CodexChromeExtensionStatus> {
   for (const root of chromeUserDataRoots()) {

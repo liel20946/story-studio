@@ -32,6 +32,7 @@ import {
   deleteRunPid,
   ensureActionTimeline,
   flushPersistRunEvents,
+  hasActionTimelineEvents,
   schedulePersistRunEvents,
   writeRunPid,
 } from "./run-events-persist.js";
@@ -236,6 +237,10 @@ function isBenignCodexStderr(text: string): boolean {
   if (!trimmed) return true;
   return /reading additional input from stdin/i.test(trimmed);
 }
+
+/** Codex CLI cannot acquire the Chrome extension backend in many environments. */
+export const CODEX_CHROME_CLI_UNAVAILABLE_HINT =
+  "Codex Chrome could not drive the browser. Story Studio runs Codex CLI (codex exec), which often cannot use the Chrome extension even when it is installed. Switch Browser to Private or Playwright.";
 
 function isBenignCodexStderrEvent(event: RunEvent): boolean {
   return event.kind === "error" && !!event.detail && isBenignCodexStderr(event.detail);
@@ -575,7 +580,7 @@ export async function startRun(
 
       // Try to read result JSON
       readResultJson(resultPath)
-        .then((structured) => {
+        .then(async (structured) => {
           const status: RunStatus = cancelled
             ? "cancelled"
             : structured
@@ -599,6 +604,44 @@ export async function startRun(
               ? stderrLog.trim() || `Codex exited with code ${code}`
               : undefined;
 
+          let error: string | undefined = cancelled
+            ? "Cancelled by user"
+            : exitError;
+
+          // Codex Chrome mode: extension "Installed" is disk-only. When the CLI
+          // never drove the browser (or the agent reports @Chrome unavailable),
+          // surface a clear hint instead of empty Actions with no explanation.
+          const summarySuggestsChromeUnavailable =
+            /@Chrome/i.test(summary) &&
+            /unavailable|not available|browser tool unavailable/i.test(summary);
+          if (
+            useCodexChrome &&
+            !cancelled &&
+            (status === "failed" || status === "error")
+          ) {
+            const withSteps = await ensureActionTimeline(runId, events);
+            events.length = 0;
+            events.push(...withSteps);
+            if (
+              !hasActionTimelineEvents(events) ||
+              summarySuggestsChromeUnavailable
+            ) {
+              error = CODEX_CHROME_CLI_UNAVAILABLE_HINT;
+              const hintEvent: RunEvent = {
+                runId,
+                seq: state.seq++,
+                ts: Date.now(),
+                kind: "error",
+                label: "Browser unavailable",
+                detail: CODEX_CHROME_CLI_UNAVAILABLE_HINT,
+                status: "failed",
+              };
+              events.push(hintEvent);
+              broadcast("run:event", hintEvent);
+              syncRunTimeline(runId, events);
+            }
+          }
+
           const result: RunResult = {
             runId,
             storyName,
@@ -612,7 +655,7 @@ export async function startRun(
             startedAt,
             finishedAt: Date.now(),
             tokenUsage,
-            error: cancelled ? "Cancelled by user" : exitError,
+            error,
             agentProvider: state.agentProvider,
             agentModel: state.agentModel,
           };
