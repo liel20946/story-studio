@@ -10,10 +10,10 @@
 # - No pull_request trigger (forks cannot use this to publish).
 #
 # Why signing is required:
-#   macOS auto-update (Squirrel.Mac / electron-updater quitAndInstall) only works
-#   with Developer ID–signed zips. Unsigned CI builds (1.5.8–1.5.11) downloaded
-#   fine but Restart did nothing. Local Mac publishes work because the keychain
-#   identity signs the app. CI must use the same cert via secrets.
+#   macOS auto-update (Squirrel.Mac / electron-updater quitAndInstall) needs a
+#   code-signed zip. Unsigned CI builds (1.5.8–1.5.11) downloaded fine but
+#   Restart did nothing. Local Mac publishes work because Keychain signs with
+#   Apple Development / Developer ID. CI must use the same cert via secrets.
 #
 # Triggers:
 #   - Manual: Actions → "Release macOS" → Run workflow
@@ -176,7 +176,7 @@ jobs:
           npx electron-builder --mac --publish never
           node scripts/generate-latest-mac-yml.mjs "${{ steps.version.outputs.version }}"
 
-      - name: Verify zip is Developer ID signed
+      - name: Verify zip is code-signed
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
@@ -186,14 +186,14 @@ jobs:
             echo "::error::Release zip has no _CodeSignature — unsigned builds break auto-update."
             exit 1
           fi
-          # Spot-check the main app bundle signature after extract (shallow).
           TMP="$(mktemp -d)"
           ditto -xk "$ZIP" "$TMP"
           APP="$(find "$TMP" -maxdepth 1 -name '*.app' | head -1)"
           codesign --verify --deep --strict "$APP"
           codesign -dv --verbose=2 "$APP" 2>&1 | tee /tmp/codesign-dv.txt
-          if ! grep -q 'Authority=Developer ID Application' /tmp/codesign-dv.txt; then
-            echo "::error::App is not signed with Developer ID Application (adhoc/unsigned will break Squirrel updates)."
+          # Accept Developer ID (preferred) or Apple Development (matches local Mac publishes like 1.5.7).
+          if ! grep -Eq 'Authority=(Developer ID Application|Apple Development)' /tmp/codesign-dv.txt; then
+            echo "::error::App must be signed with Developer ID Application or Apple Development (not adhoc)."
             exit 1
           fi
           echo "Signature OK"
