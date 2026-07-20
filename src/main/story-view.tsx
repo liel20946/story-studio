@@ -487,7 +487,7 @@ function ReadOnlyVariables({
         return (
           <div
             key={v.key}
-            className="group/var flex items-center gap-1.5 py-0.5 min-w-0 rounded-control transition-colors hover:bg-surface-hover"
+            className="group/var flex items-center gap-1.5 py-0.5 min-w-0"
           >
             <span
               className={cn(
