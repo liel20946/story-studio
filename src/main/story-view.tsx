@@ -1018,6 +1018,7 @@ export function StoryView() {
                             }}
                             aria-label={`Assertion ${i + 1}`}
                             value={assertion}
+                            placeholder="Optional"
                             onChange={(e) =>
                               updateTextRow(
                                 i,
