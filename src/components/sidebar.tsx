@@ -93,6 +93,7 @@ import {
   DEFAULT_SECTION_ID,
   type StorySection,
 } from "../lib/sections-store";
+import { usePersistedExpand } from "../lib/use-persisted-expand";
 
 // Sections / Runs show this many rows at first, revealing another page per "Show more".
 const PAGE_SIZE = 7;
@@ -125,14 +126,17 @@ function ExpanderButton({
 // Caps a row list to PAGE_SIZE, revealing PAGE_SIZE more per "Show more" click.
 // Once expanded, a "Show less" appears alongside (both shown together while more
 // remain, like Codex); collapsing back hides "Show more" when nothing is hidden.
+// `persistKey` keeps the visible page depth across tab switches and restarts.
 function ExpandableRows<T>({
   items,
   renderItem,
+  persistKey,
 }: {
   items: T[];
   renderItem: (item: T) => React.ReactNode;
+  persistKey: string;
 }) {
-  const [visible, setVisible] = React.useState(PAGE_SIZE);
+  const [visible, setVisible] = usePersistedExpand(persistKey, PAGE_SIZE);
   const shown = items.slice(0, visible);
   const remaining = items.length - shown.length;
   const canShowMore = remaining > 0;
@@ -1683,6 +1687,7 @@ function StoriesTab({
           }
         >
           <ExpandableRows
+            persistKey={`stories:${section.id}`}
             items={bySection.get(section.id) ?? []}
             renderItem={renderStoryRow}
           />
@@ -1707,7 +1712,11 @@ function StoriesTab({
           open={!collapsed[DEFAULT_SECTION_ID]}
           onOpenChange={(o) => setCollapsed(DEFAULT_SECTION_ID, !o)}
         >
-          <ExpandableRows items={unassigned} renderItem={renderStoryRow} />
+          <ExpandableRows
+            persistKey={`stories:${DEFAULT_SECTION_ID}`}
+            items={unassigned}
+            renderItem={renderStoryRow}
+          />
           {unassigned.length === 0 && (
             <Text
               variant="small"
@@ -1824,6 +1833,7 @@ function ScheduledTab({
   }
   return (
     <ExpandableRows
+      persistKey="scheduled"
       items={schedules}
       renderItem={(schedule) => (
         <ScheduledRow
@@ -1916,6 +1926,7 @@ function GenerateTab({
   }
   return (
     <ExpandableRows
+      persistKey="generate"
       items={conversations}
       renderItem={(conversation) => (
         <GenerateConversationRow
@@ -1955,6 +1966,7 @@ function RunsTab({
   }
   return (
     <ExpandableRows
+      persistKey="runs"
       items={runs}
       renderItem={(run) => (
         <HistoryRunRow
