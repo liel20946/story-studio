@@ -8,7 +8,7 @@ import {
   ensureCodexProjectConfig,
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
-import { buildCodexChromeConfigArgs } from "./codex-chrome-extension.js";
+import { buildCodexChromeConfigArgs } from "./codex-chrome-config.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { writeClaudeMcpConfigFile } from "./browser-mcp-config.js";
 import {
@@ -60,17 +60,14 @@ function buildCodexModelConfigArgs(agentConfig: AgentRunConfig): string[] {
   ];
 }
 
-function buildCodexSharedFlags(
-  agentConfig: AgentRunConfig,
-  options: { ignoreUserConfig: boolean },
-): string[] {
+function buildCodexSharedFlags(agentConfig: AgentRunConfig): string[] {
   return [
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
     "--json",
-    // Playwright / text-only: isolate from ~/.codex (notably multi_agent).
-    // Codex Chrome must keep user config so @Chrome / node_repl load.
-    ...(options.ignoreUserConfig ? ["--ignore-user-config"] : []),
+    // Isolate from ~/.codex — browser tools injected via `-c` (Playwright MCP
+    // or Chrome node_repl), same as story runs in codex-runner.ts.
+    "--ignore-user-config",
     ...buildCodexModelConfigArgs(agentConfig),
   ];
 }
@@ -286,16 +283,14 @@ async function invokeCodex(
     return parseAgentMessageFromCodexStdout(stdout);
   };
 
-  // Playwright / private: isolate from ~/.codex. Codex Chrome keeps user config
-  // so chrome@openai-bundled + node_repl remain available for @Chrome.
+  // Always isolate from ~/.codex. Playwright MCP or Chrome node_repl is
+  // injected via `-c` below — never load the user's full MCP set.
+  const sharedFlags = buildCodexSharedFlags(agentConfig);
   const browserMode = getSettingsValue().browserMode;
   const useCodexChrome = browserMode === "codex-chrome";
-  const sharedFlags = buildCodexSharedFlags(agentConfig, {
-    ignoreUserConfig: !(exploring && useCodexChrome),
-  });
   const mcpArgs = exploring
     ? useCodexChrome
-      ? buildCodexChromeConfigArgs()
+      ? await buildCodexChromeConfigArgs()
       : await buildCodexPlaywrightMcpConfigArgs()
     : [];
 

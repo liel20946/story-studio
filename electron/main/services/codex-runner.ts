@@ -46,7 +46,8 @@ import {
   ensureCodexProjectConfig,
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
-import { probeCodexChromeExtension, buildCodexChromeConfigArgs } from "./codex-chrome-extension.js";
+import { probeCodexChromeExtension } from "./codex-chrome-extension.js";
+import { buildCodexChromeConfigArgs } from "./codex-chrome-config.js";
 import {
   DEFAULT_CODEX_EFFORT,
   DEFAULT_CODEX_MODEL,
@@ -240,7 +241,7 @@ function isBenignCodexStderr(text: string): boolean {
 
 /** Surfaced when a Codex Chrome run finishes with no browser actions / @Chrome unavailable. */
 export const CODEX_CHROME_CLI_UNAVAILABLE_HINT =
-  "@Chrome was unavailable for this run. Story Studio needs your Codex Chrome plugin from ~/.codex (chrome@openai-bundled + node_repl). Confirm Chrome works in the Codex CLI, then retry.";
+  "@Chrome was unavailable for this run. Check the Codex Chrome extension is installed, and that Codex.app has configured node_repl (open Codex once if needed), then retry.";
 
 function isBenignCodexStderrEvent(event: RunEvent): boolean {
   return event.kind === "error" && !!event.detail && isBenignCodexStderr(event.detail);
@@ -314,8 +315,8 @@ export async function startRun(
   await fs.writeFile(schemaPath, JSON.stringify(RUN_OUTPUT_SCHEMA), "utf-8");
   const browserMode = getSettingsValue().browserMode;
   const useCodexChrome = browserMode === "codex-chrome";
-  // Playwright mode writes a project .codex/config.toml. Chrome mode must NOT —
-  // it relies on the user's ~/.codex plugins/node_repl stack instead.
+  // Project config is Playwright-oriented; Chrome injects node_repl via `-c`
+  // instead (same isolation pattern as Playwright MCP).
   if (!useCodexChrome) {
     await ensureCodexProjectConfig(runOutputDir);
   }
@@ -336,46 +337,15 @@ export async function startRun(
     });
 
   const effort = agentConfig?.effort ?? DEFAULT_CODEX_EFFORT;
-  const mcpConfigArgs = useCodexChrome
-    ? buildCodexChromeConfigArgs()
-    : await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
   const mcpSecretEnv = useCodexChrome
     ? {}
     : await playwrightMcpSecretEnv();
-
-  const args = [
-    "exec",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "--json",
-    "--skip-git-repo-check",
-    // Playwright / private: isolate from ~/.codex/config.toml so multi_agent and
-    // unrelated global MCP servers cannot hijack the run. Playwright MCP is
-    // injected via `-c` below.
-    //
-    // Codex Chrome: do NOT ignore user config — @Chrome needs the user's
-    // chrome@openai-bundled plugin + node_repl / BROWSER_USE_* from ~/.codex.
-    // multi_agent is pinned false in buildCodexChromeConfigArgs instead.
-    ...(useCodexChrome ? [] : ["--ignore-user-config"]),
-    "-C",
-    runOutputDir,
-    "-c",
-    `model="${state.agentModel}"`,
-    "-c",
-    `model_reasoning_effort="${effort}"`,
-    ...mcpConfigArgs,
-    "--output-schema",
-    schemaPath,
-    "-o",
-    resultPath,
-    prompt,
-  ];
 
   console.log("[codex:run] starting", {
     runId,
     storyName,
     codexBinary,
     browserMode,
-    mcpConfigArgs,
   });
 
   const events = state.events;
@@ -425,7 +395,7 @@ export async function startRun(
   // change had inserted a blocking ensurePlaywrightReady() preflight here (an
   // extra `npx -y` round-trip plus a "Preparing browser environment…" phase)
   // that delayed the start of every run; that per-run gate is removed.
-  // Codex Chrome mode only needs the Chrome extension present (no Playwright MCP).
+  // Codex Chrome: extension on disk + injectable node_repl (no Playwright MCP).
   if (useCodexChrome) {
     const chromeExt = await probeCodexChromeExtension();
     if (!chromeExt.installed) {
@@ -460,6 +430,71 @@ export async function startRun(
       return finalizeRun(failResult, events);
     }
   }
+
+  let mcpConfigArgs: string[];
+  try {
+    // Same pattern for both modes: --ignore-user-config + inject ONE browser MCP
+    // via `-c` (Playwright or node_repl). Never load the user's full MCP set.
+    mcpConfigArgs = useCodexChrome
+      ? await buildCodexChromeConfigArgs()
+      : await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
+  } catch (err) {
+    releaseRunSlot();
+    const message = err instanceof Error ? err.message : String(err);
+    const failEvent: RunEvent = {
+      runId,
+      seq: state.seq++,
+      ts: Date.now(),
+      kind: "status",
+      label: "Failed",
+      detail: message,
+      status: "failed",
+    };
+    events.push(failEvent);
+    broadcast("run:event", failEvent);
+    syncRunTimeline(runId, events);
+    const failResult: RunResult = {
+      runId,
+      storyName,
+      storyTitle,
+      status: "error",
+      summary: "",
+      assertions: [],
+      screenshotPath,
+      screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+      startedAt,
+      finishedAt: Date.now(),
+      error: message,
+      agentProvider: state.agentProvider,
+      agentModel: state.agentModel,
+    };
+    return finalizeRun(failResult, events);
+  }
+
+  const args = [
+    "exec",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--json",
+    "--skip-git-repo-check",
+    // Isolate from ~/.codex/config.toml (multi_agent + unrelated global MCPs).
+    // Browser tools are injected explicitly via `-c` below — Playwright MCP
+    // for Private/Playwright modes, node_repl + Chrome plugin for Codex Chrome.
+    "--ignore-user-config",
+    "-C",
+    runOutputDir,
+    "-c",
+    `model="${state.agentModel}"`,
+    "-c",
+    `model_reasoning_effort="${effort}"`,
+    ...mcpConfigArgs,
+    "--output-schema",
+    schemaPath,
+    "-o",
+    resultPath,
+    prompt,
+  ];
+
+  console.log("[codex:run] mcp config ready", { runId, browserMode, mcpConfigArgs });
 
   await acquirePlaywrightSlot();
 

@@ -9,28 +9,6 @@ export const CODEX_CHROME_EXTENSION_ID = "hehggadaopoacecdllhhajmbjkdcmajg";
 export const CODEX_CHROME_EXTENSION_STORE_URL =
   `https://chromewebstore.google.com/detail/codex/${CODEX_CHROME_EXTENSION_ID}`;
 
-/**
- * Codex `-c` overrides for Chrome-extension browser mode.
- *
- * Do NOT pair these with `--ignore-user-config`: that flag empties
- * `~/.codex/config.toml`, which drops `chrome@openai-bundled`, `node_repl`, and
- * `BROWSER_USE_AVAILABLE_BACKENDS` — leaving `@Chrome` unavailable even when the
- * extension is installed and CLI Chrome works interactively.
- *
- * We still pin `multi_agent=false` so a user's global multi-agent setting cannot
- * fan one story into parallel agents with duplicate side effects.
- */
-export function buildCodexChromeConfigArgs(): string[] {
-  return [
-    "-c",
-    "features.multi_agent=false",
-    "-c",
-    "features.browser_use_external=true",
-    "-c",
-    'plugins."chrome@openai-bundled".enabled=true',
-  ];
-}
-
 export interface CodexChromeExtensionStatus {
   installed: boolean;
   /** Profile folder name when found (e.g. Default, Profile 1). */
@@ -66,8 +44,8 @@ function looksLikeProfileDir(name: string): boolean {
 /**
  * Detect whether the Codex Chrome extension is installed in any local Chrome
  * profile. No tokens — presence of the extension directory is enough.
- * Story Studio still needs the user's ~/.codex Chrome plugin / node_repl config
- * for @Chrome (loaded when Chrome mode does not pass --ignore-user-config).
+ * Runs still inject node_repl via `-c` (see codex-chrome-config.ts), same
+ * pattern as Playwright MCP — user global MCPs are not loaded.
  */
 export async function probeCodexChromeExtension(): Promise<CodexChromeExtensionStatus> {
   for (const root of chromeUserDataRoots()) {
