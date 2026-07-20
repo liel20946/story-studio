@@ -314,9 +314,10 @@ const storyEditInputClass =
 
 // Shared body size for steps, assertions, global rules, and variable values.
 const storyBodyTextClass = "text-[12px] leading-[16px] text-secondary";
-// Variable names stay mono so they read as identifiers.
-const storyVarNameClass = "font-mono text-[12px] leading-[16px]";
-const storyVarValueClass = "text-[12px] leading-[16px]";
+// Variable names stay mono so they read as identifiers — slightly smaller than
+// steps/assertions so the rail densifies without competing with the left pane.
+const storyVarNameClass = "font-mono text-[11px] leading-[14px]";
+const storyVarValueClass = "text-[11px] leading-[14px]";
 
 function focusInputAt(refs: React.RefObject<(HTMLInputElement | null)[]>, index: number) {
   requestAnimationFrame(() => {
