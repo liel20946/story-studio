@@ -502,7 +502,13 @@ function entryToDetail(
   const normalized = stripBowserEntryTags(entry);
   const name = compositeStoryName(siteSlug, normalized.id);
   const { steps, assertions } = resolveStoryParts(normalized);
-  const workflowLines = mergeWorkflowForExecution(steps, assertions);
+  // Story UI treats Assertions as end-of-story checks and cannot edit @N.
+  // Always place verifies after every action step so stale YAML offsets
+  // (e.g. @5 after login) cannot inject Verify mid-run.
+  const workflowLines = [
+    ...steps,
+    ...assertions.map((a) => a.text).filter((text) => !isBlankAssertion(text)),
+  ];
   return {
     name,
     title: normalized.name,
@@ -744,7 +750,10 @@ export function formatStoryForRun(
     story.assertions.length > 0
       ? story.assertions
       : story.workflow.filter((l) => /^verify\b/i.test(l));
-  const execution = story.workflow.length > 0 ? story.workflow : [...steps, ...assertionLines];
+  // Always: all action steps, then all asserts. Never trust interleaved
+  // story.workflow / YAML @N for runs — the editor cannot set offsets, and
+  // stale @N left Verify mid-story (e.g. right after login).
+  const execution = [...steps, ...assertionLines];
   const lastStep = execution[execution.length - 1] ?? "";
   const lastIndex = execution.length;
   const resolvedMap = resolveRunVariables(story, variableOverrides);
