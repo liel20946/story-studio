@@ -1,14 +1,50 @@
 import electronUpdater from "electron-updater";
+import { autoUpdater as nativeMacUpdater } from "electron";
 
-import { app, dialog } from "../electron-api.js";
+import { app, BrowserWindow, dialog } from "../electron-api.js";
 import { logger } from "../logger.js";
 
 const { autoUpdater } = electronUpdater;
 
 let downloadedVersion: string | null = null;
+let installInProgress = false;
 
 function isUpdateEnabled(): boolean {
   return app.isPackaged;
+}
+
+/**
+ * macOS + electron-updater: quitAndInstall() often fails to actually quit
+ * while before-quit / window listeners are still attached (electron-builder#8997).
+ * Strip those listeners, force-close windows, then quitAndInstall + app.exit().
+ */
+function quitAndInstallUpdate(): void {
+  if (installInProgress) return;
+  installInProgress = true;
+  logger.info("updates", "Installing update and restarting");
+
+  if (process.platform === "darwin") {
+    app.removeAllListeners("before-quit");
+    app.removeAllListeners("window-all-closed");
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      win.removeAllListeners("close");
+      win.close();
+    }
+    nativeMacUpdater.once("before-quit-for-update", () => {
+      app.exit(0);
+    });
+  }
+
+  // isSilent / isForceRunAfter matter on Windows; on macOS we still pass true
+  // for force-run-after so Squirrel relaunches when it can.
+  autoUpdater.quitAndInstall(false, true);
+
+  // Fallback if native before-quit-for-update never fires (still stuck alive).
+  setTimeout(() => {
+    logger.info("updates", "Forcing app.exit after quitAndInstall");
+    app.exit(0);
+  }, 2500);
 }
 
 async function promptRestartToInstall(version: string): Promise<void> {
@@ -23,7 +59,7 @@ async function promptRestartToInstall(version: string): Promise<void> {
   });
 
   if (response === 0) {
-    autoUpdater.quitAndInstall();
+    quitAndInstallUpdate();
   }
 }
 
@@ -95,7 +131,8 @@ export async function checkForUpdatesManually(): Promise<void> {
       type: "info",
       title: "Update Available",
       message: `Story Studio ${latestVersion} is available.`,
-      detail: "The update will download in the background. You'll be prompted to restart when it's ready.",
+      detail:
+        "The update will download in the background. You'll be prompted to restart when it's ready.",
     });
   } catch (error) {
     logger.error("updates", "Manual update check failed", error);
