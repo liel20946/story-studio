@@ -210,10 +210,7 @@ function AgentPanel({
     }
     void browserCodexChromeStatus()
       .then((status) => setCodexChromeInstalled(status.installed))
-      .catch((error) => {
-        setCodexChromeInstalled(false);
-        reportAppErrorFromUnknown("Could not check Codex Chrome extension", error);
-      });
+      .catch(() => setCodexChromeInstalled(false));
   }, [browserMode]);
 
   const refreshCodexChromeStatus = async () => {
@@ -221,11 +218,8 @@ function AgentPanel({
     try {
       const status = await browserCodexChromeStatus();
       setCodexChromeInstalled(status.installed);
-      if (status.installed) toast.success(status.message);
-      else toast.error(status.message);
-    } catch (error) {
+    } catch {
       setCodexChromeInstalled(false);
-      reportAppErrorFromUnknown("Could not check Codex Chrome extension", error);
     } finally {
       setCheckingCodexChrome(false);
     }

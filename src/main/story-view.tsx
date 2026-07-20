@@ -20,9 +20,6 @@ import {
   Button,
   Text,
   EmptyState,
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
 } from "@/components/ui";
 import {
   storiesGet,
@@ -835,53 +832,38 @@ export function StoryView() {
                 </>
               ) : (
                 <>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="transparent"
-                        size="titlebar"
-                        iconOnly
-                        onClick={handleEdit}
-                        aria-label="Edit story"
-                      >
-                        <PencilIcon className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Edit story</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="transparent"
-                        size="titlebar"
-                        iconOnly
-                        onClick={handleRecordAgain}
-                        aria-label="Record again"
-                      >
-                        <CircleDotIcon className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Record again</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="transparent"
-                        size="titlebar"
-                        iconOnly
-                        onClick={handleDuplicate}
-                        aria-label="Duplicate story"
-                        disabled={isDuplicating}
-                      >
-                        {isDuplicating ? (
-                          <Loader2Icon className="size-4 animate-spin" />
-                        ) : (
-                          <CopyIcon className="size-4" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Duplicate story</TooltipContent>
-                  </Tooltip>
+                  <Button
+                    variant="glass"
+                    size="titlebar"
+                    radius="full"
+                    onClick={handleEdit}
+                  >
+                    <PencilIcon className="size-4" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="glass"
+                    size="titlebar"
+                    radius="full"
+                    onClick={handleRecordAgain}
+                  >
+                    <CircleDotIcon className="size-4" />
+                    Record again
+                  </Button>
+                  <Button
+                    variant="glass"
+                    size="titlebar"
+                    radius="full"
+                    onClick={handleDuplicate}
+                    disabled={isDuplicating}
+                  >
+                    {isDuplicating ? (
+                      <Loader2Icon className="size-4 animate-spin" />
+                    ) : (
+                      <CopyIcon className="size-4" />
+                    )}
+                    Duplicate
+                  </Button>
                   <Button
                     variant={activeRun ? "filled" : "accent"}
                     size="titlebar"
