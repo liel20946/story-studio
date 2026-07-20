@@ -68,7 +68,7 @@ export function DraftStoryPreview({
               >
                 <span
                   className={cn(
-                    "w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px]",
+                    "max-w-[18rem] shrink-0 truncate font-mono text-[10px] leading-[13px]",
                     varColors.text[v.key] ?? "text-tertiary",
                   )}
                 >

@@ -442,7 +442,7 @@ function EditableVariables({
             onBlur={onCommitCheckpoint}
             className={cn(
               storyEditInputClass,
-              "w-[5.5rem] shrink-0 truncate",
+              "w-max max-w-[18rem] shrink-0 truncate",
               storyVarNameClass,
               nameColors[v.key] ?? "text-tertiary",
             )}
@@ -490,7 +490,7 @@ function ReadOnlyVariables({
           >
             <span
               className={cn(
-                "w-[5.5rem] shrink-0 truncate",
+                "max-w-[18rem] shrink-0 truncate",
                 storyVarNameClass,
                 nameColors[key] ?? "text-tertiary",
               )}
