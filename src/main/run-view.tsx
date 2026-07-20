@@ -329,7 +329,6 @@ function TimelineRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const isProse = event.kind === "message" || event.kind === "reasoning";
   return (
     <button
       type="button"
@@ -339,18 +338,13 @@ function TimelineRow({
       aria-label={`Action ${index + 1}: ${event.label}`}
     >
       <div className="timeline-icon-wrap">{eventIcon(event.kind)}</div>
-      <span className="truncate text-[12px] font-medium leading-[16px] text-primary">
+      <span className="truncate text-[12px] leading-[16px] text-primary">
         {event.label}
         {count > 1 && (
           <span className="ml-1 tabular-nums text-tertiary">×{count}</span>
         )}
       </span>
-      <span
-        className={cn(
-          "min-w-0 truncate text-[12px] leading-[16px] text-tertiary",
-          !isProse && "font-mono",
-        )}
-      >
+      <span className="min-w-0 truncate text-[12px] leading-[16px] text-tertiary">
         {event.detail ?? ""}
       </span>
       <span className="flex shrink-0 items-center justify-end">
@@ -595,12 +589,12 @@ function RunVariablesSection({
               key={key}
               className="group/var flex items-center gap-1.5 py-0.5 min-w-0 rounded-control transition-colors hover:bg-surface-hover"
             >
-              <span className="w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px] text-primary font-medium">
+              <span className="w-[5.5rem] shrink-0 truncate font-mono text-[12px] leading-[16px] text-primary">
                 {key}
               </span>
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px]",
+                  "min-w-0 flex-1 truncate text-[12px] leading-[16px]",
                   value ? "text-secondary" : "text-quaternary",
                 )}
               >
