@@ -132,7 +132,9 @@ export function Sidebar({
   return (
     <div className={cn("flex h-full flex-col bg-surface-sidebar", className)}>
       {toolbar}
-      <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto">{children}</div>
+      <div className="sidebar-scroll flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+        {children}
+      </div>
       {footer}
     </div>
   );

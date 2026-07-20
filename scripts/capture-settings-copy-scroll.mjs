@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Seed 28 history runs and capture Runs-tab pagination past the old 15 cap.
- *   STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-run-history-pagination.mjs
+ * Capture settings copy fixes (browser / Codex extension / export) + scrolled Runs.
+ *   STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-settings-copy-scroll.mjs
  */
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -21,22 +21,11 @@ const outDir = path.join(
 );
 fs.mkdirSync(outDir, { recursive: true });
 
-const RUN_COUNT = 28;
-const STATUSES = ["passed", "failed", "cancelled", "passed", "error"];
-const TITLES = [
-  "Issue Store Credit",
-  "Gift Card Create",
-  "Create Shopify Order",
-  "Login Flow",
-  "Checkout Flow",
-  "Refund Order",
-];
-
 function userDataDir() {
   return path.join(os.homedir(), ".config/Story Studio");
 }
 
-function ensureCursorThemeSettings() {
+function ensureSettings() {
   const settingsPath = path.join(userDataDir(), "settings.json");
   let current = {};
   try {
@@ -49,7 +38,7 @@ function ensureCursorThemeSettings() {
     theme: "dark",
     colorThemeDark: "cursor",
     colorThemePaletteDark: null,
-    browserMode: "private",
+    browserMode: "codex-chrome",
     agentProvider: "codex",
   };
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -66,30 +55,36 @@ function seedManyRuns() {
   } catch {
     existing = [];
   }
-  const prefix = "hist-page-";
+  const prefix = "scroll-ui-";
   existing = existing.filter((r) => !String(r.runId).startsWith(prefix));
   const now = Date.now();
+  const titles = [
+    "Issue Store Credit",
+    "Gift Card Create",
+    "Create Shopify Order",
+    "Login Flow",
+    "Checkout Flow",
+    "Refund Order",
+  ];
+  const statuses = ["passed", "failed", "cancelled", "passed", "error"];
   const seeded = [];
-  for (let i = 0; i < RUN_COUNT; i++) {
+  for (let i = 0; i < 28; i++) {
     const startedAt = now - (i + 1) * 60_000;
-    const finishedAt = startedAt + 12_000;
-    const title = TITLES[i % TITLES.length];
     seeded.push({
       runId: `${prefix}${String(i).padStart(2, "0")}-${randomUUID().slice(0, 8)}`,
-      storyName: title.toLowerCase().replace(/\s+/g, "-"),
-      storyTitle: title,
-      status: STATUSES[i % STATUSES.length],
-      summary: i % 3 === 1 ? "Assertion failed" : "All assertions passed",
+      storyName: titles[i % titles.length].toLowerCase().replace(/\s+/g, "-"),
+      storyTitle: titles[i % titles.length],
+      status: statuses[i % statuses.length],
+      summary: "All assertions passed",
       assertions: [],
       startedAt,
-      finishedAt,
+      finishedAt: startedAt + 12_000,
       agentProvider: "codex",
       agentModel: "gpt-5.6-terra",
       events: [],
     });
   }
   fs.writeFileSync(runsJson, `${JSON.stringify([...seeded, ...existing], null, 2)}\n`);
-  console.log(`seeded ${RUN_COUNT} runs into`, runsJson);
 }
 
 function electronExec() {
@@ -117,17 +112,8 @@ async function shot(app, name) {
   console.log("wrote", file);
 }
 
-async function clickShowMoreUntil(page, minClicks) {
-  for (let i = 0; i < minClicks; i++) {
-    const btn = page.getByRole("button", { name: "Show more" });
-    if ((await btn.count()) === 0) break;
-    await btn.click({ force: true });
-    await wait(250);
-  }
-}
-
 async function main() {
-  ensureCursorThemeSettings();
+  ensureSettings();
   seedManyRuns();
 
   const app = await electron.launch({
@@ -156,28 +142,44 @@ async function main() {
   });
   await wait(600);
 
-  await page.getByRole("tab", { name: "Runs" }).click({ force: true });
+  // Settings → Agent (browser + Codex extension copy)
+  await page.keyboard.press("Control+Comma");
   await wait(800);
-  await shot(app, "01-runs-tab-initial-page");
+  await page.getByRole("button", { name: "Agent", exact: true }).click({ force: true });
+  await wait(500);
+  const browserCodex = page
+    .locator('[aria-label="Browser mode"]')
+    .getByRole("tab", { name: "Codex" });
+  if (await browserCodex.isVisible().catch(() => false)) {
+    await browserCodex.click({ force: true });
+    await wait(600);
+  }
+  await shot(app, "04-settings-browser-codex-copy");
 
-  // PAGE_SIZE=7 → need 2 clicks to pass the old 15-run hard cap (21 visible).
-  await clickShowMoreUntil(page, 2);
-  await wait(400);
-  await shot(app, "02-runs-tab-past-15");
+  // Settings → Data (export copy)
+  await page.getByRole("button", { name: "Data", exact: true }).click({ force: true });
+  await wait(500);
+  await shot(app, "05-settings-export-story-studio");
 
-  // Keep expanding until Show more is gone — proves full history is reachable.
-  await clickShowMoreUntil(page, 10);
-  await wait(400);
-  // Scroll sidebar to bottom so Show less + oldest rows are visible.
+  await page.keyboard.press("Escape");
+  await wait(500);
+
+  // Runs tab fully expanded + hover for thin scrollbar
+  await page.getByRole("tab", { name: "Runs" }).click({ force: true });
+  await wait(600);
+  for (let i = 0; i < 8; i++) {
+    const btn = page.getByRole("button", { name: "Show more" });
+    if ((await btn.count()) === 0) break;
+    await btn.click({ force: true });
+    await wait(200);
+  }
   await page.evaluate(() => {
     const scroller = document.querySelector("aside .sidebar-scroll");
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   });
-  await wait(300);
-  // Nudge hover so the thin overlay scrollbar is visible in the shot.
   await page.locator(".sidebar-scroll").hover({ force: true }).catch(() => {});
-  await wait(150);
-  await shot(app, "03-runs-tab-fully-expanded");
+  await wait(250);
+  await shot(app, "06-runs-sidebar-scrollbar");
 
   await app.close();
   console.log("done");
