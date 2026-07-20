@@ -66,11 +66,17 @@ export function filterTimelineEvents(events: RunEvent[]): RunEvent[] {
       !isThinkingEvent(e) &&
       !isInternalToolEvent(e) &&
       !isMetaStatusEvent(e) &&
-      !isShellSetupEvent(e),
+      !isShellSetupEvent(e) &&
+      !isWaitEvent(e),
   );
 }
 
-/** Prefer the timeline source that already has browser actions during a live run. */
+/**
+ * Prefer the polled live timeline (buildLiveTimeline / steps.json) whenever it
+ * already has browser actions. That source is canonical and stable; comparing
+ * raw action counts against the MCP stream caused the UI to flip mid-run
+ * between sparse tool rows and human-readable story steps.
+ */
 export function pickLiveTimelineEvents(
   storeEvents: RunEvent[],
   polledEvents: RunEvent[],
@@ -79,16 +85,8 @@ export function pickLiveTimelineEvents(
   const store = filterTimelineEvents(storeEvents);
   const polled = filterTimelineEvents(polledEvents);
 
-  // IPC events arrive immediately, but one MCP call may execute a whole script
-  // and therefore produce only one coarse row. The disk timeline is rebuilt
-  // from steps.json as each story step completes and contains the canonical,
-  // human-readable action descriptions. Prefer whichever source currently has
-  // more actions; on a tie prefer the polled source because it may already have
-  // replaced a raw selector with the corresponding story step.
-  const storeActionCount = store.filter(isActionEvent).length;
-  const polledActionCount = polled.filter(isActionEvent).length;
-  if (polledActionCount > 0 && polledActionCount >= storeActionCount) return polled;
-  if (storeActionCount > 0) return store;
+  if (polled.some(isActionEvent)) return polled;
+  if (store.some(isActionEvent)) return store;
 
   // Finished records are also canonicalized from steps.json. Do not retain a
   // sparse live MCP timeline merely because it contains one event.

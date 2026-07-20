@@ -445,23 +445,17 @@ const EMPTY_SCREENSHOT_PATHS: string[] = [];
 // (with a subtle reveal) when a new file lands on disk during the run.
 function LiveScreenshotsSection({
   runId,
+  paths,
   selected,
   onSelectedChange,
-  onPathsChange,
 }: {
   runId: string;
+  paths: string[];
   selected: number;
   onSelectedChange: (index: number) => void;
-  onPathsChange?: (paths: string[]) => void;
 }) {
-  const { data } = useLiveRunScreenshotPaths(runId, true);
-  const paths = data?.paths ?? EMPTY_SCREENSHOT_PATHS;
   const [revealing, setRevealing] = React.useState(false);
   const prevLatestRef = React.useRef<string | undefined>(undefined);
-
-  React.useEffect(() => {
-    onPathsChange?.(paths);
-  }, [paths, onPathsChange]);
 
   React.useEffect(() => {
     prevLatestRef.current = undefined;
@@ -722,9 +716,8 @@ function LiveRunView({ runId }: { runId: string }) {
     refetchIntervalInBackground: true,
     retry: 2,
   });
-  // IPC supplies immediate MCP activity while the poll picks up canonical
-  // steps.json rows, including scripts that batch many browser operations into
-  // one tool call. Failed attempts stay visible instead of disappearing.
+  // Prefer the polled timeline (steps.json) once it has actions so labels stay
+  // stable; IPC alone can briefly show sparse MCP rows before steps land.
   const events = pickLiveTimelineEvents(
     rawEvents,
     liveTimelineQuery.data?.events ?? [],
@@ -734,29 +727,16 @@ function LiveRunView({ runId }: { runId: string }) {
   const [isCancelling, setIsCancelling] = React.useState(false);
   const actionsBodyRef = React.useRef<HTMLDivElement>(null);
   const finishedPaths = result ? galleryPathsForResult(runId, result) : [];
-  const [livePaths, setLivePaths] = React.useState<string[]>([]);
+  // Share the live-screenshots query with the rail so pathCount and gallery
+  // paths update in the same render (avoids clamping one behind the latest).
+  const liveShotsQuery = useLiveRunScreenshotPaths(runId, !isFinished);
+  const livePaths = liveShotsQuery.data?.paths ?? EMPTY_SCREENSHOT_PATHS;
   const screenshotPaths = isFinished ? finishedPaths : livePaths;
   const [selectedShot, setSelectedShot] = useRunScreenshotIndex(
     runId,
     screenshotPaths.length,
     { defaultToLatest: !isFinished },
   );
-
-  React.useEffect(() => {
-    setLivePaths([]);
-  }, [runId]);
-
-  const handlePathsChange = React.useCallback((paths: string[]) => {
-    setLivePaths((prev) => {
-      if (
-        prev.length === paths.length &&
-        prev.every((p, i) => p === paths[i])
-      ) {
-        return prev;
-      }
-      return paths;
-    });
-  }, []);
 
   // Auto-scroll only the Actions body. scrollIntoView would also move the
   // outer page and could push the top of the card above the viewport.
@@ -870,9 +850,9 @@ function LiveRunView({ runId }: { runId: string }) {
           {!isFinished && (
             <LiveScreenshotsSection
               runId={runId}
+              paths={livePaths}
               selected={selectedShot}
               onSelectedChange={setSelectedShot}
-              onPathsChange={handlePathsChange}
             />
           )}
           {isFinished && result && (
