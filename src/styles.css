@@ -106,47 +106,17 @@
   background: var(--color-surface-hover);
 }
 
-/* Sidebar list scroll — hidden until hover, then a soft floating thumb */
+/* Sidebar list scroll — no visible bar (wheel / trackpad still scroll).
+   macOS overlay scrollbars remain system-controlled when enabled. */
 .sidebar-scroll {
   scrollbar-width: none;
-}
-.sidebar-scroll:hover {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--color-text-tertiary) 35%, transparent)
-    transparent;
+  -ms-overflow-style: none;
 }
 .sidebar-scroll::-webkit-scrollbar {
   width: 0;
   height: 0;
+  display: none;
   background: transparent;
-}
-.sidebar-scroll:hover::-webkit-scrollbar {
-  width: 5px;
-}
-.sidebar-scroll::-webkit-scrollbar-track,
-.sidebar-scroll::-webkit-scrollbar-corner {
-  background: transparent;
-  border: none;
-}
-.sidebar-scroll::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background-clip: padding-box;
-}
-.sidebar-scroll:hover::-webkit-scrollbar-thumb {
-  background-color: color-mix(
-    in srgb,
-    var(--color-text-tertiary) 35%,
-    transparent
-  );
-}
-.sidebar-scroll::-webkit-scrollbar-thumb:active {
-  background-color: color-mix(
-    in srgb,
-    var(--color-text-secondary) 50%,
-    transparent
-  );
 }
 
 /* Segment control (Stories | Runs) */

@@ -177,7 +177,6 @@ async function main() {
     const scroller = document.querySelector("aside .sidebar-scroll");
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   });
-  await page.locator(".sidebar-scroll").hover({ force: true }).catch(() => {});
   await wait(250);
   await shot(app, "06-runs-sidebar-scrollbar");
 
