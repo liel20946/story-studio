@@ -140,7 +140,7 @@ function statusIcon(status: LiveStatus): React.ReactNode {
     case "skipped":
       return <SkipForwardIcon className="size-4 text-secondary" />;
     case "pending":
-      return <Loader2Icon className="size-4 text-tertiary" />;
+      return <span className="size-4 shrink-0" aria-hidden />;
     default:
       return <Loader2Icon className="size-4 animate-spin text-accent" />;
   }

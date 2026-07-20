@@ -526,11 +526,13 @@ function HistoryRunRow({
         </span>
         <RowAccessory
           time={
-            running || queued
+            running
               ? formatRelative(run.startedAt)
-              : formatRelative(run.finishedAt)
+              : queued
+                ? undefined
+                : formatRelative(run.finishedAt)
           }
-          isRunning={running || queued}
+          isRunning={running}
           archiveTitle="Remove run"
           confirmTitle="Remove this run?"
           confirmDescription="This run will be removed from history. This cannot be undone."
@@ -1290,6 +1292,9 @@ export function AppSidebar() {
             (r.storyName === story.name || r.storyTitle === story.title),
         )
       : undefined;
+    const live = runIdByName
+      ? allRuns[runIdByName]
+      : runByTitle;
     const runId = runIdByName ?? runByTitle?.runId;
     const selected =
       activeSelection.storyName === story.name ||
@@ -1299,7 +1304,7 @@ export function AppSidebar() {
         key={story.name}
         story={story}
         selected={selected}
-        isRunning={!!runId}
+        isRunning={!!runId && !live?.queued}
         sections={sections}
         onOpen={() => openStory(story)}
         onPrefetch={() => prefetchStory(story.name)}
