@@ -31,6 +31,7 @@ interface MockRunState {
   cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   resolve: ((result: RunResult) => void) | null;
+  variableOverrides?: Record<string, string>;
 }
 
 const _mocks = new Map<string, MockRunState>();
@@ -74,6 +75,7 @@ export async function startMockRun(
     cancelled: false,
     timer: null,
     resolve: null,
+    variableOverrides,
   };
   _mocks.set(runId, state);
 
@@ -185,5 +187,6 @@ export function listActiveMockRuns(): ActiveRunSnapshot[] {
     events: s.events,
     agentProvider: s.agentProvider,
     agentModel: s.agentModel,
+    variableOverrides: s.variableOverrides,
   }));
 }

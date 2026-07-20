@@ -108,6 +108,7 @@ interface RunState {
   itemSeq: Map<string, number>;
   // True while the run is waiting in the concurrency queue (no process yet).
   queued: boolean;
+  variableOverrides?: Record<string, string>;
 }
 const _runs = new Map<string, RunState>();
 
@@ -120,6 +121,7 @@ export function listActiveCodexRuns(): ActiveRunSnapshot[] {
     agentProvider: state.agentProvider,
     agentModel: state.agentModel,
     events: state.events.filter((e) => !isBenignCodexStderrEvent(e)),
+    variableOverrides: state.variableOverrides,
   }));
 }
 
@@ -282,6 +284,7 @@ export async function startRun(
     seq: 0,
     itemSeq: new Map<string, number>(),
     queued: true,
+    variableOverrides,
   };
   _runs.set(runId, state);
   await writeRunMeta({

@@ -677,8 +677,13 @@ export function StoryView() {
     }
     setIsStarting(true);
     try {
-      const { runId, agentProvider, agentModel } = await runStart(story.name);
-      registerRun(runId, story.name, story.title, { agentProvider, agentModel });
+      const { runId, agentProvider, agentModel, variableOverrides } =
+        await runStart(story.name);
+      registerRun(runId, story.name, story.title, {
+        agentProvider,
+        agentModel,
+        variableOverrides,
+      });
       navigate({ to: "/run/$runId", params: { runId } });
     } catch (err) {
       reportAppErrorFromUnknown("Failed to start run", err);

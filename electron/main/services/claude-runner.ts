@@ -71,6 +71,7 @@ interface RunState {
   seq: number;
   itemSeq: Map<string, number>;
   queued: boolean;
+  variableOverrides?: Record<string, string>;
 }
 
 const _runs = new Map<string, RunState>();
@@ -84,6 +85,7 @@ export function listActiveClaudeRuns(): ActiveRunSnapshot[] {
     agentProvider: state.agentProvider,
     agentModel: state.agentModel,
     events: [...state.events],
+    variableOverrides: state.variableOverrides,
   }));
 }
 
@@ -300,6 +302,7 @@ export async function startClaudeRun(
     seq: 0,
     itemSeq: new Map<string, number>(),
     queued: true,
+    variableOverrides,
   };
   _runs.set(runId, state);
   await writeRunMeta({

@@ -132,6 +132,8 @@ export interface ActiveRunSnapshot {
   events: RunEvent[];
   agentProvider?: AgentProvider;
   agentModel?: string;
+  /** Effective variable values used for this run. */
+  variableOverrides?: Record<string, string>;
 }
 
 export interface RecordingProgress {

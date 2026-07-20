@@ -166,13 +166,12 @@ function RetryRunButton({
     if (!storyName || isStarting) return;
     setIsStarting(true);
     try {
-      const { runId, agentProvider, agentModel } = await runStart(
-        storyName,
-        variableOverrides,
-      );
+      const { runId, agentProvider, agentModel, variableOverrides: startedVars } =
+        await runStart(storyName, variableOverrides);
       registerRun(runId, storyName, storyTitle ?? storyName, {
         agentProvider,
         agentModel,
+        variableOverrides: startedVars ?? variableOverrides,
       });
       navigate({ to: "/run/$runId", params: { runId } });
     } catch (err) {
@@ -540,7 +539,49 @@ function LiveScreenshotsSection({ runId }: { runId: string }) {
   );
 }
 
-// ---------- result panel: Assertions + step-linked screenshots ----------
+// ---------- run variables (values used for this specific run) ----------
+function isSecretVariableKey(key: string): boolean {
+  return /password|secret|token/i.test(key);
+}
+
+function RunVariablesSection({
+  variables,
+}: {
+  variables?: Record<string, string>;
+}) {
+  const entries = Object.entries(variables ?? {}).filter(([key]) => key.trim());
+  if (entries.length === 0) return null;
+
+  return (
+    <Section title="Variables">
+      <div className="flex flex-col">
+        {entries.map(([key, value]) => {
+          const secret = isSecretVariableKey(key);
+          return (
+            <div
+              key={key}
+              className="group/var flex items-center gap-1.5 py-0.5 min-w-0 rounded-control transition-colors hover:bg-surface-hover"
+            >
+              <span className="w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px] text-primary font-medium">
+                {key}
+              </span>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px]",
+                  value ? "text-secondary" : "text-quaternary",
+                )}
+              >
+                {value ? (secret ? "••••••" : value) : "empty"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+// ---------- result panel: Variables + Assertions + step-linked screenshots ----------
 function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
   const cancelled = result.status === "cancelled";
   const stepShots =
@@ -565,6 +606,8 @@ function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
 
   return (
     <>
+      <RunVariablesSection variables={result.variableOverrides} />
+
       <Section title="Assertions">
         <div className="flex flex-col">
           {result.assertions.map((a, i) => (
@@ -796,6 +839,11 @@ function LiveRunView({ runId }: { runId: string }) {
             agentProvider={agentProvider}
             agentModel={agentModel}
           />
+          {!isFinished && (
+            <RunVariablesSection
+              variables={run?.variableOverrides ?? result?.variableOverrides}
+            />
+          )}
           {!isFinished && <LiveScreenshotsSection runId={runId} />}
           {isFinished && result && <ResultPanel runId={runId} result={result} />}
         </div>

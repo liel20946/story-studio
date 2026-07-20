@@ -42,6 +42,7 @@ export function listRecoveredRuns(): ActiveRunSnapshot[] {
     agentProvider: meta.agentProvider,
     agentModel: meta.agentModel,
     events,
+    variableOverrides: meta.variableOverrides,
   }));
 }
 

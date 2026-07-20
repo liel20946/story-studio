@@ -160,8 +160,12 @@ export const recordingAbort = (): Promise<{ ok: true }> =>
 export const runStart = (
   storyName: string,
   variableOverrides?: Record<string, string>,
-): Promise<{ runId: string; agentProvider: import("./contract-types").AgentProvider; agentModel: string }> =>
-  ipcInvoke("run:start", { storyName, variableOverrides });
+): Promise<{
+  runId: string;
+  agentProvider: import("./contract-types").AgentProvider;
+  agentModel: string;
+  variableOverrides?: Record<string, string>;
+}> => ipcInvoke("run:start", { storyName, variableOverrides });
 
 export const runBulkStart = (
   storyNames: string[],

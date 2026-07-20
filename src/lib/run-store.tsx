@@ -32,6 +32,8 @@ export interface ActiveRunState {
   result: RunResult | null; // null while running
   agentProvider?: AgentProvider;
   agentModel?: string;
+  /** Effective variable values used for this run. */
+  variableOverrides?: Record<string, string>;
 }
 
 interface RunStoreValue {
@@ -41,7 +43,11 @@ interface RunStoreValue {
     runId: string,
     storyName: string,
     storyTitle: string,
-    agent?: { agentProvider: AgentProvider; agentModel: string },
+    agent?: {
+      agentProvider: AgentProvider;
+      agentModel: string;
+      variableOverrides?: Record<string, string>;
+    },
   ) => void;
 }
 
@@ -70,6 +76,8 @@ function applySnapshot(
       startedAt: snapshot.startedAt || existing?.startedAt || Date.now(),
       agentProvider: snapshot.agentProvider ?? existing?.agentProvider,
       agentModel: snapshot.agentModel ?? existing?.agentModel,
+      variableOverrides:
+        snapshot.variableOverrides ?? existing?.variableOverrides,
       events: mergedEvents,
       result: null,
     },
@@ -85,7 +93,11 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
       runId: string,
       storyName: string,
       storyTitle: string,
-      agent?: { agentProvider: AgentProvider; agentModel: string },
+      agent?: {
+        agentProvider: AgentProvider;
+        agentModel: string;
+        variableOverrides?: Record<string, string>;
+      },
     ) => {
       setRuns((prev) => {
         const existing = prev[runId];
@@ -99,6 +111,8 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
             startedAt: existing?.startedAt ?? Date.now(),
             agentProvider: agent?.agentProvider ?? existing?.agentProvider,
             agentModel: agent?.agentModel ?? existing?.agentModel,
+            variableOverrides:
+              agent?.variableOverrides ?? existing?.variableOverrides,
             events: existing?.events ?? [],
             result: null,
           },
@@ -184,6 +198,8 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
               storyTitle: base.storyTitle || res.storyTitle,
               agentProvider: res.agentProvider ?? base.agentProvider,
               agentModel: res.agentModel ?? base.agentModel,
+              variableOverrides:
+                res.variableOverrides ?? base.variableOverrides,
               events: mergedEvents,
               result: res,
             },

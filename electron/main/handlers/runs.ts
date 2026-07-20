@@ -203,6 +203,7 @@ export function registerRunsHandlers(): void {
       runId,
       agentProvider: settings.agentProvider,
       agentModel: agentConfig.model,
+      variableOverrides,
     };
   });
 

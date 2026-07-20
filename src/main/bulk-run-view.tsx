@@ -773,6 +773,7 @@ export function BulkRunView() {
           registerRun(item.runId, item.storyName, item.storyTitle, {
             agentProvider: result.agentProvider,
             agentModel: result.agentModel,
+            variableOverrides: item.variableOverrides,
           });
         }
         bulkLaunched = result.items.map((item) => ({
@@ -847,6 +848,7 @@ export function BulkRunView() {
         registerRun(item.runId, item.storyName, item.storyTitle, {
           agentProvider: result.agentProvider,
           agentModel: result.agentModel,
+          variableOverrides: item.variableOverrides,
         });
       }
       const kept = session.items.filter(
