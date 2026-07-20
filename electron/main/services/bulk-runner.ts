@@ -4,12 +4,19 @@ import { broadcast } from "../broadcast.js";
 import { getRunsDir } from "./paths.js";
 import { startAgentRun, cancelAgentRun } from "./agent-runner.js";
 import { shouldStopBulk } from "./bulk-stop-condition.js";
+import { buildScreenshotUrl, saveRun } from "./run-service.js";
+import {
+  ensureRunOutputDir,
+  getHeroScreenshotPath,
+} from "./run-artifacts.js";
+import { writeRunMeta, deleteRunMeta, withRunVariables } from "./run-meta.js";
 import type {
   AgentProvider,
   BulkRunOptions,
   BulkSessionSnapshot,
   BulkSessionStatus,
   BulkStopCause,
+  RunEvent,
   RunResult,
 } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
@@ -157,6 +164,18 @@ export async function stopBulkRun(
       item.phase = "skipped";
     } else if (item.phase === "pending") {
       item.phase = "skipped";
+      // Clear UI-queued active runs that never started an agent process.
+      await finalizeNeverStartedRun(
+        item,
+        session.provider,
+        session.agentConfig?.model,
+        "Skipped — bulk stopped",
+      ).catch((err) => {
+        console.error("[bulk] failed to finalize skipped pending run", {
+          runId: item.runId,
+          err: String(err),
+        });
+      });
     }
   }
 
@@ -209,6 +228,103 @@ export async function resumeBulkRun(
   });
 
   await runBulkWorkers(session);
+}
+
+
+/** Finalize a bulk item that never reached startAgentRun (UI-queued only). */
+async function finalizeNeverStartedRun(
+  item: BulkItemState,
+  provider: AgentProvider,
+  agentModel: string | undefined,
+  summary = "Cancelled by user",
+): Promise<RunResult> {
+  const startedAt = Date.now();
+  await ensureRunOutputDir(item.runId);
+  await writeRunMeta({
+    runId: item.runId,
+    storyName: item.storyName,
+    storyTitle: item.storyTitle,
+    startedAt,
+    agentProvider: provider,
+    agentModel: agentModel ?? "unknown",
+    variableOverrides: item.variableOverrides,
+  });
+
+  const screenshotPath = getHeroScreenshotPath(item.runId);
+  const endEvent: RunEvent = {
+    runId: item.runId,
+    seq: 1,
+    ts: Date.now(),
+    kind: "status",
+    label: "Cancelled",
+    detail: summary,
+    status: "cancelled",
+  };
+  broadcast("run:event", endEvent);
+
+  const result: RunResult = {
+    runId: item.runId,
+    storyName: item.storyName,
+    storyTitle: item.storyTitle,
+    status: "cancelled",
+    summary,
+    assertions: [],
+    screenshotPath,
+    screenshotUrl: buildScreenshotUrl(item.runId, screenshotPath),
+    startedAt,
+    finishedAt: Date.now(),
+    error: summary,
+    agentProvider: provider,
+    agentModel: agentModel ?? "unknown",
+    variableOverrides: item.variableOverrides,
+  };
+
+  const withVars = await withRunVariables(result);
+  await saveRun({ ...withVars, events: [endEvent] });
+  broadcast("run:result", withVars);
+  await deleteRunMeta(item.runId).catch(() => undefined);
+  item.result = withVars;
+  return withVars;
+}
+
+/**
+ * Cancel a bulk story that is still pending (registered in the UI as Queued
+ * but not yet handed to startAgentRun). Without this, run:cancel fails with
+ * "Run is not active" because no agent runner owns the runId yet.
+ */
+export async function cancelPendingBulkRun(runId: string): Promise<boolean> {
+  for (const session of _sessions.values()) {
+    const item = session.items.find((i) => i.runId === runId);
+    if (!item) continue;
+    if (item.phase !== "pending") return false;
+
+    item.phase = "done";
+    await finalizeNeverStartedRun(
+      item,
+      session.provider,
+      session.agentConfig?.model,
+    );
+    await persistPlan(session);
+    publish(session);
+
+    // If everything is settled, mark the bulk completed/stopped.
+    if (session.status === "running") {
+      const anyPendingOrRunning = session.items.some(
+        (i) => i.phase === "pending" || i.phase === "running",
+      );
+      if (!anyPendingOrRunning) {
+        const anySkipped = session.items.some((i) => i.phase === "skipped");
+        session.status = anySkipped ? "stopped" : "completed";
+        if (session.status === "completed") {
+          _sessions.delete(session.bulkId);
+        }
+        await persistPlan(session);
+        publish(session);
+      }
+    }
+    return true;
+  }
+  return false;
 }
 
 export function getBulkSession(bulkId: string): BulkSessionSnapshot | null {

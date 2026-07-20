@@ -4,7 +4,7 @@ import { readFile, readdir, access } from "fs/promises";
 import * as path from "path";
 import { listRuns, getRun, deleteRun, clearRuns } from "../services/run-service.js";
 import { getStory } from "../services/stories-service.js";
-import { startBulkRun, stopBulkRun, resumeBulkRun } from "../services/bulk-runner.js";
+import { startBulkRun, stopBulkRun, resumeBulkRun, cancelPendingBulkRun } from "../services/bulk-runner.js";
 import { startAgentRun, cancelAgentRun, listActiveRuns } from "../services/agent-runner.js";
 import { resolveAgentBinary } from "../services/agent-provider.js";
 import { buildLastRunMap } from "../services/run-service.js";
@@ -374,7 +374,12 @@ export function registerRunsHandlers(): void {
     const { runId } = params as { runId: string };
     const cancelled = await cancelAgentRun(runId);
     if (!cancelled) {
-      throw new Error(`Run is not active: ${runId}`);
+      // Bulk serial queue registers runIds in the UI before startAgentRun —
+      // cancel those pending items here so Queued runs can be dismissed.
+      const pendingCancelled = await cancelPendingBulkRun(runId);
+      if (!pendingCancelled) {
+        throw new Error(`Run is not active: ${runId}`);
+      }
     }
     return { ok: true as const };
   });

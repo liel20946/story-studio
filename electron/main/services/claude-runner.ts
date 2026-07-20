@@ -40,6 +40,7 @@ import { ensurePlaywrightReady } from "./playwright-preflight.js";
 import { RUN_OUTPUT_SCHEMA } from "./codex-runner.js";
 import {
   acquireRunSlot,
+  abandonRunSlotWait,
   isRunSlotBusy,
   releaseRunSlot,
 } from "./run-slots.js";
@@ -397,12 +398,12 @@ export async function startClaudeRun(
     pushStatus("Queued", "Waiting for another run to finish…");
   }
 
-  await acquireRunSlot();
+  const acquired = await acquireRunSlot(runId);
   state.queued = false;
 
-  if (state.cancelled) {
+  if (!acquired || state.cancelled) {
+    if (acquired) releaseRunSlot();
     _runs.delete(runId);
-    releaseRunSlot();
     const cancelledResult: RunResult = {
       runId,
       storyName,
@@ -694,7 +695,8 @@ export function cancelClaudeRun(runId: string): boolean {
     syncRunTimeline(runId, state.events);
   }
   if (!state.process) {
-    console.log("[claude:run] cancel — run still queued, will finalize cancelled", { runId });
+    abandonRunSlotWait(runId);
+    console.log("[claude:run] cancel — abandoned queue wait", { runId });
     return true;
   }
 

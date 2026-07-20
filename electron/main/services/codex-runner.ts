@@ -67,11 +67,13 @@ export {
   MAX_CONCURRENT_RUNS,
   isRunSlotBusy,
   acquireRunSlot,
+  abandonRunSlotWait,
   releaseRunSlot,
 } from "./run-slots.js";
 import {
   isRunSlotBusy,
   acquireRunSlot,
+  abandonRunSlotWait,
   releaseRunSlot,
 } from "./run-slots.js";
 
@@ -362,12 +364,12 @@ export async function startRun(
     pushStatus("Queued", "Waiting for another run to finish…");
   }
 
-  await acquireRunSlot();
+  const acquired = await acquireRunSlot(runId);
   state.queued = false;
 
-  if (state.cancelled) {
+  if (!acquired || state.cancelled) {
+    if (acquired) releaseRunSlot();
     _runs.delete(runId);
-    releaseRunSlot();
     const cancelledResult: RunResult = {
       runId,
       storyName,
@@ -916,10 +918,10 @@ export function cancelRun(runId: string): boolean {
     syncRunTimeline(runId, state.events);
   }
 
-  // A queued run has no process yet — marking it cancelled is enough; when its
-  // slot opens, startRun finalizes it as cancelled without spawning codex.
+  // Queued: leave the slot wait immediately so startRun finalizes cancelled now.
   if (!state.process) {
-    console.log("[codex:run] cancel — run still queued, will finalize cancelled", { runId });
+    abandonRunSlotWait(runId);
+    console.log("[codex:run] cancel — abandoned queue wait", { runId });
     return true;
   }
 
