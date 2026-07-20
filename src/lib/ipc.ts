@@ -137,6 +137,12 @@ export const browserTestExtensionConnection = (): Promise<{
   message: string;
 }> => ipcInvoke("browser:testExtensionConnection");
 
+export const browserCodexChromeStatus = (): Promise<{
+  installed: boolean;
+  profile?: string;
+  message: string;
+}> => ipcInvoke("browser:codexChromeStatus");
+
 export const recordingStart = (params: {
   name: string;
   url: string;

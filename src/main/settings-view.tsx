@@ -11,6 +11,7 @@ import {
 } from "@/components/ui";
 import {
   browserClearExtensionToken,
+  browserCodexChromeStatus,
   browserExtensionTokenStatus,
   browserSetExtensionToken,
   browserTestExtensionConnection,
@@ -49,6 +50,7 @@ import {
   getEffortSegmentOptions,
   getModelOptions,
   effortSegmentClass,
+  segmentClassForCount,
 } from "../lib/agent-config";
 import { applyAppearance, activeColorThemeForMode, resolveTheme } from "../lib/theme";
 import { ColorThemePicker } from "../components/color-theme-picker";
@@ -144,7 +146,6 @@ function AgentPanel({
   claudeEffort,
   browserMode,
   capabilities,
-  capabilitiesError,
   onProviderChange,
   onCodexModelChange,
   onCodexEffortChange,
@@ -159,7 +160,6 @@ function AgentPanel({
   claudeEffort: ClaudeEffort;
   browserMode: BrowserMode;
   capabilities: AgentCapabilities | null;
-  capabilitiesError?: string;
   onProviderChange: (provider: AgentProvider) => void;
   onCodexModelChange: (model: CodexModel) => void;
   onCodexEffortChange: (effort: CodexEffort) => void;
@@ -175,6 +175,10 @@ function AgentPanel({
   const [connectionStatus, setConnectionStatus] = useState<
     "success" | "error" | null
   >(null);
+  const [codexChromeInstalled, setCodexChromeInstalled] = useState<
+    boolean | null
+  >(null);
+  const [checkingCodexChrome, setCheckingCodexChrome] = useState(false);
   const model =
     provider === "claude-code" ? claudeModel : codexModel;
   const effort =
@@ -196,6 +200,28 @@ function AgentPanel({
         reportAppErrorFromUnknown("Could not read extension token status", error),
       );
   }, [browserMode]);
+
+  useEffect(() => {
+    if (browserMode !== "codex-chrome") {
+      setCodexChromeInstalled(null);
+      return;
+    }
+    void browserCodexChromeStatus()
+      .then((status) => setCodexChromeInstalled(status.installed))
+      .catch(() => setCodexChromeInstalled(false));
+  }, [browserMode]);
+
+  const refreshCodexChromeStatus = async () => {
+    setCheckingCodexChrome(true);
+    try {
+      const status = await browserCodexChromeStatus();
+      setCodexChromeInstalled(status.installed);
+    } catch {
+      setCodexChromeInstalled(false);
+    } finally {
+      setCheckingCodexChrome(false);
+    }
+  };
 
   const saveExtensionToken = async () => {
     const token = extensionToken.trim();
@@ -297,24 +323,32 @@ function AgentPanel({
 
         <SettingsRow
           label="Browser"
-          description="Use a private browser or your signed-in Chrome tab."
+          description="Private browser, Playwright Chrome bridge, or Codex Chrome extension."
         >
           <LabeledSegment
             value={browserMode}
             options={[
               { value: "private", label: "Private" },
-              { value: "existing-chrome", label: "Chrome tab" },
+              { value: "existing-chrome", label: "Playwright" },
+              { value: "codex-chrome", label: "Codex" },
             ]}
+            segmentClass={segmentClassForCount(3)}
             ariaLabel="Browser mode"
-            onChange={onBrowserModeChange}
+            onChange={(next) => {
+              if (next === "codex-chrome" && provider !== "codex") {
+                toast.error("Codex Chrome requires the Codex provider.");
+                return;
+              }
+              onBrowserModeChange(next);
+            }}
           />
         </SettingsRow>
 
         {browserMode === "existing-chrome" ? (
           <>
             <SettingsRow
-              label="Chrome extension"
-              description="Required for Chrome tab mode."
+              label="Playwright extension"
+              description="Required for Playwright Chrome bridge mode."
             >
               <Button
                 variant="filled"
@@ -434,10 +468,58 @@ function AgentPanel({
           </>
         ) : null}
 
-        {capabilitiesError ? (
-          <p className="settings-row-desc px-4 pb-3 text-[var(--color-text-secondary)]">
-            Model list loaded at startup with issues; showing fallback options. {capabilitiesError}
-          </p>
+        {browserMode === "codex-chrome" ? (
+          <>
+            <SettingsRow
+              label="Codex extension"
+              description="Install the official Codex Chrome extension. No token needed."
+            >
+              <Button
+                variant="filled"
+                size="small"
+                onClick={() =>
+                  void setupOpenUrl(
+                    "https://chromewebstore.google.com/detail/codex/hehggadaopoacecdllhhajmbjkdcmajg",
+                  )
+                }
+              >
+                Install extension
+              </Button>
+            </SettingsRow>
+
+            <SettingsRow label="Status">
+              <div className="flex items-center gap-2">
+                {codexChromeInstalled === true ? (
+                  <CheckIcon
+                    className="size-4 text-green-500"
+                    aria-label="Extension installed"
+                  />
+                ) : null}
+                <span className="text-small text-secondary">
+                  {codexChromeInstalled === true
+                    ? "Installed"
+                    : codexChromeInstalled === false
+                      ? "Not found"
+                      : "Checking…"}
+                </span>
+                <Button
+                  variant="filled"
+                  size="small"
+                  disabled={checkingCodexChrome}
+                  onClick={() => void refreshCodexChromeStatus()}
+                >
+                  {checkingCodexChrome ? (
+                    <>
+                      <Loader2Icon className="size-3.5 animate-spin" />
+                      Checking…
+                    </>
+                  ) : (
+                    "Check again"
+                  )}
+                </Button>
+              </div>
+            </SettingsRow>
+          </>
         ) : null}
       </SettingsGroup>
     </div>
@@ -659,7 +741,6 @@ export function SettingsView() {
   const resolvedSettings = normalizeAppSettings(appSettings);
   const agentProvider = resolvedSettings.agentProvider;
   const agentCapabilities = useAgentCapabilities(agentProvider);
-  const capabilitiesError = agentCapabilities?.error;
 
   const commitAppSettings = (settings: AppSettings) => {
     const normalized = setCachedAppSettings(settings);
@@ -684,9 +765,16 @@ export function SettingsView() {
 
   const handleProviderChange = async (agentProvider: AgentProvider) => {
     if (agentProvider === appSettings?.agentProvider) return;
-    setAppSettings((prev) => (prev ? { ...prev, agentProvider } : prev));
+    const patch: Partial<AppSettings> = { agentProvider };
+    if (
+      agentProvider === "claude-code" &&
+      resolvedSettings.browserMode === "codex-chrome"
+    ) {
+      patch.browserMode = "private";
+    }
+    setAppSettings((prev) => (prev ? { ...prev, ...patch } : prev));
     try {
-      const updated = await settingsSet({ agentProvider });
+      const updated = await settingsSet(patch);
       commitAppSettings(updated);
     } catch (error) {
       void refreshAppSettings();
@@ -986,7 +1074,6 @@ export function SettingsView() {
               claudeEffort={resolvedSettings.claudeEffort}
               browserMode={resolvedSettings.browserMode}
               capabilities={agentCapabilities}
-              capabilitiesError={capabilitiesError ?? settingsError ?? undefined}
               onProviderChange={handleProviderChange}
               onCodexModelChange={handleCodexModelChange}
               onCodexEffortChange={handleCodexEffortChange}

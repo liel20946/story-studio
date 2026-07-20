@@ -264,6 +264,11 @@
   grid-template-columns: repeat(5, 1fr);
 }
 
+.segment-control.segment-control--labeled.segment-control--six {
+  --segment-count: 6;
+  grid-template-columns: repeat(6, 1fr);
+}
+
 .segment-control.segment-control--labeled .segment-control-thumb {
   top: var(--segment-pad);
   left: var(--segment-pad);
@@ -1284,7 +1289,9 @@
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--color-border-field) 82%, transparent);
   border-radius: 1rem;
-  background: var(--color-surface-control);
+  /* Opaque surface so chat content never shows through (cursor theme control
+     tokens are intentionally translucent for chrome, not for floating panels). */
+  background: var(--bg-elevated);
   padding: 0.5rem 0.625rem;
   transition: border-color 150ms ease, opacity 150ms ease;
 }
@@ -1613,7 +1620,7 @@
 
 .settings-page-inner {
   width: 100%;
-  max-width: 34rem;
+  max-width: 44rem;
   margin: 0 auto;
 }
 

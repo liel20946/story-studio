@@ -457,6 +457,9 @@ async function ensureHeadlessChromium(
 async function quickVerify(
   browserMode: BrowserMode,
 ): Promise<PlaywrightPreflightResult> {
+  if (browserMode === "codex-chrome") {
+    return { ok: true, message: "Codex Chrome extension mode — Playwright not required." };
+  }
   if (browserMode === "existing-chrome") {
     return { ok: true, message: "Playwright MCP ready for Chrome." };
   }
@@ -479,6 +482,14 @@ async function runPreflight(options: {
   const browserMode =
     options.browserMode ?? getSettingsValue().browserMode;
   let remediated = false;
+
+  if (browserMode === "codex-chrome") {
+    markCacheOk(browserMode);
+    return {
+      ok: true,
+      message: "Codex Chrome extension mode — Playwright not required.",
+    };
+  }
 
   if (cacheFresh(browserMode)) {
     const cached = await quickVerify(browserMode);

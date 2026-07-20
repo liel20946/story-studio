@@ -10,8 +10,8 @@ export type SettingsNavItem = {
 };
 
 export const SETTINGS_NAV: SettingsNavItem[] = [
-  { id: "appearance", label: "Appearance", icon: PaletteIcon },
   { id: "agent", label: "Agent", icon: BotIcon },
+  { id: "appearance", label: "Appearance", icon: PaletteIcon },
   { id: "recording", label: "Recording", icon: CircleDotIcon },
   { id: "data", label: "Data", icon: FolderInputIcon },
   { id: "setup", label: "Setup", icon: WrenchIcon },

@@ -43,7 +43,54 @@ Rules:
 // Legacy alias for recording conversion prompts
 export const STORY_FORMAT = BOWSER_STORY_FORMAT;
 
-const RUN_STORY_PLAYBOOK_SHARED = `## How to run the story
+const RUN_STORY_PLAYBOOK_SHARED_CORE = `## How to run the story
+- Follow **Execution order** — the numbered list that interleaves steps and assertions. Run every line through the last one.
+- Execute that numbered list strictly from top to bottom. Never attempt, probe, or pre-run a later interaction before the current line succeeds.
+- Every browser interaction (Navigate, Click, Fill, Press, or Select) must implement the current Execution order line. Use non-mutating page inspection to understand state; do not click or type merely to explore.
+- Execute exactly ONE Execution order line per browser action. Never batch multiple story lines into one tool call; Story Studio uses each completed action to report live progress.
+- Immediately after each Execution order line finishes, update \`steps.json\` with that line's real result before starting the next line. Do not synthesize the full timeline at the end.
+- Treat each line as intent, not an exact script. Adapt to minor UI changes while preserving the goal.
+- Prefer accessible role/name, labels, visible text, and URL context over coordinates or brittle element refs.
+- Use variables defined in the story, including test-account credentials.
+- If the story includes login steps, start from the logged-out login page and perform the login.
+- Ignore browser automation UI (e.g. "--no-sandbox" infobars).
+
+## Verify steps and dynamic assertions
+- For Verify steps, check visible text or page state directly.
+- Dynamic values (dates, times, counts, totals, prices, IDs): verify format/pattern/relative condition, not exact literals.
+- Stop on first failed Verify and mark status failed or blocked if environment prevents progress.
+
+## Screenshots and steps.json (required)
+- Create a \`screenshots/\` directory in the run output directory before executing steps.
+- Capture checkpoint screenshots at meaningful moments:
+  1. **Navigate** — after the new page has loaded.
+  2. **Verify** — after each assertion in Execution order passes (evidence for the report).
+  3. **Form groups** — after filling all fields in a form/dialog/section, **immediately before** clicking Submit / Save / Continue / Log In / Issue / Confirm (one screenshot per form, not per field). This is **not** the hero screenshot.
+  4. **Major UI change** — modal opened, wizard step advanced (optional checkpoint only).
+  5. **Failure** — always, immediately before stopping.
+- Skip screenshots for intermediate Fill / Click / Press / Select steps inside a form group, focus changes, scrolling, and waiting.
+- Aim for roughly **3–8 checkpoint screenshots** on a typical story, not one per workflow line.
+- Save each checkpoint as \`screenshots/step-{index}-{slug}.png\` under the run output directory.
+- In steps.json, attach the corresponding path as \`screenshots/step-{index}-{slug}.png\` only on that checkpoint entry.
+
+## Hero screenshot (critical — read carefully)
+- The hero screenshot is **separate** from form-group / pre-submit checkpoints.
+- Capture it **only after the last line in Execution order** completes successfully (usually the final Verify).
+- After the last submit/navigation action, **wait for the UI to settle** (a few seconds, or until the element the final Verify checks is visible) **before** the final Verify and hero capture.
+- The hero must show the **post-condition** the story ends on — e.g. the new row in a table, success toast visible, landed page after the last click — **not** a dialog about to be submitted and not an earlier page.
+- Take a **fresh** screenshot and save it to the hero path. Do **not** copy or reuse an earlier checkpoint file (especially not a pre-submit form screenshot).
+- Attach the hero path only on the **last** steps.json entry and in structured output \`screenshotPath\`.
+
+## steps.json
+- Write \`steps.json\` as a non-empty array covering every line in Execution order (actions and Verify steps). Each entry: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
+- **Live progress:** after each step finishes, rewrite the full \`steps.json\` file to disk (not only at process exit). In generated Node scripts, call \`fs.writeFileSync(stepsPath, JSON.stringify(steps, null, 2))\` in each step's \`finally\` block so Story Studio can show actions in real time.
+
+## Report
+- Report pass/fail with concise evidence for each Verify step.
+- Do not create real customer-facing side effects unless the story explicitly requires them.
+- Work silently during execution — do not narrate your plan in chat.`;
+
+const RUN_STORY_PLAYBOOK_SHARED_MCP = `## How to run the story
 - Follow **Execution order** — the numbered list that interleaves steps and assertions. Run every line through the last one.
 - Execute that numbered list strictly from top to bottom. Never attempt, probe, or pre-run a later interaction before the current line succeeds.
 - Every browser interaction (Navigate, Click, Fill, Press, or Select) must implement the current Execution order line. Use non-mutating snapshots to inspect the page; do not click or type merely to explore.
@@ -96,7 +143,24 @@ Many web apps are React SPAs with controlled inputs. Fill tools and type tools f
   const set = (el, value) => { const d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value'); d.set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
 Locate inputs by name / type / placeholder / aria-label. Verify values before submit.`;
 
+const RUN_STORY_PLAYBOOK_CODEX_CHROME = `## Execution tool — Codex Chrome extension
+- Drive the user's signed-in Google Chrome via the **Codex Chrome extension** (\`@Chrome\`).
+- Use Chrome for every Navigate / Click / Fill / Press / Select / Verify action in the story.
+- Reuse the user's authenticated Chrome session. Do not clear cookies, storage, or browser data. Do not close unrelated tabs.
+- Prefer structured Chrome / page tools over coordinate clicking. After each consequential action, confirm the page changed before continuing.
+- Save screenshots as PNG files under the run output \`screenshots/\` directory (and the hero path) using the tools available to you.
+- Do NOT use Playwright MCP, the in-app \`@Browser\`, Computer Use (\`@Computer\`), Playwright CLI, or any other browser-driving tool.
+- Do not register or call any MCP browser server.`;
+
 export function buildRunStoryPlaybook(browserMode: BrowserMode): string {
+  if (browserMode === "codex-chrome") {
+    return `You are running a saved web UI "story" — an intent-level browser test. Follow these rules exactly.
+
+${RUN_STORY_PLAYBOOK_CODEX_CHROME}
+
+${RUN_STORY_PLAYBOOK_SHARED_CORE}`;
+  }
+
   const browserDescription =
     browserMode === "existing-chrome"
       ? `## Execution tool — existing Chrome tab via Playwright MCP
@@ -113,7 +177,7 @@ ${browserDescription}
 - Do NOT use the Codex Browser plugin, the in-app browser, computer use, Playwright CLI, or any other browser-driving tool.
 - Do not use any MCP server other than "playwright".
 
-${RUN_STORY_PLAYBOOK_SHARED}
+${RUN_STORY_PLAYBOOK_SHARED_MCP}
 
 ${RUN_STORY_PLAYBOOK_FORM_FILL_MCP}`;
 }
@@ -158,6 +222,17 @@ ${BOWSER_STORY_FORMAT}
 - When the story is complete, return ONLY the YAML document — no markdown fences, no explanation.`;
 
 export function buildGenerateStoryPlaybook(browserMode: BrowserMode): string {
+  if (browserMode === "codex-chrome") {
+    return `You are generating a Bowser YAML v2 UI story by exploring a website with the Codex Chrome extension.
+
+## Browser tool
+- Drive the user's signed-in Google Chrome via the **Codex Chrome extension** (\`@Chrome\`).
+- Reuse the user's authenticated Chrome session. Do not clear cookies, storage, or browser data.
+- Do NOT use Playwright MCP, the in-app \`@Browser\`, Computer Use, or any other browser-driving tool.
+
+${GENERATE_STORY_TASK}`;
+  }
+
   const browserDescription =
     browserMode === "existing-chrome"
       ? `- Use ONLY the Playwright MCP server named "playwright". It is connected to a user-selected Chrome tab with the user's existing authenticated session.

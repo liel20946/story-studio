@@ -16,6 +16,7 @@ import {
   releasePlaywrightSlot,
 } from "./playwright-slots.js";
 import { ensurePlaywrightReady } from "./playwright-preflight.js";
+import { probeCodexChromeExtension } from "./codex-chrome-extension.js";
 import {
   normalizeBowserEntryForStorage,
   slugify,
@@ -372,13 +373,25 @@ export async function sendGenerateMessage(
   _activeGenerations.set(conversationId, { playwrightHeld: false });
   try {
     if (exploring) {
-      const prep = await ensurePlaywrightReady({
-        onProgress: (p) => {
-          broadcast("generate:progress", { conversationId, message: p.message });
-        },
-      });
-      if (!prep.ok) {
-        throw new Error(prep.error ?? prep.message);
+      if (agentSettings.browserMode === "codex-chrome") {
+        if (agentSettings.agentProvider !== "codex") {
+          throw new Error(
+            "Codex Chrome browser mode requires the Codex provider. Switch Agent → Provider to Codex, or choose Private / Playwright.",
+          );
+        }
+        const chromeExt = await probeCodexChromeExtension();
+        if (!chromeExt.installed) {
+          throw new Error(chromeExt.message);
+        }
+      } else {
+        const prep = await ensurePlaywrightReady({
+          onProgress: (p) => {
+            broadcast("generate:progress", { conversationId, message: p.message });
+          },
+        });
+        if (!prep.ok) {
+          throw new Error(prep.error ?? prep.message);
+        }
       }
       await acquirePlaywrightSlot();
       playwrightHeld = true;

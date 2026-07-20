@@ -8,6 +8,7 @@ import {
   ensureCodexProjectConfig,
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
+import { getSettingsValue } from "../handlers/settings.js";
 import { writeClaudeMcpConfigFile } from "./browser-mcp-config.js";
 import {
   extractYamlFromAgentMessage,
@@ -284,12 +285,24 @@ async function invokeCodex(
   // Always isolate from the user's global ~/.codex/config.toml (see codex-runner.ts
   // for why). Playwright access is self-contained via inline `-c mcp_servers.*`
   // injection below, so exploring never depends on external Codex config.
+  // Codex Chrome mode skips MCP and enables the Chrome extension feature instead.
   const sharedFlags = buildCodexSharedFlags(agentConfig);
-  const mcpArgs = exploring ? await buildCodexPlaywrightMcpConfigArgs() : [];
+  const browserMode = getSettingsValue().browserMode;
+  const useCodexChrome = browserMode === "codex-chrome";
+  const mcpArgs = exploring
+    ? useCodexChrome
+      ? [
+          "-c",
+          "features.browser_use_external=true",
+          "-c",
+          "features.browser_use=false",
+        ]
+      : await buildCodexPlaywrightMcpConfigArgs()
+    : [];
 
   const spawnEnv = {
     ...buildBaseAgentSpawnEnv(),
-    ...(exploring ? await playwrightMcpSecretEnv() : {}),
+    ...(exploring && !useCodexChrome ? await playwrightMcpSecretEnv() : {}),
   };
 
   if (resumeSession && sessionId) {

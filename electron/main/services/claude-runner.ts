@@ -429,6 +429,39 @@ export async function startClaudeRun(
   };
 
   prepEvent("Preparing browser environment…");
+  if (getSettingsValue().browserMode === "codex-chrome") {
+    releaseRunSlot();
+    const msg =
+      "Codex Chrome browser mode requires the Codex provider. Switch Agent → Provider to Codex, or choose Private / Playwright.";
+    const failEvent: RunEvent = {
+      runId,
+      seq: state.seq++,
+      ts: Date.now(),
+      kind: "status",
+      label: "Failed",
+      detail: msg,
+      status: "failed",
+    };
+    events.push(failEvent);
+    broadcast("run:event", failEvent);
+    syncRunTimeline(runId, events);
+    const failResult: RunResult = {
+      runId,
+      storyName,
+      storyTitle,
+      status: "error",
+      summary: "",
+      assertions: [],
+      screenshotPath,
+      screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+      startedAt,
+      finishedAt: Date.now(),
+      error: msg,
+      agentProvider: state.agentProvider,
+      agentModel: state.agentModel,
+    };
+    return finalizeRun(failResult, events);
+  }
   const prep = await ensurePlaywrightReady({
     onProgress: (p) => prepEvent(p.message),
   });

@@ -195,7 +195,7 @@ import type {
 } from "./agent-config";
 import type { ColorThemeId, ColorThemePalette } from "./color-themes";
 
-export type BrowserMode = "private" | "existing-chrome";
+export type BrowserMode = "private" | "existing-chrome" | "codex-chrome";
 
 export interface AppSettings {
   agentProvider: AgentProvider;

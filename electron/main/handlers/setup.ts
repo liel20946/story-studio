@@ -12,6 +12,7 @@ import {
   saveBrowserExtensionToken,
 } from "../services/browser-extension-auth.js";
 import { probeExistingChromeConnection } from "../services/playwright-preflight.js";
+import { probeCodexChromeExtension } from "../services/codex-chrome-extension.js";
 
 const SETUP_ITEM_IDS = new Set<SetupItemId>([
   "codex",
@@ -90,5 +91,9 @@ export function registerSetupHandlers(): void {
             result.error ??
             "Could not connect to Chrome. Install the Playwright MCP Bridge extension and try again.",
         };
+  });
+
+  ipcMain.handle("browser:codexChromeStatus", async () => {
+    return probeCodexChromeExtension();
   });
 }

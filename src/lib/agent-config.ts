@@ -86,7 +86,8 @@ export function segmentClassForCount(count: number): string {
   if (count <= 2) return "segment-control--labeled";
   if (count === 3) return "segment-control--labeled segment-control--three";
   if (count === 4) return "segment-control--labeled segment-control--four";
-  return "segment-control--labeled segment-control--five";
+  if (count === 5) return "segment-control--labeled segment-control--five";
+  return "segment-control--labeled segment-control--six";
 }
 
 export function modelSegmentClass(

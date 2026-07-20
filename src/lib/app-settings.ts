@@ -43,7 +43,11 @@ function parseBrowserMode(
   value: unknown,
   fallback: AppSettings["browserMode"],
 ): AppSettings["browserMode"] {
-  return value === "private" || value === "existing-chrome" ? value : fallback;
+  return value === "private" ||
+    value === "existing-chrome" ||
+    value === "codex-chrome"
+    ? value
+    : fallback;
 }
 
 type LegacyAppSettings = Partial<AppSettings> & {
