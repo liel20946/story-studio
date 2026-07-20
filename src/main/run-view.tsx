@@ -250,91 +250,20 @@ function collapseEvents(events: RunEvent[]): { event: RunEvent; count: number }[
   }));
 }
 
-/** Parse `step-N-…` from a screenshot filename when present. */
-function stepIndexFromScreenshotPath(filePath: string): number | null {
-  const base = filePath.split(/[/\\]/).pop() ?? "";
-  const match = base.match(/^step-(\d+)[-.]/i);
-  if (!match) return null;
-  const n = Number.parseInt(match[1], 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-/** Map a selected action row → the best matching screenshot gallery index. */
-function screenshotIndexForAction(
-  actionIndex: number,
-  collapsed: { event: RunEvent }[],
-  paths: string[],
-): number {
-  if (paths.length === 0 || collapsed.length === 0) return 0;
-  const event = collapsed[actionIndex]?.event;
-  if (!event) return 0;
-
-  const exact = paths.findIndex((p) => stepIndexFromScreenshotPath(p) === event.seq);
-  if (exact >= 0) return exact;
-
-  let best = -1;
-  let bestStep = -1;
-  for (let i = 0; i < paths.length; i++) {
-    const step = stepIndexFromScreenshotPath(paths[i]);
-    if (step != null && step <= event.seq && step >= bestStep) {
-      best = i;
-      bestStep = step;
-    }
-  }
-  if (best >= 0) return best;
-
-  if (collapsed.length === 1) return 0;
-  return Math.min(
-    paths.length - 1,
-    Math.round((actionIndex / (collapsed.length - 1)) * (paths.length - 1)),
-  );
-}
-
-/** Map a screenshot gallery index → the best matching action row. */
-function actionIndexForScreenshot(
-  shotIndex: number,
-  collapsed: { event: RunEvent }[],
-  paths: string[],
-): number {
-  if (collapsed.length === 0) return 0;
-  const path = paths[shotIndex];
-  const step = path ? stepIndexFromScreenshotPath(path) : null;
-  if (step != null) {
-    const exact = collapsed.findIndex(({ event }) => event.seq === step);
-    if (exact >= 0) return exact;
-    let best = 0;
-    for (let i = 0; i < collapsed.length; i++) {
-      if (collapsed[i].event.seq <= step) best = i;
-    }
-    return best;
-  }
-  if (paths.length <= 1) return 0;
-  return Math.min(
-    collapsed.length - 1,
-    Math.round((shotIndex / (paths.length - 1)) * (collapsed.length - 1)),
-  );
-}
-
 // ---------- single timeline row ----------
+// Read-only: actions aren't selectable in run view (no meaningful selection).
 function TimelineRow({
   event,
   count = 1,
   index,
-  selected,
-  onSelect,
 }: {
   event: RunEvent;
   count?: number;
   index: number;
-  selected: boolean;
-  onSelect: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className={cn("timeline-row group", selected && "timeline-row--selected")}
-      onClick={onSelect}
-      aria-current={selected ? "true" : undefined}
+    <div
+      className="timeline-row group"
       aria-label={`Action ${index + 1}: ${event.label}`}
     >
       <div className="timeline-icon-wrap">{eventIcon(event.kind)}</div>
@@ -356,7 +285,7 @@ function TimelineRow({
           <XIcon className="size-3.5 text-secondary" />
         ) : null}
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -674,16 +603,12 @@ function ResultPanel({
   );
 }
 
-/** Numbered, selectable action list — selection syncs the screenshot rail. */
+/** Numbered, read-only action list. */
 function ActionsTimeline({
   events,
-  selectedActionIndex,
-  onSelectAction,
   scrollRef,
 }: {
   events: RunEvent[];
-  selectedActionIndex: number;
-  onSelectAction: (index: number) => void;
   scrollRef?: React.Ref<HTMLDivElement>;
 }) {
   const collapsed = collapseEvents(events);
@@ -698,8 +623,6 @@ function ActionsTimeline({
           event={event}
           count={count}
           index={index}
-          selected={index === selectedActionIndex}
-          onSelect={() => onSelectAction(index)}
         />
       ))}
     </div>
@@ -813,21 +736,13 @@ function LiveRunView({ runId }: { runId: string }) {
   const finishedPaths = result ? galleryPathsForResult(runId, result) : [];
   const [livePaths, setLivePaths] = React.useState<string[]>([]);
   const screenshotPaths = isFinished ? finishedPaths : livePaths;
-  const pathsKey = screenshotPaths.join("\0");
-  const eventsKey = events.map((e) => `${e.seq}:${e.status}`).join(",");
   const [selectedShot, setSelectedShot] = useRunScreenshotIndex(
     runId,
     screenshotPaths.length,
     { defaultToLatest: !isFinished },
   );
-  const [selectedActionIndex, setSelectedActionIndex] = React.useState(0);
-  // When the user picks an action, skip the reverse shot→action sync once so
-  // multiple actions that share a screenshot stay independently selectable.
-  const skipActionSyncRef = React.useRef(false);
 
   React.useEffect(() => {
-    setSelectedActionIndex(0);
-    skipActionSyncRef.current = false;
     setLivePaths([]);
   }, [runId]);
 
@@ -842,33 +757,6 @@ function LiveRunView({ runId }: { runId: string }) {
       return paths;
     });
   }, []);
-
-  // Keep action highlight in sync when the gallery index changes (nav / live jump).
-  React.useEffect(() => {
-    if (skipActionSyncRef.current) {
-      skipActionSyncRef.current = false;
-      return;
-    }
-    const collapsed = collapseEvents(events);
-    if (collapsed.length === 0) {
-      setSelectedActionIndex(0);
-      return;
-    }
-    setSelectedActionIndex(
-      actionIndexForScreenshot(selectedShot, collapsed, screenshotPaths),
-    );
-    // events/screenshotPaths are keyed above so identity churn doesn't loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- eventsKey/pathsKey
-  }, [selectedShot, eventsKey, pathsKey]);
-
-  function handleSelectAction(index: number) {
-    const collapsed = collapseEvents(events);
-    setSelectedActionIndex(index);
-    if (screenshotPaths.length > 0) {
-      skipActionSyncRef.current = true;
-      setSelectedShot(screenshotIndexForAction(index, collapsed, screenshotPaths));
-    }
-  }
 
   // Auto-scroll only the Actions body. scrollIntoView would also move the
   // outer page and could push the top of the card above the viewport.
@@ -959,8 +847,6 @@ function LiveRunView({ runId }: { runId: string }) {
               <ActionsTimeline
                 scrollRef={actionsBodyRef}
                 events={events}
-                selectedActionIndex={selectedActionIndex}
-                onSelectAction={handleSelectAction}
               />
             )}
           </div>
@@ -1013,44 +899,10 @@ function HistoricalRunView({
 }) {
   const events = filterTimelineEvents(record.events);
   const screenshotPaths = galleryPathsForResult(runId, record);
-  const pathsKey = screenshotPaths.join("\0");
-  const eventsKey = events.map((e) => `${e.seq}:${e.status}`).join(",");
   const [selectedShot, setSelectedShot] = useRunScreenshotIndex(
     runId,
     screenshotPaths.length,
   );
-  const [selectedActionIndex, setSelectedActionIndex] = React.useState(0);
-  const skipActionSyncRef = React.useRef(false);
-
-  React.useEffect(() => {
-    setSelectedActionIndex(0);
-    skipActionSyncRef.current = false;
-  }, [runId]);
-
-  React.useEffect(() => {
-    if (skipActionSyncRef.current) {
-      skipActionSyncRef.current = false;
-      return;
-    }
-    const collapsed = collapseEvents(events);
-    if (collapsed.length === 0) {
-      setSelectedActionIndex(0);
-      return;
-    }
-    setSelectedActionIndex(
-      actionIndexForScreenshot(selectedShot, collapsed, screenshotPaths),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- eventsKey/pathsKey
-  }, [selectedShot, eventsKey, pathsKey]);
-
-  function handleSelectAction(index: number) {
-    const collapsed = collapseEvents(events);
-    setSelectedActionIndex(index);
-    if (screenshotPaths.length > 0) {
-      skipActionSyncRef.current = true;
-      setSelectedShot(screenshotIndexForAction(index, collapsed, screenshotPaths));
-    }
-  }
 
   return (
     <ScrollArea
@@ -1087,11 +939,7 @@ function HistoricalRunView({
                 </Text>
               </div>
             </div>
-            <ActionsTimeline
-              events={events}
-              selectedActionIndex={selectedActionIndex}
-              onSelectAction={handleSelectAction}
-            />
+            <ActionsTimeline events={events} />
           </div>
         </div>
         <div className="detail-rail detail-rail--card">
