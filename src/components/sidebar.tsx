@@ -168,7 +168,8 @@ function ExpandableRows<T>({
 }
 
 // Status is conveyed by a small pill (no leading row icons): Passed / Failed /
-// Error / Cancelled, or a blue "Running" pill while a run is in flight.
+// Error / Cancelled, a yellow "Queued" pill while waiting for a free run slot,
+// or a blue "Running" pill while a run is in flight.
 function statusBadgeColor(
   status: RunStatus,
 ): "green" | "red" | "neutral" {
@@ -192,16 +193,27 @@ function statusBadgeLabel(status: RunStatus): string {
       return "Error";
     case "cancelled":
       return "Cancelled";
+    case "blocked":
+      return "Blocked";
   }
 }
 
 function StatusPill({
   status,
   running,
+  queued,
 }: {
   status?: RunStatus | null;
   running?: boolean;
+  queued?: boolean;
 }) {
+  if (queued) {
+    return (
+      <Badge color="yellow" size="xs">
+        Queued
+      </Badge>
+    );
+  }
   if (running) {
     return (
       <Badge color="blue" size="xs">
@@ -488,12 +500,14 @@ function HistoryRunRow({
   run,
   selected,
   running,
+  queued,
   onOpen,
   onDelete,
 }: {
   run: RunResult;
   selected: boolean;
   running?: boolean;
+  queued?: boolean;
   onOpen: () => void;
   onDelete: () => void;
 }) {
@@ -508,15 +522,15 @@ function HistoryRunRow({
           <SidebarListItemTitle>{run.storyTitle}</SidebarListItemTitle>
         </SidebarListItemContent>
         <span className="col-start-2 flex w-[4.5rem] shrink-0 items-center justify-end self-center">
-          <StatusPill status={run.status} running={running} />
+          <StatusPill status={run.status} running={running} queued={queued} />
         </span>
         <RowAccessory
           time={
-            running
+            running || queued
               ? formatRelative(run.startedAt)
               : formatRelative(run.finishedAt)
           }
-          isRunning={running}
+          isRunning={running || queued}
           archiveTitle="Remove run"
           confirmTitle="Remove this run?"
           confirmDescription="This run will be removed from history. This cannot be undone."
@@ -1096,7 +1110,7 @@ export function AppSidebar() {
     [storiesQuery.data],
   );
 
-  type SidebarRunRow = RunResult & { isRunning?: boolean };
+  type SidebarRunRow = RunResult & { isRunning?: boolean; isQueued?: boolean };
 
   const recentRuns = React.useMemo((): SidebarRunRow[] => {
     const history = runsQuery.data ?? [];
@@ -1112,17 +1126,20 @@ export function AppSidebar() {
       assertions: [],
       startedAt: r.startedAt,
       finishedAt: r.startedAt,
-      isRunning: true,
+      isRunning: !r.queued,
+      isQueued: !!r.queued,
     }));
 
     const historyRows: SidebarRunRow[] = history
       .filter((r) => !activeIds.has(r.runId))
-      .map((r) => ({ ...r, isRunning: false }));
+      .map((r) => ({ ...r, isRunning: false, isQueued: false }));
 
     return [...activeRows, ...historyRows]
       .sort((a, b) => {
-        const aTime = a.isRunning ? a.startedAt : a.finishedAt;
-        const bTime = b.isRunning ? b.startedAt : b.finishedAt;
+        const aLive = a.isRunning || a.isQueued;
+        const bLive = b.isRunning || b.isQueued;
+        const aTime = aLive ? a.startedAt : a.finishedAt;
+        const bTime = bLive ? b.startedAt : b.finishedAt;
         return bTime - aTime;
       })
       .slice(0, RECENT_RUNS);
@@ -1929,7 +1946,7 @@ function RunsTab({
   onOpen,
   onDelete,
 }: {
-  runs: (RunResult & { isRunning?: boolean })[];
+  runs: (RunResult & { isRunning?: boolean; isQueued?: boolean })[];
   activeRunId?: string;
   onOpen: (runId: string, running: boolean) => void;
   onDelete: (runId: string) => void;
@@ -1952,7 +1969,8 @@ function RunsTab({
           run={run}
           selected={activeRunId === run.runId}
           running={run.isRunning}
-          onOpen={() => onOpen(run.runId, !!run.isRunning)}
+          queued={run.isQueued}
+          onOpen={() => onOpen(run.runId, !!(run.isRunning || run.isQueued))}
           onDelete={() => onDelete(run.runId)}
         />
       )}

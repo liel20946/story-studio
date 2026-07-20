@@ -1,4 +1,5 @@
 import { broadcast } from "../broadcast.js";
+import { acquireRunSlot, isRunSlotBusy, releaseRunSlot } from "./run-slots.js";
 import { buildScreenshotUrl, saveRun } from "./run-service.js";
 import { ensureRunOutputDir, getHeroScreenshotPath } from "./run-artifacts.js";
 import { writeRunMeta, deleteRunMeta, withRunVariables } from "./run-meta.js";
@@ -29,6 +30,9 @@ interface MockRunState {
   agentModel: string;
   events: RunEvent[];
   cancelled: boolean;
+  queued: boolean;
+  /** True after acquireRunSlot until finish/cancel releases it. */
+  slotHeld: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   resolve: ((result: RunResult) => void) | null;
   variableOverrides?: Record<string, string>;
@@ -73,6 +77,8 @@ export async function startMockRun(
     agentModel,
     events: [],
     cancelled: false,
+    queued: true,
+    slotHeld: false,
     timer: null,
     resolve: null,
     variableOverrides,
@@ -90,20 +96,43 @@ export async function startMockRun(
     broadcast("run:event", evt);
   };
 
-  push({
-    kind: "status",
-    label: "Starting",
-    detail: `Mock run for ${storyTitle}`,
-    status: "running",
-  });
+  if (isRunSlotBusy()) {
+    push({
+      kind: "status",
+      label: "Queued",
+      detail: "Waiting for another run to finish…",
+      status: "running",
+    });
+  }
 
   return new Promise<RunResult>((resolve) => {
     state.resolve = resolve;
-    // Stagger so some stories finish before others — makes stop/resume demos clear.
-    const delay = 1400 + Math.floor(Math.random() * 900);
-    state.timer = setTimeout(() => {
-      void finishMockRun(runId);
-    }, delay);
+    void (async () => {
+      await acquireRunSlot();
+      const current = _mocks.get(runId);
+      if (!current) {
+        // Cancelled while still queued — slot was never marked held.
+        releaseRunSlot();
+        return;
+      }
+      current.slotHeld = true;
+      current.queued = false;
+      if (current.cancelled) {
+        void finishMockRun(runId);
+        return;
+      }
+      push({
+        kind: "status",
+        label: "Starting",
+        detail: `Mock run for ${storyTitle}`,
+        status: "running",
+      });
+      // Stagger so some stories finish before others — makes stop/resume demos clear.
+      const delay = 1400 + Math.floor(Math.random() * 900);
+      current.timer = setTimeout(() => {
+        void finishMockRun(runId);
+      }, delay);
+    })();
   });
 }
 
@@ -162,6 +191,10 @@ async function finishMockRun(runId: string): Promise<void> {
   const resolve = state.resolve;
   state.resolve = null;
   state.timer = null;
+  if (state.slotHeld) {
+    state.slotHeld = false;
+    releaseRunSlot();
+  }
   _mocks.delete(runId);
   resolve(withVars);
 }
@@ -174,6 +207,8 @@ export function cancelMockRun(runId: string): boolean {
     clearTimeout(state.timer);
     state.timer = null;
   }
+  // Still waiting for a slot — leave the waiter to release when acquire resolves.
+  if (state.queued && !state.slotHeld) return true;
   void finishMockRun(runId);
   return true;
 }
@@ -188,5 +223,6 @@ export function listActiveMockRuns(): ActiveRunSnapshot[] {
     agentProvider: s.agentProvider,
     agentModel: s.agentModel,
     variableOverrides: s.variableOverrides,
+    queued: s.queued,
   }));
 }

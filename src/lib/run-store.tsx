@@ -34,6 +34,8 @@ export interface ActiveRunState {
   agentModel?: string;
   /** Effective variable values used for this run. */
   variableOverrides?: Record<string, string>;
+  /** Waiting for the single-run concurrency slot. */
+  queued?: boolean;
 }
 
 interface RunStoreValue {
@@ -49,6 +51,18 @@ interface RunStoreValue {
       variableOverrides?: Record<string, string>;
     },
   ) => void;
+}
+
+
+function queuedFromEvents(events: RunEvent[], fallback?: boolean): boolean {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.kind !== "status") continue;
+    if (e.label === "Queued") return true;
+    // Any later status means the run has left the queue.
+    return false;
+  }
+  return fallback ?? false;
 }
 
 const RunStoreContext = React.createContext<RunStoreValue | null>(null);
@@ -80,6 +94,9 @@ function applySnapshot(
         snapshot.variableOverrides ?? existing?.variableOverrides,
       events: mergedEvents,
       result: null,
+      queued:
+        snapshot.queued ??
+        queuedFromEvents(mergedEvents, existing?.queued),
     },
   };
 }
@@ -158,6 +175,7 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
             ...base,
             storyTitle: base.storyTitle || fromEvents.storyTitle || "",
             events: filtered,
+            queued: queuedFromEvents(filtered, base.queued),
           },
         };
       });
@@ -313,6 +331,20 @@ export function useRunningStoryNames(): Set<string> {
         Object.values(runs)
           .filter((r) => r.result === null && r.storyName)
           .map((r) => r.storyName),
+      ),
+    [runs],
+  );
+}
+
+/** Set of runIds currently waiting in the run queue. */
+export function useQueuedRunIds(): Set<string> {
+  const { runs } = useRunStore();
+  return React.useMemo(
+    () =>
+      new Set(
+        Object.values(runs)
+          .filter((r) => r.result === null && r.queued)
+          .map((r) => r.runId),
       ),
     [runs],
   );

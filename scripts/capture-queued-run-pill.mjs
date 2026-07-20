@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Capture the bulk variable-runs UX flow screenshots only.
- * STORY_STUDIO_MOCK_RUNS=1 node scripts/capture-bulk-variables-flow.mjs
+ * Capture Queued state pills for bulk + overlapping single runs.
+ *   STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-queued-run-pill.mjs
  */
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const outDir = path.join(
   process.env.CURSOR_ARTIFACTS_DIR || "/opt/cursor/artifacts",
-  "bulk-variable-runs",
+  "screenshots",
 );
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -57,9 +57,9 @@ async function main() {
   });
 
   const page = await app.firstWindow();
-  page.setDefaultTimeout(25_000);
+  page.setDefaultTimeout(30_000);
   await page.waitForLoadState("domcontentloaded");
-  await wait(3000);
+  await wait(3500);
 
   await app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0];
@@ -69,7 +69,7 @@ async function main() {
     w.center();
     w.show();
   });
-  await wait(500);
+  await wait(600);
 
   await page.evaluate(() => {
     try {
@@ -81,6 +81,7 @@ async function main() {
     }
   });
 
+  // --- Bulk: one Running + others Queued ---
   await page
     .getByRole("button", { name: "Run stories" })
     .filter({ hasText: "Run stories" })
@@ -92,49 +93,30 @@ async function main() {
     await wait(600);
   }
   await page.getByText("Stop condition").waitFor();
-  await shot(app, "01-bulk-selection");
-
-  // Force-show the configure button on Login Flow row for a clear screenshot.
-  await page.evaluate(() => {
-    const btn = document.querySelector(
-      'button[aria-label="Configure variable runs for Login Flow"]',
-    );
-    if (btn instanceof HTMLElement) {
-      btn.style.opacity = "1";
-      btn.style.outline = "2px solid #e85d4c";
-      btn.style.outlineOffset = "2px";
-      const row = btn.closest(".group\\/row") || btn.parentElement;
-      if (row instanceof HTMLElement) {
-        row.style.background = "rgba(255,255,255,0.06)";
-      }
-    }
-  });
+  await page.getByRole("button", { name: /^Select all$/i }).click({ force: true });
+  await wait(300);
+  const runBtn = page.getByRole("button", { name: /^Run \d+$/i });
+  await runBtn.waitFor();
+  await runBtn.click({ force: true });
+  await page.getByText("Queued").first().waitFor({ timeout: 10_000 });
   await wait(200);
-  await shot(app, "02-story-hover-variables-button");
+  await shot(app, "01-bulk-queued-pills");
 
-  await page
-    .getByRole("button", { name: /Configure variable runs for Login Flow/i })
-    .click({ force: true });
-  await page.getByText("Variable runs — Login Flow").waitFor();
-  await wait(400);
-  await shot(app, "03-variables-chat-modal");
-
-  const composer = page.locator(".generate-composer textarea").first();
-  await composer.fill("Run as admin and guest with 2 different emails");
-  await wait(250);
-  await shot(app, "03b-variables-chat-filled");
-  await page.getByRole("button", { name: /^Send$/i }).click({ force: true });
-  await page.getByText(/Talking with the agent|Generating variable/i).waitFor({ timeout: 5_000 }).catch(() => {});
-  await wait(200);
-  await shot(app, "03c-variables-generating");
-  await page.getByRole("button", { name: /^Save for bulk$/i }).waitFor({ timeout: 15_000 });
-  await wait(400);
-  await shot(app, "04-variables-review");
-
-  await page.getByRole("button", { name: /^Save for bulk$/i }).click({ force: true });
-  await page.getByText("2 runs").waitFor();
-  await wait(400);
-  await shot(app, "05-bulk-with-saved-variable-runs");
+  // Open a queued row if clickable once it has a run id… pending rows aren't
+  // clickable; open the running one then wait — or open Runs tab for pills.
+  await page.getByRole("tab", { name: "Runs" }).click({ force: true });
+  await wait(500);
+  // Prefer a Queued pill in the sidebar Runs list
+  const queuedPill = page.getByText("Queued", { exact: true }).first();
+  if (await queuedPill.isVisible().catch(() => false)) {
+    await shot(app, "02-sidebar-queued-pill");
+    await queuedPill.click({ force: true });
+    await wait(800);
+    await shot(app, "03-run-view-queued");
+  } else {
+    await shot(app, "02-sidebar-queued-pill");
+    await shot(app, "03-run-view-queued");
+  }
 
   await app.close();
   console.log("done", outDir);

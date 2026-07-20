@@ -95,7 +95,7 @@ const recordRoute = createRoute({
   staticData: { title: "Record" },
 });
 
-// "/bulk-run" — select stories (by section / all) and run them in parallel
+// "/bulk-run" — select stories (by section / all) and run them in a queue
 const bulkRunRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/bulk-run",

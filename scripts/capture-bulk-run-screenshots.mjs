@@ -59,7 +59,7 @@ async function openBulkSelection(page) {
     await runMore.click({ force: true });
     await wait(600);
   }
-  await page.getByText("Parallel subagents").waitFor();
+  await page.getByText("Stop condition").waitFor();
 }
 
 async function main() {
@@ -127,7 +127,6 @@ async function main() {
   await wait(400);
   await shot(app, "05-bulk-with-saved-variable-runs");
 
-  await page.locator("#bulk-max-parallel").selectOption("2");
   await page.getByPlaceholder(/stop on first failure/i).fill("stop on first failure");
   await page.getByRole("button", { name: /^Select all$/i }).click({ force: true });
   await page.getByRole("button", { name: /^Run 5$/i }).waitFor();

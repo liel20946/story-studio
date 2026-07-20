@@ -710,10 +710,11 @@ function ActionsTimeline({
   );
 }
 // Rendered as the FIRST thing in the run body, above the Actions section.
-// While running it shows a blue "Running" badge + elapsed timer; once finished
-// it shows the run status badge + relative time.
+// While queued it shows a yellow "Queued" badge; while running a blue
+// "Running" badge + elapsed timer; once finished the run status badge.
 function RunStatusHeader({
   running,
+  queued,
   status,
   startedAt,
   finishedAt,
@@ -721,6 +722,7 @@ function RunStatusHeader({
   agentModel,
 }: {
   running: boolean;
+  queued?: boolean;
   status?: RunStatus;
   startedAt: number;
   finishedAt?: number;
@@ -729,7 +731,14 @@ function RunStatusHeader({
 }) {
   return (
     <div className="run-rail-meta">
-      {running ? (
+      {queued ? (
+        <>
+          <Badge color="yellow" size="xs">
+            Queued
+          </Badge>
+          <AgentPills agentProvider={agentProvider} agentModel={agentModel} />
+        </>
+      ) : running ? (
         <>
           <Badge color="blue" size="xs">
             Running
@@ -936,7 +945,10 @@ function LiveRunView({ runId }: { runId: string }) {
             {events.length === 0 && !isFinished ? (
               <div className="content-card-body run-actions-placeholder">
                 <Text variant="small" color="tertiary">
-                  {latestStatus?.detail ?? "Starting run…"}
+                  {latestStatus?.detail ??
+                    (run?.queued
+                      ? "Waiting for another run to finish…"
+                      : "Starting run…")}
                 </Text>
               </div>
             ) : (
@@ -953,6 +965,7 @@ function LiveRunView({ runId }: { runId: string }) {
         <div className="detail-rail detail-rail--card">
           <RunStatusHeader
             running={!isFinished}
+            queued={!isFinished && !!run?.queued}
             status={result?.status}
             startedAt={startedAt}
             finishedAt={result?.finishedAt}

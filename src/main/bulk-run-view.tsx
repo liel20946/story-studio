@@ -122,7 +122,7 @@ function statusBadge(status: LiveStatus): React.ReactNode {
     case "skipped":
       return <Badge color="neutral">Not run</Badge>;
     case "pending":
-      return <Badge color="neutral">Queued</Badge>;
+      return <Badge color="yellow">Queued</Badge>;
     default:
       return <Badge color="blue">Running</Badge>;
   }
@@ -454,7 +454,7 @@ function Dashboard({
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           {running > 0 && <Badge color="blue">{running} running</Badge>}
-          {pending > 0 && <Badge color="neutral">{pending} queued</Badge>}
+          {pending > 0 && <Badge color="yellow">{pending} queued</Badge>}
           {passed > 0 && <Badge color="green">{passed} passed</Badge>}
           {failed > 0 && <Badge color="red">{failed} failed</Badge>}
           {cancelled > 0 && <Badge color="neutral">{cancelled} cancelled</Badge>}
