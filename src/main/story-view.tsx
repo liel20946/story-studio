@@ -312,7 +312,11 @@ function isUndoShortcut(e: KeyboardEvent) {
 const storyEditInputClass =
   "min-w-0 w-full bg-transparent border-0 outline-none p-0 text-inherit font-inherit leading-inherit focus:ring-1 focus:ring-field/60 rounded-sm";
 
-const storyRailBodyTextClass = "text-[11px] leading-[15px] text-secondary";
+// Shared body size for steps, assertions, global rules, and variable values.
+const storyBodyTextClass = "text-[12px] leading-[16px] text-secondary";
+// Variable names stay mono so they read as identifiers.
+const storyVarNameClass = "font-mono text-[12px] leading-[16px]";
+const storyVarValueClass = "text-[12px] leading-[16px]";
 
 function focusInputAt(refs: React.RefObject<(HTMLInputElement | null)[]>, index: number) {
   requestAnimationFrame(() => {
@@ -438,7 +442,8 @@ function EditableVariables({
             onBlur={onCommitCheckpoint}
             className={cn(
               storyEditInputClass,
-              "w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px]",
+              "w-[5.5rem] shrink-0 truncate",
+              storyVarNameClass,
               nameColors[v.key] ?? "text-tertiary",
             )}
           />
@@ -453,7 +458,8 @@ function EditableVariables({
             onBlur={onCommitCheckpoint}
             className={cn(
               storyEditInputClass,
-              "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px] text-secondary",
+              "min-w-0 flex-1 truncate text-secondary",
+              storyVarValueClass,
             )}
           />
         </div>
@@ -484,7 +490,8 @@ function ReadOnlyVariables({
           >
             <span
               className={cn(
-                "w-[5.5rem] shrink-0 truncate font-mono text-[10px] leading-[13px]",
+                "w-[5.5rem] shrink-0 truncate",
+                storyVarNameClass,
                 nameColors[key] ?? "text-tertiary",
               )}
             >
@@ -492,7 +499,8 @@ function ReadOnlyVariables({
             </span>
             <span
               className={cn(
-                "min-w-0 flex-1 truncate font-mono text-[10px] leading-[13px]",
+                "min-w-0 flex-1 truncate",
+                storyVarValueClass,
                 value ? "text-secondary" : "text-quaternary",
               )}
             >
@@ -553,6 +561,9 @@ export function StoryView() {
   const [editingStoryName, setEditingStoryName] = React.useState<string | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isDuplicating, setIsDuplicating] = React.useState(false);
+  // After Cancel, the remounted Edit button sits under the cursor and would
+  // immediately pick up :hover — suppress pointer events until the mouse moves.
+  const [suppressToolbarHover, setSuppressToolbarHover] = React.useState(false);
   const {
     draft,
     setDraft,
@@ -712,9 +723,17 @@ export function StoryView() {
   }
 
   function handleCancel() {
+    setSuppressToolbarHover(true);
     setEditingStoryName(null);
     clearEdit();
   }
+
+  React.useEffect(() => {
+    if (!suppressToolbarHover) return;
+    const clear = () => setSuppressToolbarHover(false);
+    window.addEventListener("pointermove", clear, { once: true });
+    return () => window.removeEventListener("pointermove", clear);
+  }, [suppressToolbarHover]);
 
   async function handleDuplicate() {
     if (!story || isDuplicating) return;
@@ -803,7 +822,12 @@ export function StoryView() {
                 <ToolbarTitle>{story.title}</ToolbarTitle>
               </div>
             </ToolbarContent>
-            <ToolbarActions className="detail-view-toolbar-actions">
+            <ToolbarActions
+              className={cn(
+                "detail-view-toolbar-actions",
+                suppressToolbarHover && "pointer-events-none",
+              )}
+            >
               {isEditingThisStory ? (
                 <>
                   <Button
@@ -940,7 +964,7 @@ export function StoryView() {
                               stepInputRefs,
                             )
                           }
-                          className={cn(storyEditInputClass, "text-[12px] leading-[16px] text-secondary")}
+                          className={cn(storyEditInputClass, storyBodyTextClass)}
                         />
                       ) : (
                         <Text variant="small" color="secondary">
@@ -1015,7 +1039,7 @@ export function StoryView() {
                             }
                             className={cn(
                               storyEditInputClass,
-                              storyRailBodyTextClass,
+                              storyBodyTextClass,
                             )}
                           />
                         </div>
@@ -1043,7 +1067,7 @@ export function StoryView() {
                     rows={5}
                     className={cn(
                       "min-w-0 w-full bg-transparent border-0 outline-none p-0 focus:ring-1 focus:ring-field/60 rounded-sm",
-                      storyRailBodyTextClass,
+                      storyBodyTextClass,
                       "story-global-rules-input resize-y min-h-[72px] max-h-[min(12rem,40vh)] overflow-y-auto",
                     )}
                   />
@@ -1051,7 +1075,7 @@ export function StoryView() {
                   <div
                     className={cn(
                       "story-global-rules-preview whitespace-pre-wrap",
-                      storyRailBodyTextClass,
+                      storyBodyTextClass,
                     )}
                   >
                     {story.globalRules}
