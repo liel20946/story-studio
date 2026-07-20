@@ -44,8 +44,8 @@ function looksLikeProfileDir(name: string): boolean {
 /**
  * Detect whether the Codex Chrome extension is installed in any local Chrome
  * profile. No tokens — presence of the extension directory is enough.
- * Runs still inject node_repl via `-c` (see codex-chrome-config.ts), same
- * pattern as Playwright MCP — user global MCPs are not loaded.
+ * Runs still use an isolated CODEX_HOME with chrome plugin + node_repl
+ * (see prepareCodexChromeHome) so user global MCPs are not loaded.
  */
 export async function probeCodexChromeExtension(): Promise<CodexChromeExtensionStatus> {
   for (const root of chromeUserDataRoots()) {
