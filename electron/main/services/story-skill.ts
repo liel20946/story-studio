@@ -43,100 +43,55 @@ Rules:
 // Legacy alias for recording conversion prompts
 export const STORY_FORMAT = BOWSER_STORY_FORMAT;
 
-const RUN_STORY_PLAYBOOK_SHARED_CORE = `## How to run the story
-- Follow **Execution order** — the numbered list that interleaves steps and assertions. Run every line through the last one.
-- Execute that numbered list strictly from top to bottom. Never attempt, probe, or pre-run a later interaction before the current line succeeds.
-- Every browser interaction (Navigate, Click, Fill, Press, or Select) must implement the current Execution order line. Use non-mutating page inspection to understand state; do not click or type merely to explore.
-- Execute exactly ONE Execution order line per browser action. Never batch multiple story lines into one tool call; Story Studio uses each completed action to report live progress.
-- Immediately after each Execution order line finishes, update \`steps.json\` with that line's real result before starting the next line. Do not synthesize the full timeline at the end.
+/** Shared run rules. `mcp` adds Playwright MCP-specific interaction / screenshot tips. */
+function buildRunStoryPlaybookShared(mcp: boolean): string {
+  const inspect = mcp
+    ? "Use non-mutating snapshots to inspect the page; do not click or type merely to explore."
+    : "Use non-mutating page inspection to understand state; do not click or type merely to explore.";
+  const oneLine = mcp
+    ? "Execute exactly ONE Execution order line per browser action tool call. Never batch multiple story lines into one `browser_run_code_unsafe` call, generated script, or callback; Story Studio uses each completed call to report live progress."
+    : "Execute exactly ONE Execution order line per browser action. Never batch multiple story lines into one tool call; Story Studio uses each completed action to report live progress.";
+  const screenshotSave = mcp
+    ? `- For every \`browser_take_screenshot\` call, pass \`{ "filename": "screenshots/step-{index}-{slug}.png", "raw": true }\`. The MCP parameter is **filename** (not \`path\`); use a workspace-relative path under \`screenshots/\`.
+- In steps.json, attach \`screenshots/step-{index}-{slug}.png\` only on that checkpoint entry.`
+    : `- Save each checkpoint as \`screenshots/step-{index}-{slug}.png\` under the run output directory.
+- In steps.json, attach that path only on the checkpoint entry.`;
+
+  return `## How to run the story
+- Follow **Execution order** — the single numbered list (actions first, then Verify lines). Run every line top to bottom through the last one.
+- Never attempt, probe, or pre-run a later interaction before the current line succeeds.
+- Every browser interaction (Navigate, Click, Fill, Press, or Select) must implement the current Execution order line. ${inspect}
+- ${oneLine}
+- Immediately after each line finishes, update \`steps.json\` with that line's real result before starting the next. Do not synthesize the full timeline at the end.
 - Treat each line as intent, not an exact script. Adapt to minor UI changes while preserving the goal.
 - Prefer accessible role/name, labels, visible text, and URL context over coordinates or brittle element refs.
 - Use variables defined in the story, including test-account credentials.
 - If the story includes login steps, start from the logged-out login page and perform the login.
 - Ignore browser automation UI (e.g. "--no-sandbox" infobars).
 
-## Verify steps and dynamic assertions
-- For Verify steps, check visible text or page state directly.
-- Dynamic values (dates, times, counts, totals, prices, IDs): verify format/pattern/relative condition, not exact literals.
-- Stop on first failed Verify and mark status failed or blocked if environment prevents progress.
+## Verify steps
+- Check visible text or page state directly. Dynamic values (dates, counts, prices, IDs): verify format/pattern/relative condition, not exact literals.
+- Stop on first failed Verify; mark failed or blocked if the environment prevents progress.
 
-## Screenshots and steps.json (required)
-- Create a \`screenshots/\` directory in the run output directory before executing steps.
-- Capture checkpoint screenshots at meaningful moments:
-  1. **Navigate** — after the new page has loaded.
-  2. **Verify** — after each assertion in Execution order passes (evidence for the report).
-  3. **Form groups** — after filling all fields in a form/dialog/section, **immediately before** clicking Submit / Save / Continue / Log In / Issue / Confirm (one screenshot per form, not per field). This is **not** the hero screenshot.
-  4. **Major UI change** — modal opened, wizard step advanced (optional checkpoint only).
-  5. **Failure** — always, immediately before stopping.
-- Skip screenshots for intermediate Fill / Click / Press / Select steps inside a form group, focus changes, scrolling, and waiting.
-- Aim for roughly **3–8 checkpoint screenshots** on a typical story, not one per workflow line.
-- Save each checkpoint as \`screenshots/step-{index}-{slug}.png\` under the run output directory.
-- In steps.json, attach the corresponding path as \`screenshots/step-{index}-{slug}.png\` only on that checkpoint entry.
+## Screenshots (required)
+- Create \`screenshots/\` in the run output directory before executing steps.
+- Checkpoint moments only: after Navigate loads; after each Verify passes; after filling a form **immediately before** Submit/Save/Log In/etc. (one per form — not the hero); on failure before stopping; optional on major UI changes (modal/wizard).
+- Skip intermediate Fill/Click/Press/Select inside a form, focus changes, scrolling, and waiting. Aim for ~3–8 checkpoints, not one per line.
+${screenshotSave}
 
-## Hero screenshot (critical — read carefully)
-- The hero screenshot is **separate** from form-group / pre-submit checkpoints.
-- Capture it **only after the last line in Execution order** completes successfully (usually the final Verify).
-- After the last submit/navigation action, **wait for the UI to settle** (a few seconds, or until the element the final Verify checks is visible) **before** the final Verify and hero capture.
-- The hero must show the **post-condition** the story ends on — e.g. the new row in a table, success toast visible, landed page after the last click — **not** a dialog about to be submitted and not an earlier page.
-- Take a **fresh** screenshot and save it to the hero path. Do **not** copy or reuse an earlier checkpoint file (especially not a pre-submit form screenshot).
-- Attach the hero path only on the **last** steps.json entry and in structured output \`screenshotPath\`.
+## Hero screenshot
+- Separate from form/pre-submit checkpoints. Capture **only after the last Execution order line** succeeds (usually the final Verify).
+- After the last submit/navigation, wait for the UI to settle before the final Verify and hero.
+- Hero must show the **post-condition** (new row, success toast, landed page) — not a dialog about to submit or an earlier page.
+- Take a **fresh** shot to the hero path; never reuse a checkpoint. Attach hero only on the last steps.json entry and in \`screenshotPath\`.
 
 ## steps.json
-- Write \`steps.json\` as a non-empty array covering every line in Execution order (actions and Verify steps). Each entry: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
-- **Live progress:** after each step finishes, rewrite the full \`steps.json\` file to disk (not only at process exit). In generated Node scripts, call \`fs.writeFileSync(stepsPath, JSON.stringify(steps, null, 2))\` in each step's \`finally\` block so Story Studio can show actions in real time.
+- Non-empty array for every Execution order line: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
+- **Live progress:** rewrite the full \`steps.json\` after each step (not only at exit). In generated Node scripts, \`fs.writeFileSync(stepsPath, JSON.stringify(steps, null, 2))\` in each step's \`finally\`.
 
 ## Report
-- Report pass/fail with concise evidence for each Verify step.
-- Do not create real customer-facing side effects unless the story explicitly requires them.
-- Work silently during execution — do not narrate your plan in chat.`;
-
-const RUN_STORY_PLAYBOOK_SHARED_MCP = `## How to run the story
-- Follow **Execution order** — the numbered list that interleaves steps and assertions. Run every line through the last one.
-- Execute that numbered list strictly from top to bottom. Never attempt, probe, or pre-run a later interaction before the current line succeeds.
-- Every browser interaction (Navigate, Click, Fill, Press, or Select) must implement the current Execution order line. Use non-mutating snapshots to inspect the page; do not click or type merely to explore.
-- Execute exactly ONE Execution order line per browser action tool call. Never batch multiple story lines into one \`browser_run_code_unsafe\` call, generated script, or callback; Story Studio uses each completed call to report live progress.
-- Immediately after each Execution order line finishes, update \`steps.json\` with that line's real result before starting the next line. Do not synthesize the full timeline at the end.
-- Treat each line as intent, not an exact script. Adapt to minor UI changes while preserving the goal.
-- Prefer accessible role/name, labels, visible text, and URL context over coordinates or brittle element refs.
-- Use variables defined in the story, including test-account credentials.
-- If the story includes login steps, start from the logged-out login page and perform the login.
-- Ignore browser automation UI (e.g. "--no-sandbox" infobars).
-
-## Verify steps and dynamic assertions
-- For Verify steps, check visible text or page state directly.
-- Dynamic values (dates, times, counts, totals, prices, IDs): verify format/pattern/relative condition, not exact literals.
-- Stop on first failed Verify and mark status failed or blocked if environment prevents progress.
-
-## Screenshots and steps.json (required)
-- Create a \`screenshots/\` directory in the run output directory before executing steps.
-- Capture checkpoint screenshots at meaningful moments:
-  1. **Navigate** — after the new page has loaded.
-  2. **Verify** — after each assertion in Execution order passes (evidence for the report).
-  3. **Form groups** — after filling all fields in a form/dialog/section, **immediately before** clicking Submit / Save / Continue / Log In / Issue / Confirm (one screenshot per form, not per field). This is **not** the hero screenshot.
-  4. **Major UI change** — modal opened, wizard step advanced (optional checkpoint only).
-  5. **Failure** — always, immediately before stopping.
-- Skip screenshots for intermediate Fill / Click / Press / Select steps inside a form group, focus changes, scrolling, and waiting.
-- Aim for roughly **3–8 checkpoint screenshots** on a typical story, not one per workflow line.
-- For every \`browser_take_screenshot\` call, pass \`{ "filename": "screenshots/step-{index}-{slug}.png", "raw": true }\`.
-  The MCP parameter is named **filename**, not \`path\`; use a workspace-relative path under \`screenshots/\` (the run output directory is the MCP workspace).
-- In steps.json, attach the corresponding path as \`screenshots/step-{index}-{slug}.png\` only on that checkpoint entry.
-
-## Hero screenshot (critical — read carefully)
-- The hero screenshot is **separate** from form-group / pre-submit checkpoints.
-- Capture it **only after the last line in Execution order** completes successfully (usually the final Verify).
-- After the last submit/navigation action, **wait for the UI to settle** (a few seconds, or until the element the final Verify checks is visible) **before** the final Verify and hero capture.
-- The hero must show the **post-condition** the story ends on — e.g. the new row in a table, success toast visible, landed page after the last click — **not** a dialog about to be submitted and not an earlier page.
-- Take a **fresh** screenshot and save it to the hero path. Do **not** copy or reuse an earlier checkpoint file (especially not a pre-submit form screenshot).
-- Attach the hero path only on the **last** steps.json entry and in structured output \`screenshotPath\`.
-
-## steps.json
-- Write \`steps.json\` as a non-empty array covering every line in Execution order (actions and Verify steps). Each entry: index, text, status (passed|failed|blocked), started_at, finished_at, screenshot (path or null), error (or null).
-- **Live progress:** after each step finishes, rewrite the full \`steps.json\` file to disk (not only at process exit). In generated Node scripts, call \`fs.writeFileSync(stepsPath, JSON.stringify(steps, null, 2))\` in each step's \`finally\` block so Story Studio can show actions in real time.
-
-## Report
-- Report pass/fail with concise evidence for each Verify step.
-- Do not create real customer-facing side effects unless the story explicitly requires them.
-- Work silently during execution — do not narrate your plan in chat.`;
+- Report pass/fail with concise evidence for each Verify. No real customer-facing side effects unless the story requires them. Work silently — do not narrate in chat.`;
+}
 
 const RUN_STORY_PLAYBOOK_FORM_FILL_MCP = `## Reliable form filling (important)
 Many web apps are React SPAs with controlled inputs. Fill tools and type tools frequently fail. Prefer evaluating in the page with the native value setter and dispatching input + change events:
@@ -158,7 +113,7 @@ export function buildRunStoryPlaybook(browserMode: BrowserMode): string {
 
 ${RUN_STORY_PLAYBOOK_CODEX_CHROME}
 
-${RUN_STORY_PLAYBOOK_SHARED_CORE}`;
+${buildRunStoryPlaybookShared(false)}`;
   }
 
   const browserDescription =
@@ -177,7 +132,7 @@ ${browserDescription}
 - Do NOT use the Codex Browser plugin, the in-app browser, computer use, Playwright CLI, or any other browser-driving tool.
 - Do not use any MCP server other than "playwright".
 
-${RUN_STORY_PLAYBOOK_SHARED_MCP}
+${buildRunStoryPlaybookShared(true)}
 
 ${RUN_STORY_PLAYBOOK_FORM_FILL_MCP}`;
 }
@@ -327,20 +282,14 @@ export function buildRunPromptSuffix(paths: RunPromptPaths): string {
     paths;
   return (
     `\n\n## This run\n` +
-    `Run output directory: ${runOutputDir}\n` +
-    `Screenshots directory: ${screenshotsDir}\n` +
-    `Steps JSON path: ${stepsPath}\n` +
-    `Hero screenshot path: ${heroScreenshotPath}\n\n` +
-    `The full story to run is included below. Do not read story files from disk.\n\n` +
+    `Run output: ${runOutputDir}\n` +
+    `Screenshots: ${screenshotsDir}\n` +
+    `steps.json: ${stepsPath}\n` +
+    `Hero: ${heroScreenshotPath}\n\n` +
+    `Story is below — do not read story files from disk. Follow the playbook for checkpoints, live steps.json, and hero (fresh capture after the last Execution order line → ${heroScreenshotPath}; set screenshotPath to that path).\n\n` +
     "```markdown\n" +
     storyContents +
-    "\n```\n\n" +
-    `Write steps.json to ${stepsPath} (log every step in Execution order; attach screenshots only at checkpoints — see playbook). ` +
-    `Save checkpoint screenshots under ${screenshotsDir}. ` +
-    `The hero screenshot MUST be a fresh capture taken after the last Execution order step succeeds — ` +
-    `wait for the UI to update after the final submit/navigation, then save it to exactly ${heroScreenshotPath}. ` +
-    `Do not reuse a pre-submit or earlier checkpoint as the hero. ` +
-    `Set screenshotPath in the output schema to ${heroScreenshotPath}.` +
+    "\n```" +
     (runHook?.trim() ? `\n\n## Additional instructions\n${runHook.trim()}` : "")
   );
 }

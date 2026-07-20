@@ -754,8 +754,6 @@ export function formatStoryForRun(
   // story.workflow / YAML @N for runs — the editor cannot set offsets, and
   // stale @N left Verify mid-story (e.g. right after login).
   const execution = [...steps, ...assertionLines];
-  const lastStep = execution[execution.length - 1] ?? "";
-  const lastIndex = execution.length;
   const resolvedMap = resolveRunVariables(story, variableOverrides);
   const resolvedVariables =
     resolvedMap && Object.keys(resolvedMap).length > 0
@@ -778,21 +776,14 @@ export function formatStoryForRun(
       `- When a rule's failure condition occurs, stop immediately and mark the run failed (or blocked if the environment prevents progress).\n\n` +
       `${globalRules}\n`
     : "";
+  // Single list only — no separate Steps / Assertions sections (those duplicated
+  // Execution order and wasted tokens). Playbook covers hero / screenshots.
   return (
     `# ${story.title}\n\n` +
     `URL: ${story.baseUrl ?? ""}\n` +
-    `Mode: ${story.mode ?? "recorded"}\n` +
     globalRulesBlock +
     vars +
-    `\n## Steps\n${steps.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
-    `\n## Assertions\n${assertionLines.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
-    `\n## Execution order\n${execution.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n` +
-    (lastStep
-      ? `\n## Hero screenshot\n` +
-        `After execution step ${lastIndex} ("${lastStep}") passes, wait for the UI to fully reflect the outcome ` +
-        `(e.g. new table row, success toast, or destination page), then capture a fresh hero screenshot. ` +
-        `If the last action is a submit/click, do not screenshot until the resulting page state is visible.\n`
-      : "")
+    `\n## Execution order\n${execution.map((l, i) => `${i + 1}. ${l}`).join("\n")}\n`
   );
 }
 
