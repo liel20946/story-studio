@@ -967,9 +967,9 @@ export function StoryView() {
                           className={cn(storyEditInputClass, storyBodyTextClass)}
                         />
                       ) : (
-                        <Text variant="small" color="secondary">
+                        <span className={cn("min-w-0 truncate", storyBodyTextClass)}>
                           <InlineCode text={step} colorMap={varColors.chip} />
-                        </Text>
+                        </span>
                       )}
                     </li>
                   ))}

@@ -115,18 +115,17 @@ async function main() {
   await wait(400);
   await shot(app, "03-story-view-after-cancel");
 
-  // --- Run view typography ---
-  await page.getByRole("button", { name: /^Run$/i }).click({ force: true });
+  // --- Run view typography (open a finished history run) ---
+  await page.getByRole("tab", { name: "Runs" }).click({ force: true });
+  await wait(800);
+  await page
+    .locator(".group\\/row")
+    .filter({ hasText: "Login Flow" })
+    .first()
+    .click({ force: true });
   await page.getByText("Actions").first().waitFor({ timeout: 20_000 });
-  await wait(1500);
+  await wait(1000);
   await shot(app, "04-run-view-typography");
-
-  // Prefer a finished run with assertions/variables if available
-  const retryBtn = page.getByRole("button", { name: /Retry/i });
-  if (await retryBtn.isVisible().catch(() => false)) {
-    await wait(400);
-    await shot(app, "05-run-view-finished-typography");
-  }
 
   await app.close();
   console.log("done", outDir);
