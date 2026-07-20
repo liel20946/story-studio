@@ -646,12 +646,7 @@ function CreateStoryDialog({
                 <span className="flex size-4 shrink-0 items-center justify-center">
                   <CircleDotIcon className="size-4" />
                 </span>
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="leading-4">Record story</span>
-                  <span className="text-mini font-normal leading-3 text-tertiary">
-                    Capture actions in the browser
-                  </span>
-                </span>
+                <span className="leading-4">Record story</span>
               </Button>
               <Button
                 variant="filled"
@@ -661,12 +656,7 @@ function CreateStoryDialog({
                 <span className="flex size-4 shrink-0 items-center justify-center">
                   <PencilLineIcon className="size-4" />
                 </span>
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="leading-4">Add manually</span>
-                  <span className="text-mini font-normal leading-3 text-tertiary">
-                    Edit a template immediately
-                  </span>
-                </span>
+                <span className="leading-4">Add manually</span>
               </Button>
             </div>
           ) : (
