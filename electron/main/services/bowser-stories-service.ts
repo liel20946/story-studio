@@ -339,20 +339,26 @@ export function mergeWorkflowForExecution(
   return result;
 }
 
+/** True when the YAML entry includes an `assertions` key (even if empty). */
+export function hasExplicitAssertionsField(entry: BowserStoryEntry): boolean {
+  return entry.assertions !== undefined && entry.assertions !== null;
+}
+
 /** Resolve action steps and assertions from a Bowser entry (new or legacy format). */
 export function resolveStoryParts(entry: BowserStoryEntry): {
   steps: string[];
   assertions: BowserAssertion[];
 } {
   const rawWorkflow = cleanRecordedSteps(parseWorkflowLines(entry.workflow));
-  const hasAssertionsField =
-    entry.assertions !== undefined &&
-    entry.assertions !== null &&
-    String(entry.assertions).trim().length > 0;
 
-  if (hasAssertionsField) {
+  // Explicit assertions field (including "") means the author chose the list —
+  // even when empty. Only legacy entries with no field get workflow-split /
+  // fallback defaults.
+  if (hasExplicitAssertionsField(entry)) {
     const { steps } = splitWorkflowWithAssertions(rawWorkflow);
-    let assertions = parseAssertionsBlock(String(entry.assertions));
+    let assertions = parseAssertionsBlock(String(entry.assertions)).filter(
+      (a) => !isBlankAssertion(a.text),
+    );
     assertions = assertions.map((a) =>
       a.after >= 0 ? a : { ...a, after: steps.length },
     );
@@ -373,9 +379,14 @@ export function resolveStoryParts(entry: BowserStoryEntry): {
 
 /** Normalize an entry for YAML storage: workflow = actions only, assertions = separate block. */
 export function normalizeBowserEntryForStorage(entry: BowserStoryEntry): BowserStoryEntry {
+  const explicitAssertions = hasExplicitAssertionsField(entry);
   const { steps, assertions } = resolveStoryParts(entry);
+  // Keep intentional empty lists. Fallbacks only for legacy/recorded entries
+  // that never declared an assertions field.
   let finalAssertions =
-    assertions.length > 0 ? assertions : ensureFallbackAssertions(steps, entry.url);
+    assertions.length > 0 || explicitAssertions
+      ? assertions
+      : ensureFallbackAssertions(steps, entry.url);
   finalAssertions = rebaseDriftedEndAssertions(steps, finalAssertions);
   finalAssertions = clampAssertionPositions(finalAssertions, steps.length);
   const { tags: _tags, ...rest } = stripBowserEntryTags(entry);
@@ -524,9 +535,6 @@ export function validateBowserEntry(entry: BowserStoryEntry): string[] {
   const { steps, assertions } = resolveStoryParts(entry);
   if (steps.some((l) => /^verify\b/i.test(l))) {
     errors.push("Workflow must contain action steps only — move Verify lines to assertions");
-  }
-  if (assertions.length === 0) {
-    errors.push("Story must include at least one assertion");
   }
   for (const assertion of assertions) {
     if (assertion.after < 0 || assertion.after > steps.length) {
