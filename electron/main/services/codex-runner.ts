@@ -46,7 +46,10 @@ import {
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
 import { probeCodexChromeExtension } from "./codex-chrome-extension.js";
-import { buildCodexChromeConfigArgs } from "./codex-chrome-config.js";
+import {
+  buildCodexChromeConfigArgs,
+  prepareCodexChromeHome,
+} from "./codex-chrome-config.js";
 import {
   DEFAULT_CODEX_EFFORT,
   DEFAULT_CODEX_MODEL,
@@ -227,7 +230,8 @@ function isBenignCodexStderr(text: string): boolean {
 
 /** Surfaced when a Codex Chrome run finishes with no browser actions / @Chrome unavailable. */
 export const CODEX_CHROME_CLI_UNAVAILABLE_HINT =
-  "@Chrome was unavailable for this run. Check the Codex Chrome extension is installed, and that Codex.app has configured node_repl (open Codex once if needed), then retry.";
+  "@Chrome was unavailable for this run. Confirm the Codex Chrome extension is installed and Chrome works in the Codex app/CLI, then retry.";
+
 
 function isBenignCodexStderrEvent(event: RunEvent): boolean {
   return event.kind === "error" && !!event.detail && isBenignCodexStderr(event.detail);
@@ -326,6 +330,8 @@ export async function startRun(
   const mcpSecretEnv = useCodexChrome
     ? {}
     : await playwrightMcpSecretEnv();
+  // Chrome: isolated CODEX_HOME (chrome plugin + node_repl only). Playwright: default env.
+  let chromeCodexHome: string | undefined;
 
   console.log("[codex:run] starting", {
     runId,
@@ -426,11 +432,19 @@ export async function startRun(
 
   let mcpConfigArgs: string[];
   try {
-    // Same pattern for both modes: --ignore-user-config + inject ONE browser MCP
-    // via `-c` (Playwright or node_repl). Never load the user's full MCP set.
-    mcpConfigArgs = useCodexChrome
-      ? await buildCodexChromeConfigArgs()
-      : await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
+    if (useCodexChrome) {
+      // Plugins only load from User config.toml — NOT from `-c`. So we cannot use
+      // --ignore-user-config + -c plugins… . Instead: isolated CODEX_HOME with a
+      // minimal config (chrome + node_repl) and symlinked auth/plugins cache.
+      const prepared = await prepareCodexChromeHome(
+        path.join(runOutputDir, "codex-home"),
+      );
+      chromeCodexHome = prepared.codexHome;
+      mcpConfigArgs = buildCodexChromeConfigArgs();
+    } else {
+      // Playwright: ignore user config and inject only the Playwright MCP.
+      mcpConfigArgs = await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
+    }
   } catch (err) {
     releaseRunSlot();
     const message = err instanceof Error ? err.message : String(err);
@@ -469,10 +483,10 @@ export async function startRun(
     "--dangerously-bypass-approvals-and-sandbox",
     "--json",
     "--skip-git-repo-check",
-    // Isolate from ~/.codex/config.toml (multi_agent + unrelated global MCPs).
-    // Browser tools are injected explicitly via `-c` below — Playwright MCP
-    // for Private/Playwright modes, node_repl + Chrome plugin for Codex Chrome.
-    "--ignore-user-config",
+    // Playwright: ignore ~/.codex so global MCPs/multi_agent cannot hijack.
+    // Chrome: load isolated CODEX_HOME/config.toml (must NOT ignore — plugins
+    // only mount from the User config layer).
+    ...(useCodexChrome ? [] : ["--ignore-user-config"]),
     "-C",
     runOutputDir,
     "-c",
@@ -487,7 +501,12 @@ export async function startRun(
     prompt,
   ];
 
-  console.log("[codex:run] mcp config ready", { runId, browserMode, mcpConfigArgs });
+  console.log("[codex:run] mcp config ready", {
+    runId,
+    browserMode,
+    chromeCodexHome,
+    mcpConfigArgs,
+  });
 
   await acquirePlaywrightSlot();
 
@@ -514,10 +533,14 @@ export async function startRun(
   }
 
   const runPromise = new Promise<RunResult>((resolve) => {
-    console.log("[codex:run] spawning codex", { runId, pid: "pending" });
+    console.log("[codex:run] spawning codex", { runId, pid: "pending", chromeCodexHome });
     const child = spawn(codexBinary, args, {
       cwd: runOutputDir,
-      env: { ...buildEnv(), ...mcpSecretEnv },
+      env: {
+        ...buildEnv(),
+        ...mcpSecretEnv,
+        ...(chromeCodexHome ? { CODEX_HOME: chromeCodexHome } : {}),
+      },
       detached: true, // allows process group kill on cancel
       // stdin must be closed (EOF) or codex hangs on "Reading additional input from stdin..."
       stdio: ["ignore", "pipe", "pipe"],

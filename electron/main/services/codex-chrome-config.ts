@@ -3,7 +3,7 @@ import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 
-/** Codex home — plugins/cache + config.toml live here even with --ignore-user-config. */
+/** Real user Codex home (auth + plugin cache). */
 export function getCodexHome(): string {
   const fromEnv = process.env.CODEX_HOME?.trim();
   if (fromEnv) return fromEnv;
@@ -29,10 +29,7 @@ function unquoteTomlValue(raw: string): string {
   return value;
 }
 
-/**
- * Minimal TOML table extractor for Codex config slices we care about.
- * Enough for `key = "value"` / bool / number / [] lines inside a `[table]`.
- */
+/** Minimal TOML table extractor for `key = value` lines inside `[table]`. */
 export function extractTomlTable(
   toml: string,
   header: string,
@@ -96,20 +93,15 @@ export interface CodexNodeReplLaunch {
   source: "user-config" | "codex-app" | "fallback";
 }
 
-/**
- * Resolve the Codex `node_repl` MCP launch the same way Playwright resolves its
- * MCP: prefer the user's configured command/env from ~/.codex/config.toml, then
- * fall back to the Codex.app bundled binary. Callers inject this via `-c` while
- * keeping `--ignore-user-config` so other global MCPs never load.
- */
-export async function resolveCodexNodeReplLaunch(): Promise<CodexNodeReplLaunch> {
-  const codexHome = getCodexHome();
-  const configPath = path.join(codexHome, "config.toml");
+export async function resolveCodexNodeReplLaunch(
+  realCodexHome: string = getCodexHome(),
+): Promise<CodexNodeReplLaunch> {
+  const configPath = path.join(realCodexHome, "config.toml");
   let toml = "";
   try {
     toml = await fs.readFile(configPath, "utf-8");
   } catch {
-    // no user config — fall through to bundled paths
+    // fall through
   }
 
   if (toml) {
@@ -121,19 +113,22 @@ export async function resolveCodexNodeReplLaunch(): Promise<CodexNodeReplLaunch>
       if (table.args?.trim()) {
         try {
           const parsed = JSON.parse(table.args) as unknown;
-          if (Array.isArray(parsed)) {
-            args = parsed.map(String);
-          }
+          if (Array.isArray(parsed)) args = parsed.map(String);
         } catch {
           args = [];
         }
       }
       const env: Record<string, string> = { ...envTable };
-      if (!env.NODE_REPL_TRUSTED_CODE_PATHS) {
-        env.NODE_REPL_TRUSTED_CODE_PATHS = codexHome;
+      // Keep chrome available; include iab so backends match known-good Desktop/CLI configs.
+      if (!env.BROWSER_USE_AVAILABLE_BACKENDS?.includes("chrome")) {
+        env.BROWSER_USE_AVAILABLE_BACKENDS = "chrome,iab";
       }
-      // Chrome-only for Story Studio — do not pull in the in-app browser backend.
-      env.BROWSER_USE_AVAILABLE_BACKENDS = "chrome";
+      if (!env.NODE_REPL_TRUSTED_CODE_PATHS) {
+        env.NODE_REPL_TRUSTED_CODE_PATHS = realCodexHome;
+      }
+      if (!env.SKY_CUA_NATIVE_PIPE) {
+        env.SKY_CUA_NATIVE_PIPE = "1";
+      }
       return { command, args, env, source: "user-config" };
     }
   }
@@ -141,54 +136,105 @@ export async function resolveCodexNodeReplLaunch(): Promise<CodexNodeReplLaunch>
   const command = firstExisting(candidateNodeReplBinaries());
   if (!command) {
     throw new Error(
-      "Codex node_repl not found. Install/open the Codex app once so Chrome plugin + node_repl are configured, then retry.",
+      "Codex node_repl not found. Open the Codex app once so Chrome + node_repl are installed, then retry.",
     );
   }
   const nodePath = firstExisting(candidateNodeBinaries());
   const env: Record<string, string> = {
-    BROWSER_USE_AVAILABLE_BACKENDS: "chrome",
-    NODE_REPL_TRUSTED_CODE_PATHS: codexHome,
+    BROWSER_USE_AVAILABLE_BACKENDS: "chrome,iab",
+    NODE_REPL_TRUSTED_CODE_PATHS: realCodexHome,
+    SKY_CUA_NATIVE_PIPE: "1",
   };
   if (nodePath) env.NODE_REPL_NODE_PATH = nodePath;
   return { command, args: [], env, source: "codex-app" };
 }
 
+async function symlinkInto(isolatedHome: string, realHome: string, name: string): Promise<void> {
+  const target = path.join(realHome, name);
+  if (!existsSync(target)) return;
+  const link = path.join(isolatedHome, name);
+  try {
+    await fs.rm(link, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+  await fs.symlink(target, link);
+}
+
+function tomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
 /**
- * Codex `-c` overrides for Chrome-extension mode — mirrors Playwright MCP
- * injection: keep `--ignore-user-config`, register only node_repl + Chrome
- * plugin flags so global MCPs never load / delay startup.
+ * Build an isolated CODEX_HOME for Chrome runs:
+ * - Loads ONLY chrome plugin + node_repl (no user global MCPs → fast start)
+ * - Symlinks auth + plugin cache from the real ~/.codex
+ *
+ * Why not `--ignore-user-config` + `-c plugins…`?
+ * Codex loads plugins only from the User config layer. CLI `-c` overrides do
+ * not install/enable plugins, so @Chrome never mounts under ignore-user-config.
  */
-export async function buildCodexChromeConfigArgs(): Promise<string[]> {
-  const launch = await resolveCodexNodeReplLaunch();
-  console.log("[codex:chrome] node_repl launch", {
-    source: launch.source,
-    command: launch.command,
+export async function prepareCodexChromeHome(isolatedHome: string): Promise<{
+  codexHome: string;
+  nodeRepl: CodexNodeReplLaunch;
+}> {
+  const realHome = getCodexHome();
+  const nodeRepl = await resolveCodexNodeReplLaunch(realHome);
+
+  await fs.mkdir(isolatedHome, { recursive: true });
+
+  // Auth + installed plugins/skills must come from the real Codex home.
+  for (const name of [
+    "auth.json",
+    "auth",
+    "plugins",
+    ".tmp",
+    "vendor_imports",
+    "version.json",
+  ]) {
+    await symlinkInto(isolatedHome, realHome, name);
+  }
+
+  const envLines = Object.entries(nodeRepl.env)
+    .map(([key, value]) => `${key} = ${tomlString(value)}`)
+    .join("\n");
+
+  const configToml = `# Story Studio isolated Codex home — Chrome only (no user MCP servers).
+[features]
+multi_agent = false
+browser_use_external = true
+
+[plugins."chrome@openai-bundled"]
+enabled = true
+
+[mcp_servers.node_repl]
+enabled = true
+command = ${tomlString(nodeRepl.command)}
+args = ${JSON.stringify(nodeRepl.args)}
+startup_timeout_sec = 120
+enabled_tools = ["js", "js_add_node_module_dir", "js_reset"]
+
+[mcp_servers.node_repl.env]
+${envLines}
+`;
+
+  await fs.writeFile(path.join(isolatedHome, "config.toml"), configToml, "utf-8");
+  console.log("[codex:chrome] prepared isolated CODEX_HOME", {
+    isolatedHome,
+    realHome,
+    nodeRepl: nodeRepl.command,
+    source: nodeRepl.source,
   });
 
-  const args = [
+  return { codexHome: isolatedHome, nodeRepl };
+}
+
+/** Extra `-c` pins for Chrome mode (plugins live in isolated config.toml). */
+export function buildCodexChromeConfigArgs(): string[] {
+  return [
     "-c",
     "features.multi_agent=false",
     "-c",
     "features.browser_use_external=true",
-    // node_repl JS tool is required for @Chrome bootstrap
-    "-c",
-    "features.js_repl=true",
-    "-c",
-    'plugins."chrome@openai-bundled".enabled=true',
-    "-c",
-    "mcp_servers.node_repl.enabled=true",
-    "-c",
-    `mcp_servers.node_repl.command=${JSON.stringify(launch.command)}`,
-    "-c",
-    `mcp_servers.node_repl.args=${JSON.stringify(launch.args)}`,
-    "-c",
-    "mcp_servers.node_repl.startup_timeout_sec=120",
   ];
-  for (const [key, value] of Object.entries(launch.env)) {
-    args.push(
-      "-c",
-      `mcp_servers.node_repl.env.${key}=${JSON.stringify(value)}`,
-    );
-  }
-  return args;
 }

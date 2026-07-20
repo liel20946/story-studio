@@ -481,7 +481,7 @@ function AgentPanel({
           <>
             <SettingsRow
               label="Codex extension"
-              description="Install the official Codex Chrome extension. No token needed — Story Studio injects node_repl like Playwright MCP."
+              description="Install the official Codex Chrome extension. Runs use an isolated Codex home (Chrome + node_repl only)."
             >
               <Button
                 variant="filled"

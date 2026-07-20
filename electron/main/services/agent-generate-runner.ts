@@ -8,7 +8,10 @@ import {
   ensureCodexProjectConfig,
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
-import { buildCodexChromeConfigArgs } from "./codex-chrome-config.js";
+import {
+  buildCodexChromeConfigArgs,
+  prepareCodexChromeHome,
+} from "./codex-chrome-config.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { writeClaudeMcpConfigFile } from "./browser-mcp-config.js";
 import {
@@ -60,14 +63,17 @@ function buildCodexModelConfigArgs(agentConfig: AgentRunConfig): string[] {
   ];
 }
 
-function buildCodexSharedFlags(agentConfig: AgentRunConfig): string[] {
+function buildCodexSharedFlags(
+  agentConfig: AgentRunConfig,
+  options: { ignoreUserConfig: boolean },
+): string[] {
   return [
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
     "--json",
-    // Isolate from ~/.codex — browser tools injected via `-c` (Playwright MCP
-    // or Chrome node_repl), same as story runs in codex-runner.ts.
-    "--ignore-user-config",
+    // Playwright: isolate from ~/.codex. Chrome uses isolated CODEX_HOME instead
+    // (plugins only load from User config.toml — see prepareCodexChromeHome).
+    ...(options.ignoreUserConfig ? ["--ignore-user-config"] : []),
     ...buildCodexModelConfigArgs(agentConfig),
   ];
 }
@@ -283,20 +289,32 @@ async function invokeCodex(
     return parseAgentMessageFromCodexStdout(stdout);
   };
 
-  // Always isolate from ~/.codex. Playwright MCP or Chrome node_repl is
-  // injected via `-c` below — never load the user's full MCP set.
-  const sharedFlags = buildCodexSharedFlags(agentConfig);
+  // Playwright: --ignore-user-config + inject Playwright MCP.
+  // Chrome: isolated CODEX_HOME with chrome plugin + node_repl only.
   const browserMode = getSettingsValue().browserMode;
   const useCodexChrome = browserMode === "codex-chrome";
-  const mcpArgs = exploring
-    ? useCodexChrome
-      ? await buildCodexChromeConfigArgs()
-      : await buildCodexPlaywrightMcpConfigArgs()
-    : [];
+  const sharedFlags = buildCodexSharedFlags(agentConfig, {
+    ignoreUserConfig: !(exploring && useCodexChrome),
+  });
+
+  let chromeCodexHome: string | undefined;
+  let mcpArgs: string[] = [];
+  if (exploring) {
+    if (useCodexChrome) {
+      const prepared = await prepareCodexChromeHome(
+        path.join(outputDir, "codex-home"),
+      );
+      chromeCodexHome = prepared.codexHome;
+      mcpArgs = buildCodexChromeConfigArgs();
+    } else {
+      mcpArgs = await buildCodexPlaywrightMcpConfigArgs();
+    }
+  }
 
   const spawnEnv = {
     ...buildBaseAgentSpawnEnv(),
     ...(exploring && !useCodexChrome ? await playwrightMcpSecretEnv() : {}),
+    ...(chromeCodexHome ? { CODEX_HOME: chromeCodexHome } : {}),
   };
 
   if (resumeSession && sessionId) {
