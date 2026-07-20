@@ -34,7 +34,7 @@ import {
 } from "../lib/ipc";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
-import type { StoryDetail } from "../lib/contract-types";
+import type { StoryDetail, StorySummary } from "../lib/contract-types";
 import { InlineCode, stripCode } from "../components/inline-code";
 import { RailAssertionLine } from "../components/rail-assertion-line";
 import { useActiveRunForStory, useRegisterRun } from "../lib/run-store";
@@ -726,6 +726,22 @@ export function StoryView() {
       const duplicatedTitle = `${story.title} (Copy)`;
       const duplicated = await storiesDuplicate(story.name, duplicatedTitle);
       queryClient.setQueryData(["stories:get", duplicated.name], duplicated);
+      // Optimistically insert so the sidebar can select the copy immediately.
+      queryClient.setQueryData<StorySummary[]>(["stories:list"], (prev) => {
+        if (!prev) return prev;
+        if (prev.some((s) => s.name === duplicated.name)) return prev;
+        const summary: StorySummary = {
+          name: duplicated.name,
+          title: duplicated.title,
+          baseUrl: duplicated.baseUrl,
+          createdAt: duplicated.createdAt,
+          lastRun: duplicated.lastRun ?? null,
+          siteSlug: duplicated.siteSlug,
+          storyId: duplicated.storyId,
+          mode: duplicated.mode,
+        };
+        return [summary, ...prev];
+      });
       void queryClient.invalidateQueries({ queryKey: ["stories:list"] });
       navigate({ to: "/story/$name", params: { name: duplicated.name } });
     } catch (err) {

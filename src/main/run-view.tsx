@@ -19,7 +19,6 @@ import {
   CheckCircle2Icon,
   XCircleIcon,
   XIcon,
-  CopyIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   BookOpenIcon,
@@ -36,13 +35,11 @@ import {
   Button,
   Badge,
   Text,
-  toast,
 } from "@/components/ui";
 import {
   runsGet,
   runCancel,
   runStart,
-  clipboardWriteText,
   runsLiveScreenshots,
   runsLiveTimeline,
 } from "../lib/ipc";
@@ -58,7 +55,6 @@ import type {
 } from "../lib/contract-types";
 import { formatAgentModelLabel, formatAgentProviderLabel } from "../lib/agent-config";
 import { useRegisterRun, useRun } from "../lib/run-store";
-import { formatRunLogs } from "../lib/format-run-logs";
 import {
   filterTimelineEvents,
   isActionEvent,
@@ -67,65 +63,6 @@ import {
 import { useRunScreenshotIndex } from "../lib/use-run-screenshot-index";
 import { ScreenshotImage, ScreenshotLightbox } from "../components/screenshot-image";
 import { RailAssertionLine } from "../components/rail-assertion-line";
-
-// ---------- copy run logs (toolbar action) ----------
-function CopyLogsButton({
-  runId,
-  storyName,
-  storyTitle,
-  startedAt,
-  events,
-  result,
-}: {
-  runId: string;
-  storyName?: string;
-  storyTitle?: string;
-  startedAt: number;
-  events: RunEvent[];
-  result?: RunResult | null;
-}) {
-  const [copied, setCopied] = React.useState(false);
-  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  React.useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
-
-  async function handleCopy() {
-    const text = formatRunLogs({
-      runId,
-      storyName: storyName ?? result?.storyName,
-      storyTitle: storyTitle ?? result?.storyTitle,
-      startedAt,
-      events,
-      result,
-    });
-    try {
-      await clipboardWriteText(text);
-      setCopied(true);
-      toast.success("Run logs copied");
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1200);
-    } catch (err) {
-      reportAppErrorFromUnknown("Failed to copy logs", err);
-    }
-  }
-
-  return (
-    <Button
-      variant="glass"
-      size="titlebar"
-      onClick={handleCopy}
-      aria-label="Copy run logs"
-    >
-      {copied ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
-      Copy logs
-    </Button>
-  );
-}
 
 // ---------- jump back to the story detail from a run ----------
 function ViewStoryButton({ storyName }: { storyName?: string }) {
@@ -761,14 +698,6 @@ function LiveRunView({ runId }: { runId: string }) {
               <ViewStoryButton
                 storyName={run?.storyName || run?.result?.storyName}
               />
-              <CopyLogsButton
-                runId={runId}
-                storyName={run?.storyName}
-                storyTitle={run?.storyTitle}
-                startedAt={startedAt}
-                events={events}
-                result={result}
-              />
               {!isFinished && (
                 <Button
                   variant="glass"
@@ -871,14 +800,6 @@ function HistoricalRunView({
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
               <ViewStoryButton storyName={record.storyName} />
-              <CopyLogsButton
-                runId={record.runId}
-                storyName={record.storyName}
-                storyTitle={record.storyTitle}
-                startedAt={record.startedAt}
-                events={record.events}
-                result={record}
-              />
               <RetryRunButton
                 storyName={record.storyName}
                 storyTitle={record.storyTitle}

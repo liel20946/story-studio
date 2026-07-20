@@ -173,7 +173,7 @@ import type { ColorThemePalette } from "../../../src/lib/color-themes.js";
 export type ThemePreference = "system" | "light" | "dark";
 export type { ColorThemeId } from "../../../src/lib/color-themes.js";
 export type { CodexModel, CodexEffort, ClaudeModel, ClaudeEffort };
-export type BrowserMode = "private" | "existing-chrome";
+export type BrowserMode = "private" | "existing-chrome" | "codex-chrome";
 
 export interface AppSettings {
   agentProvider: AgentProvider; // which CLI runs stories (default: codex)

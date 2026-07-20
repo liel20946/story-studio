@@ -45,6 +45,7 @@ import {
   ensureCodexProjectConfig,
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
+import { probeCodexChromeExtension } from "./codex-chrome-extension.js";
 import {
   DEFAULT_CODEX_EFFORT,
   DEFAULT_CODEX_MODEL,
@@ -324,8 +325,19 @@ export async function startRun(
     });
 
   const effort = agentConfig?.effort ?? DEFAULT_CODEX_EFFORT;
-  const mcpConfigArgs = await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
-  const mcpSecretEnv = await playwrightMcpSecretEnv();
+  const browserMode = getSettingsValue().browserMode;
+  const useCodexChrome = browserMode === "codex-chrome";
+  const mcpConfigArgs = useCodexChrome
+    ? [
+        "-c",
+        "features.browser_use_external=true",
+        "-c",
+        "features.browser_use=false",
+      ]
+    : await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
+  const mcpSecretEnv = useCodexChrome
+    ? {}
+    : await playwrightMcpSecretEnv();
 
   const args = [
     "exec",
@@ -339,7 +351,8 @@ export async function startRun(
     // issuing store credit 2–3×), plus loading every global MCP server. The
     // Playwright MCP is registered regardless via the inline `-c mcp_servers.*`
     // injection below (mcpConfigArgs), so runs never depend on the user's
-    // global or project Codex config at all.
+    // global or project Codex config at all. Codex Chrome mode skips MCP and
+    // enables features.browser_use_external instead.
     "--ignore-user-config",
     "-C",
     runOutputDir,
@@ -359,6 +372,7 @@ export async function startRun(
     runId,
     storyName,
     codexBinary,
+    browserMode,
     mcpConfigArgs,
   });
 
@@ -409,6 +423,42 @@ export async function startRun(
   // change had inserted a blocking ensurePlaywrightReady() preflight here (an
   // extra `npx -y` round-trip plus a "Preparing browser environment…" phase)
   // that delayed the start of every run; that per-run gate is removed.
+  // Codex Chrome mode only needs the Chrome extension present (no Playwright MCP).
+  if (useCodexChrome) {
+    const chromeExt = await probeCodexChromeExtension();
+    if (!chromeExt.installed) {
+      releaseRunSlot();
+      const failEvent: RunEvent = {
+        runId,
+        seq: state.seq++,
+        ts: Date.now(),
+        kind: "status",
+        label: "Failed",
+        detail: chromeExt.message,
+        status: "failed",
+      };
+      events.push(failEvent);
+      broadcast("run:event", failEvent);
+      syncRunTimeline(runId, events);
+      const failResult: RunResult = {
+        runId,
+        storyName,
+        storyTitle,
+        status: "error",
+        summary: "",
+        assertions: [],
+        screenshotPath,
+        screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+        startedAt,
+        finishedAt: Date.now(),
+        error: chromeExt.message,
+        agentProvider: state.agentProvider,
+        agentModel: state.agentModel,
+      };
+      return finalizeRun(failResult, events);
+    }
+  }
+
   await acquirePlaywrightSlot();
 
   if (state.cancelled) {

@@ -10,7 +10,8 @@ let _activePlaywright = 0;
 const _playwrightWaiters: Array<() => void> = [];
 
 function currentPlaywrightLimit(): number {
-  return getSettingsValue().browserMode === "existing-chrome"
+  const mode = getSettingsValue().browserMode;
+  return mode === "existing-chrome" || mode === "codex-chrome"
     ? 1
     : MAX_CONCURRENT_PLAYWRIGHT;
 }

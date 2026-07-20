@@ -42,7 +42,11 @@ function parseBrowserMode(
   value: unknown,
   fallback: AppSettings["browserMode"],
 ): AppSettings["browserMode"] {
-  return value === "private" || value === "existing-chrome" ? value : fallback;
+  return value === "private" ||
+    value === "existing-chrome" ||
+    value === "codex-chrome"
+    ? value
+    : fallback;
 }
 
 // Defaults for the user-facing settings (kept in one place so load + set agree).
@@ -298,9 +302,13 @@ export function registerSettingsHandlers(): void {
 
     if ("browserMode" in p) {
       const val = p["browserMode"];
-      if (val !== "private" && val !== "existing-chrome") {
+      if (
+        val !== "private" &&
+        val !== "existing-chrome" &&
+        val !== "codex-chrome"
+      ) {
         throw new Error(
-          "settings:set browserMode must be 'private' | 'existing-chrome'",
+          "settings:set browserMode must be 'private' | 'existing-chrome' | 'codex-chrome'",
         );
       }
       current.browserMode = val;
