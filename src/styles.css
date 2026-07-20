@@ -2531,11 +2531,13 @@
     box-sizing: border-box;
     align-items: stretch;
     padding-bottom: 1rem;
+    gap: 1rem;
   }
 
   .run-detail-view .detail-view-main,
   .run-actions-card {
     min-height: 0;
+    height: 100%;
   }
 
   .run-actions-card {
@@ -2594,9 +2596,23 @@
   grid-template-columns: 16px 6.25rem minmax(0, 1fr) 18px;
   align-items: center;
   column-gap: 0.5rem;
+  width: 100%;
   padding: 0.3rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   line-height: 16px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.timeline-row:hover,
+.timeline-row--selected {
+  background: var(--color-surface-hover);
 }
 
 .timeline-icon-wrap {
@@ -2669,6 +2685,37 @@
     align-self: flex-start;
     position: sticky;
     top: 1rem;
+  }
+}
+
+/* Run + story detail: Steps/Actions + rail cards split the row evenly. */
+@media (min-width: 1024px) {
+  .run-detail-view,
+  .story-detail-view {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .run-detail-view .detail-view-main,
+  .story-detail-view .detail-view-main {
+    min-width: 0;
+    width: auto;
+    max-width: none;
+  }
+
+  .run-detail-view .detail-rail.detail-rail--card,
+  .story-detail-view .detail-rail.detail-rail--card {
+    width: auto;
+    max-width: none;
+    flex: unset;
+    align-self: stretch;
+    position: relative;
+    top: auto;
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }
 

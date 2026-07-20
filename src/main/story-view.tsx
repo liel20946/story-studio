@@ -889,7 +889,7 @@ export function StoryView() {
     >
       {/* Two-column detail: steps on the left; variables + assertions on the
           right rail card (matches run view layout and typography). */}
-      <div className="detail-view">
+      <div className="detail-view story-detail-view">
         <div className="detail-view-main story-sections">
           {(isEditingThisStory && draft) || story.steps.length > 0 ? (
             <div className="content-card">
