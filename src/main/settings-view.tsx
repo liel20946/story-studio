@@ -323,24 +323,33 @@ function AgentPanel({
 
         <SettingsRow
           label="Browser"
-          description="Private browser, Playwright Chrome bridge, or Codex Chrome extension."
+          description={
+            provider === "codex"
+              ? "Private browser, Playwright Chrome bridge, or Codex Chrome extension."
+              : "Private browser or Playwright Chrome bridge."
+          }
         >
           <LabeledSegment
-            value={browserMode}
-            options={[
-              { value: "private", label: "Private" },
-              { value: "existing-chrome", label: "Playwright" },
-              { value: "codex-chrome", label: "Codex" },
-            ]}
-            segmentClass={segmentClassForCount(3)}
+            value={
+              provider !== "codex" && browserMode === "codex-chrome"
+                ? "private"
+                : browserMode
+            }
+            options={
+              provider === "codex"
+                ? [
+                    { value: "private", label: "Private" },
+                    { value: "existing-chrome", label: "Playwright" },
+                    { value: "codex-chrome", label: "Codex" },
+                  ]
+                : [
+                    { value: "private", label: "Private" },
+                    { value: "existing-chrome", label: "Playwright" },
+                  ]
+            }
+            segmentClass={segmentClassForCount(provider === "codex" ? 3 : 2)}
             ariaLabel="Browser mode"
-            onChange={(next) => {
-              if (next === "codex-chrome" && provider !== "codex") {
-                toast.error("Codex Chrome requires the Codex provider.");
-                return;
-              }
-              onBrowserModeChange(next);
-            }}
+            onChange={onBrowserModeChange}
           />
         </SettingsRow>
 
@@ -468,7 +477,7 @@ function AgentPanel({
           </>
         ) : null}
 
-        {browserMode === "codex-chrome" ? (
+        {browserMode === "codex-chrome" && provider === "codex" ? (
           <>
             <SettingsRow
               label="Codex extension"
