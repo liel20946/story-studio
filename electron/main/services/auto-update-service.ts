@@ -1,50 +1,162 @@
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import electronUpdater from "electron-updater";
-import { autoUpdater as nativeMacUpdater } from "electron";
 
-import { app, BrowserWindow, dialog } from "../electron-api.js";
+import { app, BrowserWindow, dialog, shell } from "../electron-api.js";
 import { logger } from "../logger.js";
 
 const { autoUpdater } = electronUpdater;
+const execFileAsync = promisify(execFile);
+
+const RELEASES_LATEST_URL =
+  "https://github.com/liel20946/story-studio/releases/latest";
 
 let downloadedVersion: string | null = null;
+let downloadedFilePath: string | null = null;
 let installInProgress = false;
 
 function isUpdateEnabled(): boolean {
   return app.isPackaged;
 }
 
+function prepareAppForQuit(): void {
+  app.removeAllListeners("before-quit");
+  app.removeAllListeners("window-all-closed");
+  app.removeAllListeners("activate");
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    win.removeAllListeners("close");
+    win.destroy();
+  }
+}
+
+function forceExitSoon(delayMs = 1500): void {
+  setTimeout(() => {
+    logger.info("updates", "Forcing app.exit after install");
+    app.exit(0);
+  }, delayMs);
+}
+
+function getMacAppBundlePath(): string {
+  // process.execPath = <App>.app/Contents/MacOS/<binary>
+  return path.resolve(process.execPath, "..", "..", "..");
+}
+
 /**
- * macOS + electron-updater: quitAndInstall() often fails to actually quit
- * while before-quit / window listeners are still attached (electron-builder#8997).
- * Strip those listeners, force-close windows, then quitAndInstall + app.exit().
+ * Our CI mac builds are unsigned. Squirrel.Mac's quitAndInstall() requires a
+ * signed app and often becomes a no-op (MacUpdater waits for squirrelDownloaded
+ * that never arrives when autoInstallOnAppQuit is true).
+ *
+ * Instead: extract the already-downloaded zip, spawn a tiny helper that waits
+ * for this process to exit, replaces the .app bundle, and relaunches.
  */
-function quitAndInstallUpdate(): void {
+async function installMacUpdateFromZip(zipPath: string): Promise<void> {
+  const appBundlePath = getMacAppBundlePath();
+  if (!appBundlePath.endsWith(".app")) {
+    throw new Error(`Unexpected app bundle path: ${appBundlePath}`);
+  }
+  if (!fs.existsSync(zipPath)) {
+    throw new Error(`Downloaded update zip missing: ${zipPath}`);
+  }
+
+  await fs.promises.access(path.dirname(appBundlePath), fs.constants.W_OK);
+
+  const stagingRoot = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), "story-studio-update-"),
+  );
+  logger.info("updates", `Extracting update to ${stagingRoot}`);
+  await execFileAsync("ditto", ["-xk", zipPath, stagingRoot]);
+
+  const entries = await fs.promises.readdir(stagingRoot);
+  const appEntry = entries.find((name) => name.endsWith(".app"));
+  if (!appEntry) {
+    throw new Error("Update zip did not contain an .app bundle");
+  }
+  const newAppPath = path.join(stagingRoot, appEntry);
+
+  const scriptPath = path.join(
+    os.tmpdir(),
+    `story-studio-apply-update-${process.pid}.sh`,
+  );
+  const script = `#!/bin/bash
+set -euo pipefail
+PID="$1"
+APP_BUNDLE="$2"
+NEW_APP="$3"
+STAGING="$4"
+while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done
+sleep 0.4
+rm -rf "$APP_BUNDLE"
+ditto "$NEW_APP" "$APP_BUNDLE"
+xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+open "$APP_BUNDLE"
+rm -rf "$STAGING"
+rm -f -- "$0"
+`;
+  await fs.promises.writeFile(scriptPath, script, { mode: 0o755 });
+
+  const child = spawn(
+    scriptPath,
+    [String(process.pid), appBundlePath, newAppPath, stagingRoot],
+    { detached: true, stdio: "ignore" },
+  );
+  child.unref();
+  logger.info("updates", "Spawned macOS update apply script");
+}
+
+async function openManualDownloadFallback(error: unknown): Promise<void> {
+  const detail =
+    error instanceof Error ? error.message : String(error);
+  const { response } = await dialog.showMessageBox({
+    type: "error",
+    title: "Update Install Failed",
+    message: "Could not apply the update automatically.",
+    detail: `${detail}\n\nDownload the latest DMG from GitHub and replace Story Studio in Applications.`,
+    buttons: ["Open Download Page", "OK"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response === 0) {
+    await shell.openExternal(RELEASES_LATEST_URL);
+  }
+}
+
+async function quitAndInstallUpdate(): Promise<void> {
   if (installInProgress) return;
   installInProgress = true;
   logger.info("updates", "Installing update and restarting");
 
-  if (process.platform === "darwin") {
-    app.removeAllListeners("before-quit");
-    app.removeAllListeners("window-all-closed");
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (win.isDestroyed()) continue;
-      win.removeAllListeners("close");
-      win.close();
+  try {
+    if (process.platform === "darwin") {
+      if (!downloadedFilePath) {
+        throw new Error("No downloaded update file is available yet.");
+      }
+      await installMacUpdateFromZip(downloadedFilePath);
+      setImmediate(() => {
+        prepareAppForQuit();
+        app.exit(0);
+      });
+      forceExitSoon();
+      return;
     }
-    nativeMacUpdater.once("before-quit-for-update", () => {
-      app.exit(0);
+
+    setImmediate(() => {
+      prepareAppForQuit();
+      try {
+        autoUpdater.quitAndInstall(false, true);
+      } catch (error) {
+        logger.error("updates", "quitAndInstall failed", error);
+      }
+      forceExitSoon();
     });
+  } catch (error) {
+    installInProgress = false;
+    logger.error("updates", "Failed to install update", error);
+    await openManualDownloadFallback(error);
   }
-
-  // isSilent / isForceRunAfter matter on Windows; on macOS we still pass true
-  // for force-run-after so Squirrel relaunches when it can.
-  autoUpdater.quitAndInstall(false, true);
-
-  // Fallback if native before-quit-for-update never fires (still stuck alive).
-  setTimeout(() => {
-    logger.info("updates", "Forcing app.exit after quitAndInstall");
-    app.exit(0);
-  }, 2500);
 }
 
 async function promptRestartToInstall(version: string): Promise<void> {
@@ -59,7 +171,7 @@ async function promptRestartToInstall(version: string): Promise<void> {
   });
 
   if (response === 0) {
-    quitAndInstallUpdate();
+    await quitAndInstallUpdate();
   }
 }
 
@@ -90,10 +202,17 @@ export function initAutoUpdates(): void {
 
   autoUpdater.on("update-downloaded", (info) => {
     downloadedVersion = info.version;
+    downloadedFilePath = info.downloadedFile;
+    logger.info("updates", "Update downloaded", {
+      version: info.version,
+      file: info.downloadedFile,
+    });
     void promptRestartToInstall(info.version);
   });
 
-  void autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+  // Prefer checkForUpdates over checkForUpdatesAndNotify so we own the prompt
+  // (system notifications do not run our install path).
+  void autoUpdater.checkForUpdates().catch((error) => {
     logger.debug("updates", "Update check skipped or failed", error);
   });
 }
@@ -117,6 +236,7 @@ export async function checkForUpdatesManually(): Promise<void> {
 
     if (!latestVersion || latestVersion === currentVersion) {
       downloadedVersion = null;
+      downloadedFilePath = null;
       await dialog.showMessageBox({
         type: "info",
         title: "No Updates",
@@ -125,7 +245,7 @@ export async function checkForUpdatesManually(): Promise<void> {
       return;
     }
 
-    if (downloadedVersion === latestVersion) {
+    if (downloadedVersion === latestVersion && downloadedFilePath) {
       await promptRestartToInstall(downloadedVersion);
       return;
     }
@@ -138,6 +258,7 @@ export async function checkForUpdatesManually(): Promise<void> {
         `Discarding staged ${downloadedVersion}; fetching ${latestVersion}`,
       );
       downloadedVersion = null;
+      downloadedFilePath = null;
     }
 
     await dialog.showMessageBox({
