@@ -351,14 +351,24 @@ export async function updateStoryContent(
   if (!existing) throw new Error(`Story not found: ${name}`);
 
   const steps = content.steps.map((s) => s.trim()).filter((s) => s.length > 0);
-  const { assertions: originalAssertions } = resolveStoryParts(existing);
+  const { steps: originalSteps, assertions: originalAssertions } =
+    resolveStoryParts(existing);
+  const oldStepCount = originalSteps.length;
 
+  // Story editor sends assertion text only (no @N). Keep mid-story positions,
+  // but rebase end-anchored asserts when the workflow grew or shrank.
   const assertions = content.assertions
     .map((text, i) => {
       if (isBlankAssertion(text)) return null;
+      let after: number;
+      if (i < originalAssertions.length) {
+        const prev = originalAssertions[i].after;
+        after = prev >= oldStepCount ? steps.length : Math.min(prev, steps.length);
+      } else {
+        after = steps.length;
+      }
       return {
-        after:
-          i < originalAssertions.length ? originalAssertions[i].after : steps.length,
+        after,
         text: normalizeAssertionText(text),
       };
     })

@@ -222,9 +222,29 @@ export function hasOnlyEndStateNavigationTail(steps: string[], fromIndex: number
 }
 
 /**
- * Move the latest assertion(s) past trailing navigation clicks captured after the
- * main action — e.g. opening a detail row so the hero screenshot is the detail page.
+ * Move the latest assertion(s) to the end when the workflow continued after them.
+ *
+ * Two common cases:
+ * 1. Trailing Click/Navigate after the main action (detail row / result page).
+ * 2. Steps added in the story editor — the UI cannot edit @N, so end asserts
+ *    stay stuck at the old index (e.g. @5 after login) while the story grew.
+ *
+ * Earlier mid-story asserts (after < maxAfter) are left alone.
  */
+export function rebaseDriftedEndAssertions(
+  steps: string[],
+  assertions: BowserAssertion[],
+): BowserAssertion[] {
+  if (steps.length === 0 || assertions.length === 0) return assertions;
+
+  const maxAfter = Math.max(...assertions.map((a) => a.after));
+  if (maxAfter >= steps.length) return assertions;
+
+  const endAfter = steps.length;
+  return assertions.map((a) => (a.after === maxAfter ? { ...a, after: endAfter } : a));
+}
+
+/** @deprecated Prefer rebaseDriftedEndAssertions — kept for callers/tests. */
 export function alignAssertionsWithEndStateNavigation(
   steps: string[],
   assertions: BowserAssertion[],
@@ -235,8 +255,7 @@ export function alignAssertionsWithEndStateNavigation(
   if (maxAfter >= steps.length) return assertions;
   if (!hasOnlyEndStateNavigationTail(steps, maxAfter)) return assertions;
 
-  const endAfter = steps.length;
-  return assertions.map((a) => (a.after === maxAfter ? { ...a, after: endAfter } : a));
+  return rebaseDriftedEndAssertions(steps, assertions);
 }
 
 /** Clamp @N positions into 0..stepCount — fixes common off-by-one from AI conversion. */
@@ -337,13 +356,18 @@ export function resolveStoryParts(entry: BowserStoryEntry): {
     assertions = assertions.map((a) =>
       a.after >= 0 ? a : { ...a, after: steps.length },
     );
+    assertions = rebaseDriftedEndAssertions(steps, assertions);
+    assertions = clampAssertionPositions(assertions, steps.length);
     return { steps, assertions };
   }
 
-  const { steps, assertions } = splitWorkflowWithAssertions(rawWorkflow);
-  if (assertions.length === 0) {
-    return { steps, assertions: ensureFallbackAssertions(steps, entry.url) };
-  }
+  const { steps, assertions: splitAssertions } = splitWorkflowWithAssertions(rawWorkflow);
+  let assertions =
+    splitAssertions.length > 0
+      ? splitAssertions
+      : ensureFallbackAssertions(steps, entry.url);
+  assertions = rebaseDriftedEndAssertions(steps, assertions);
+  assertions = clampAssertionPositions(assertions, steps.length);
   return { steps, assertions };
 }
 
@@ -352,7 +376,7 @@ export function normalizeBowserEntryForStorage(entry: BowserStoryEntry): BowserS
   const { steps, assertions } = resolveStoryParts(entry);
   let finalAssertions =
     assertions.length > 0 ? assertions : ensureFallbackAssertions(steps, entry.url);
-  finalAssertions = alignAssertionsWithEndStateNavigation(steps, finalAssertions);
+  finalAssertions = rebaseDriftedEndAssertions(steps, finalAssertions);
   finalAssertions = clampAssertionPositions(finalAssertions, steps.length);
   const { tags: _tags, ...rest } = stripBowserEntryTags(entry);
   return {
