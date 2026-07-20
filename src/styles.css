@@ -2688,20 +2688,24 @@
   }
 }
 
-/* Run view: Actions + run-info cards split the row evenly (after rail defaults). */
+/* Run + story detail: Steps/Actions + rail cards split the row evenly. */
 @media (min-width: 1024px) {
-  .run-detail-view {
+  .run-detail-view,
+  .story-detail-view {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
   }
 
-  .run-detail-view .detail-view-main {
+  .run-detail-view .detail-view-main,
+  .story-detail-view .detail-view-main {
     min-width: 0;
     width: auto;
     max-width: none;
   }
 
-  .run-detail-view .detail-rail.detail-rail--card {
+  .run-detail-view .detail-rail.detail-rail--card,
+  .story-detail-view .detail-rail.detail-rail--card {
     width: auto;
     max-width: none;
     flex: unset;
