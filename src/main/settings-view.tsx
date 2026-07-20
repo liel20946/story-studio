@@ -146,7 +146,6 @@ function AgentPanel({
   claudeEffort,
   browserMode,
   capabilities,
-  capabilitiesError,
   onProviderChange,
   onCodexModelChange,
   onCodexEffortChange,
@@ -161,7 +160,6 @@ function AgentPanel({
   claudeEffort: ClaudeEffort;
   browserMode: BrowserMode;
   capabilities: AgentCapabilities | null;
-  capabilitiesError?: string;
   onProviderChange: (provider: AgentProvider) => void;
   onCodexModelChange: (model: CodexModel) => void;
   onCodexEffortChange: (effort: CodexEffort) => void;
@@ -489,20 +487,12 @@ function AgentPanel({
               </Button>
             </SettingsRow>
 
-            <SettingsRow
-              label="Status"
-              description="Checks whether the Codex extension is installed in Chrome."
-            >
+            <SettingsRow label="Status">
               <div className="flex items-center gap-2">
                 {codexChromeInstalled === true ? (
                   <CheckIcon
                     className="size-4 text-green-500"
                     aria-label="Extension installed"
-                  />
-                ) : codexChromeInstalled === false ? (
-                  <XIcon
-                    className="size-4 text-red-500"
-                    aria-label="Extension not found"
                   />
                 ) : null}
                 <span className="text-small text-secondary">
@@ -530,12 +520,6 @@ function AgentPanel({
               </div>
             </SettingsRow>
           </>
-        ) : null}
-
-        {capabilitiesError ? (
-          <p className="settings-row-desc px-4 pb-3 text-[var(--color-text-secondary)]">
-            Model list loaded at startup with issues; showing fallback options. {capabilitiesError}
-          </p>
         ) : null}
       </SettingsGroup>
     </div>
@@ -757,7 +741,6 @@ export function SettingsView() {
   const resolvedSettings = normalizeAppSettings(appSettings);
   const agentProvider = resolvedSettings.agentProvider;
   const agentCapabilities = useAgentCapabilities(agentProvider);
-  const capabilitiesError = agentCapabilities?.error;
 
   const commitAppSettings = (settings: AppSettings) => {
     const normalized = setCachedAppSettings(settings);
@@ -1091,7 +1074,6 @@ export function SettingsView() {
               claudeEffort={resolvedSettings.claudeEffort}
               browserMode={resolvedSettings.browserMode}
               capabilities={agentCapabilities}
-              capabilitiesError={capabilitiesError ?? settingsError ?? undefined}
               onProviderChange={handleProviderChange}
               onCodexModelChange={handleCodexModelChange}
               onCodexEffortChange={handleCodexEffortChange}
