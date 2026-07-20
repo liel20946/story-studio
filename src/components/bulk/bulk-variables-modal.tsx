@@ -148,8 +148,7 @@ export function BulkVariablesModal({
         <DialogHeader>
           <DialogTitle>Variable runs: {story.title}</DialogTitle>
           <DialogDescription>
-            Describe how you want to run this story multiple times. The agent builds
-            variable sets you can edit before saving.
+            Describe how to vary this story across runs.
           </DialogDescription>
         </DialogHeader>
 
