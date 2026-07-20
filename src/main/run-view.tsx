@@ -2,19 +2,7 @@ import * as React from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
-  Link2Icon,
-  MousePointer2Icon,
-  TypeIcon,
-  ScanLineIcon,
-  ImageIcon,
   ClockIcon,
-  CheckIcon,
-  SparklesIcon,
-  TerminalIcon,
-  MessageSquareIcon,
-  TextIcon,
-  PlayIcon,
-  CircleAlertIcon,
   Loader2Icon,
   CheckCircle2Icon,
   XCircleIcon,
@@ -24,7 +12,6 @@ import {
   BookOpenIcon,
   RotateCcwIcon,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import {
   ScrollArea,
   Toolbar,
@@ -47,7 +34,6 @@ import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type {
   RunEvent,
-  RunEventKind,
   RunResult,
   RunRecord,
   RunStatus,
@@ -172,45 +158,6 @@ function formatDuration(ms: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-// ---------- icon map ----------
-// Monochrome, thin-stroke icons — color comes from `.timeline-icon-wrap`.
-function TimelineActionIcon({ icon: Icon }: { icon: LucideIcon }) {
-  return <Icon className="size-3.5 shrink-0" strokeWidth={1.75} />;
-}
-
-function eventIcon(kind: RunEventKind): React.ReactNode {
-  switch (kind) {
-    case "navigate":
-      return <TimelineActionIcon icon={Link2Icon} />;
-    case "click":
-      return <TimelineActionIcon icon={MousePointer2Icon} />;
-    case "type":
-      return <TimelineActionIcon icon={TypeIcon} />;
-    case "snapshot":
-      return <TimelineActionIcon icon={ScanLineIcon} />;
-    case "screenshot":
-      return <TimelineActionIcon icon={ImageIcon} />;
-    case "wait":
-      return <TimelineActionIcon icon={ClockIcon} />;
-    case "assert":
-      return <TimelineActionIcon icon={CheckIcon} />;
-    case "evaluate":
-      return <TimelineActionIcon icon={SparklesIcon} />;
-    case "tool":
-      return <TimelineActionIcon icon={TerminalIcon} />;
-    case "message":
-      return <TimelineActionIcon icon={MessageSquareIcon} />;
-    case "reasoning":
-      return <TimelineActionIcon icon={TextIcon} />;
-    case "status":
-      return <TimelineActionIcon icon={PlayIcon} />;
-    case "error":
-      return <TimelineActionIcon icon={CircleAlertIcon} />;
-    default:
-      return <TimelineActionIcon icon={TerminalIcon} />;
-  }
-}
-
 // Cap how many distinct detail values we stitch together for a merged row —
 // beyond this it reads better as "and N more" than as a wall of refs.
 const MAX_MERGED_DETAILS = 4;
@@ -250,12 +197,95 @@ function collapseEvents(events: RunEvent[]): { event: RunEvent; count: number }[
   }));
 }
 
+/** Parse `step-N-…` from a screenshot filename when present. */
+function stepIndexFromScreenshotPath(filePath: string): number | null {
+  const base = filePath.split(/[/\\]/).pop() ?? "";
+  const match = base.match(/^step-(\d+)[-.]/i);
+  if (!match) return null;
+  const n = Number.parseInt(match[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Map a selected action row → the best matching screenshot gallery index. */
+function screenshotIndexForAction(
+  actionIndex: number,
+  collapsed: { event: RunEvent }[],
+  paths: string[],
+): number {
+  if (paths.length === 0 || collapsed.length === 0) return 0;
+  const event = collapsed[actionIndex]?.event;
+  if (!event) return 0;
+
+  const exact = paths.findIndex((p) => stepIndexFromScreenshotPath(p) === event.seq);
+  if (exact >= 0) return exact;
+
+  let best = -1;
+  let bestStep = -1;
+  for (let i = 0; i < paths.length; i++) {
+    const step = stepIndexFromScreenshotPath(paths[i]);
+    if (step != null && step <= event.seq && step >= bestStep) {
+      best = i;
+      bestStep = step;
+    }
+  }
+  if (best >= 0) return best;
+
+  if (collapsed.length === 1) return 0;
+  return Math.min(
+    paths.length - 1,
+    Math.round((actionIndex / (collapsed.length - 1)) * (paths.length - 1)),
+  );
+}
+
+/** Map a screenshot gallery index → the best matching action row. */
+function actionIndexForScreenshot(
+  shotIndex: number,
+  collapsed: { event: RunEvent }[],
+  paths: string[],
+): number {
+  if (collapsed.length === 0) return 0;
+  const path = paths[shotIndex];
+  const step = path ? stepIndexFromScreenshotPath(path) : null;
+  if (step != null) {
+    const exact = collapsed.findIndex(({ event }) => event.seq === step);
+    if (exact >= 0) return exact;
+    let best = 0;
+    for (let i = 0; i < collapsed.length; i++) {
+      if (collapsed[i].event.seq <= step) best = i;
+    }
+    return best;
+  }
+  if (paths.length <= 1) return 0;
+  return Math.min(
+    collapsed.length - 1,
+    Math.round((shotIndex / (paths.length - 1)) * (collapsed.length - 1)),
+  );
+}
+
 // ---------- single timeline row ----------
-function TimelineRow({ event, count = 1 }: { event: RunEvent; count?: number }) {
+function TimelineRow({
+  event,
+  count = 1,
+  index,
+  selected,
+  onSelect,
+}: {
+  event: RunEvent;
+  count?: number;
+  index: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const isProse = event.kind === "message" || event.kind === "reasoning";
   return (
-    <div className="timeline-row group">
-      <div className="timeline-icon-wrap">{eventIcon(event.kind)}</div>
+    <button
+      type="button"
+      className={cn("timeline-row group", selected && "timeline-row--selected")}
+      onClick={onSelect}
+      aria-current={selected ? "true" : undefined}
+      aria-label={`Action ${index + 1}: ${event.label}`}
+    >
+      <span className="timeline-num">{index + 1}</span>
       <span className="truncate text-[12px] font-medium leading-[16px] text-primary">
         {event.label}
         {count > 1 && (
@@ -279,7 +309,7 @@ function TimelineRow({ event, count = 1 }: { event: RunEvent; count?: number }) 
           <XIcon className="size-3.5 text-secondary" />
         ) : null}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -435,14 +465,25 @@ function useLiveRunScreenshotPaths(runId: string, enabled: boolean) {
 
 // Live rail screenshot — shows the gallery with nav; jumps to the latest capture
 // (with a subtle reveal) when a new file lands on disk during the run.
-function LiveScreenshotsSection({ runId }: { runId: string }) {
+function LiveScreenshotsSection({
+  runId,
+  selected,
+  onSelectedChange,
+  onPathsChange,
+}: {
+  runId: string;
+  selected: number;
+  onSelectedChange: (index: number) => void;
+  onPathsChange?: (paths: string[]) => void;
+}) {
   const { data } = useLiveRunScreenshotPaths(runId, true);
   const paths = data?.paths ?? [];
-  const [selected, setSelected] = useRunScreenshotIndex(runId, paths.length, {
-    defaultToLatest: false,
-  });
   const [revealing, setRevealing] = React.useState(false);
   const prevLatestRef = React.useRef<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    onPathsChange?.(paths);
+  }, [paths, onPathsChange]);
 
   React.useEffect(() => {
     prevLatestRef.current = undefined;
@@ -453,12 +494,12 @@ function LiveScreenshotsSection({ runId }: { runId: string }) {
     const latest = paths[paths.length - 1];
     if (latest !== prevLatestRef.current) {
       prevLatestRef.current = latest;
-      setSelected(paths.length - 1);
+      onSelectedChange(paths.length - 1);
       setRevealing(true);
       const timer = setTimeout(() => setRevealing(false), 480);
       return () => clearTimeout(timer);
     }
-  }, [paths, setSelected]);
+  }, [paths, onSelectedChange]);
 
   return (
     <Section title="Screenshots">
@@ -468,7 +509,7 @@ function LiveScreenshotsSection({ runId }: { runId: string }) {
             runId={runId}
             paths={paths}
             selected={selected}
-            onSelectedChange={setSelected}
+            onSelectedChange={onSelectedChange}
           />
         </div>
       ) : null}
@@ -518,9 +559,9 @@ function RunVariablesSection({
   );
 }
 
-// ---------- result panel: Variables + Assertions + step-linked screenshots ----------
-function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
-  const cancelled = result.status === "cancelled";
+/** Resolve the screenshot gallery paths for a finished run. */
+function galleryPathsForResult(runId: string, result: RunResult): string[] {
+  if (result.runId !== runId) return [];
   const stepShots =
     result.steps?.filter((s) => s.screenshot).map((s) => s.screenshot as string) ?? [];
   const galleryPaths =
@@ -531,15 +572,24 @@ function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
         : result.screenshotPath
           ? [result.screenshotPath]
           : [];
-  const displayPaths =
-    galleryPaths.length > 0
-      ? galleryPaths
-      : result.screenshotPath
-        ? [result.screenshotPath]
-        : [];
-  const viewingReady = result.runId === runId;
-  const galleryPathsForView = viewingReady ? displayPaths : [];
-  const [selected, setSelected] = useRunScreenshotIndex(runId, galleryPathsForView.length);
+  if (galleryPaths.length > 0) return galleryPaths;
+  return result.screenshotPath ? [result.screenshotPath] : [];
+}
+
+// ---------- result panel: Variables + Assertions + step-linked screenshots ----------
+function ResultPanel({
+  runId,
+  result,
+  selected,
+  onSelectedChange,
+}: {
+  runId: string;
+  result: RunResult;
+  selected: number;
+  onSelectedChange: (index: number) => void;
+}) {
+  const cancelled = result.status === "cancelled";
+  const galleryPathsForView = galleryPathsForResult(runId, result);
 
   return (
     <>
@@ -553,17 +603,49 @@ function ResultPanel({ runId, result }: { runId: string; result: RunResult }) {
         </div>
       </Section>
 
-      {!cancelled && viewingReady && (
+      {!cancelled && galleryPathsForView.length > 0 && (
         <Section title="Screenshots">
           <ScreenshotsGallery
             runId={runId}
             paths={galleryPathsForView}
             selected={selected}
-            onSelectedChange={setSelected}
+            onSelectedChange={onSelectedChange}
           />
         </Section>
       )}
     </>
+  );
+}
+
+/** Numbered, selectable action list — selection syncs the screenshot rail. */
+function ActionsTimeline({
+  events,
+  selectedActionIndex,
+  onSelectAction,
+  scrollRef,
+}: {
+  events: RunEvent[];
+  selectedActionIndex: number;
+  onSelectAction: (index: number) => void;
+  scrollRef?: React.Ref<HTMLDivElement>;
+}) {
+  const collapsed = collapseEvents(events);
+  return (
+    <div
+      ref={scrollRef}
+      className="content-card-body run-actions-card-body timeline-list"
+    >
+      {collapsed.map(({ event, count }, index) => (
+        <TimelineRow
+          key={`${event.seq}-${event.runId}-${index}`}
+          event={event}
+          count={count}
+          index={index}
+          selected={index === selectedActionIndex}
+          onSelect={() => onSelectAction(index)}
+        />
+      ))}
+    </div>
   );
 }
 // Rendered as the FIRST thing in the run body, above the Actions section.
@@ -662,6 +744,51 @@ function LiveRunView({ runId }: { runId: string }) {
   const startedAt = run?.startedAt ?? Date.now();
   const [isCancelling, setIsCancelling] = React.useState(false);
   const actionsBodyRef = React.useRef<HTMLDivElement>(null);
+  const finishedPaths = result ? galleryPathsForResult(runId, result) : [];
+  const [livePaths, setLivePaths] = React.useState<string[]>([]);
+  const screenshotPaths = isFinished ? finishedPaths : livePaths;
+  const pathsKey = screenshotPaths.join("\0");
+  const eventsKey = events.map((e) => `${e.seq}:${e.status}`).join(",");
+  const [selectedShot, setSelectedShot] = useRunScreenshotIndex(
+    runId,
+    screenshotPaths.length,
+    { defaultToLatest: !isFinished },
+  );
+  const [selectedActionIndex, setSelectedActionIndex] = React.useState(0);
+  // When the user picks an action, skip the reverse shot→action sync once so
+  // multiple actions that share a screenshot stay independently selectable.
+  const skipActionSyncRef = React.useRef(false);
+
+  const handlePathsChange = React.useCallback((paths: string[]) => {
+    setLivePaths(paths);
+  }, []);
+
+  // Keep action highlight in sync when the gallery index changes (nav / live jump).
+  React.useEffect(() => {
+    if (skipActionSyncRef.current) {
+      skipActionSyncRef.current = false;
+      return;
+    }
+    const collapsed = collapseEvents(events);
+    if (collapsed.length === 0) {
+      setSelectedActionIndex(0);
+      return;
+    }
+    setSelectedActionIndex(
+      actionIndexForScreenshot(selectedShot, collapsed, screenshotPaths),
+    );
+    // events/screenshotPaths are keyed above so identity churn doesn't loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- eventsKey/pathsKey
+  }, [selectedShot, eventsKey, pathsKey]);
+
+  function handleSelectAction(index: number) {
+    const collapsed = collapseEvents(events);
+    setSelectedActionIndex(index);
+    if (screenshotPaths.length > 0) {
+      skipActionSyncRef.current = true;
+      setSelectedShot(screenshotIndexForAction(index, collapsed, screenshotPaths));
+    }
+  }
 
   // Auto-scroll only the Actions body. scrollIntoView would also move the
   // outer page and could push the top of the card above the viewport.
@@ -746,15 +873,12 @@ function LiveRunView({ runId }: { runId: string }) {
                 </Text>
               </div>
             ) : (
-              <div ref={actionsBodyRef} className="content-card-body run-actions-card-body">
-                {collapseEvents(events).map(({ event, count }) => (
-                  <TimelineRow
-                    key={`${event.seq}-${event.runId}`}
-                    event={event}
-                    count={count}
-                  />
-                ))}
-              </div>
+              <ActionsTimeline
+                scrollRef={actionsBodyRef}
+                events={events}
+                selectedActionIndex={selectedActionIndex}
+                onSelectAction={handleSelectAction}
+              />
             )}
           </div>
         </div>
@@ -773,8 +897,22 @@ function LiveRunView({ runId }: { runId: string }) {
               variables={run?.variableOverrides ?? result?.variableOverrides}
             />
           )}
-          {!isFinished && <LiveScreenshotsSection runId={runId} />}
-          {isFinished && result && <ResultPanel runId={runId} result={result} />}
+          {!isFinished && (
+            <LiveScreenshotsSection
+              runId={runId}
+              selected={selectedShot}
+              onSelectedChange={setSelectedShot}
+              onPathsChange={handlePathsChange}
+            />
+          )}
+          {isFinished && result && (
+            <ResultPanel
+              runId={runId}
+              result={result}
+              selected={selectedShot}
+              onSelectedChange={setSelectedShot}
+            />
+          )}
         </div>
       </div>
     </ScrollArea>
@@ -790,6 +928,41 @@ function HistoricalRunView({
   record: RunRecord;
 }) {
   const events = filterTimelineEvents(record.events);
+  const screenshotPaths = galleryPathsForResult(runId, record);
+  const pathsKey = screenshotPaths.join("\0");
+  const eventsKey = events.map((e) => `${e.seq}:${e.status}`).join(",");
+  const [selectedShot, setSelectedShot] = useRunScreenshotIndex(
+    runId,
+    screenshotPaths.length,
+  );
+  const [selectedActionIndex, setSelectedActionIndex] = React.useState(0);
+  const skipActionSyncRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (skipActionSyncRef.current) {
+      skipActionSyncRef.current = false;
+      return;
+    }
+    const collapsed = collapseEvents(events);
+    if (collapsed.length === 0) {
+      setSelectedActionIndex(0);
+      return;
+    }
+    setSelectedActionIndex(
+      actionIndexForScreenshot(selectedShot, collapsed, screenshotPaths),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- eventsKey/pathsKey
+  }, [selectedShot, eventsKey, pathsKey]);
+
+  function handleSelectAction(index: number) {
+    const collapsed = collapseEvents(events);
+    setSelectedActionIndex(index);
+    if (screenshotPaths.length > 0) {
+      skipActionSyncRef.current = true;
+      setSelectedShot(screenshotIndexForAction(index, collapsed, screenshotPaths));
+    }
+  }
+
   return (
     <ScrollArea
       toolbar={
@@ -825,15 +998,11 @@ function HistoricalRunView({
                 </Text>
               </div>
             </div>
-            <div className="content-card-body run-actions-card-body">
-              {collapseEvents(events).map(({ event, count }) => (
-                <TimelineRow
-                  key={`${event.seq}-${event.runId}`}
-                  event={event}
-                  count={count}
-                />
-              ))}
-            </div>
+            <ActionsTimeline
+              events={events}
+              selectedActionIndex={selectedActionIndex}
+              onSelectAction={handleSelectAction}
+            />
           </div>
         </div>
         <div className="detail-rail detail-rail--card">
@@ -845,7 +1014,12 @@ function HistoricalRunView({
             agentProvider={record.agentProvider}
             agentModel={record.agentModel}
           />
-          <ResultPanel runId={runId} result={record} />
+          <ResultPanel
+            runId={runId}
+            result={record}
+            selected={selectedShot}
+            onSelectedChange={setSelectedShot}
+          />
         </div>
       </div>
     </ScrollArea>

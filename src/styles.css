@@ -2589,14 +2589,70 @@
   height: 0.875rem;
 }
 
+/* Numbered action list with a continuous connector through the index column. */
+.timeline-list {
+  position: relative;
+}
+
+.timeline-list::before {
+  content: "";
+  position: absolute;
+  /* content-card-body pad-x (0.25rem) + row pad-x (0.5rem) + half of 16px num */
+  left: calc(0.75rem + 8px);
+  top: 1.05rem;
+  bottom: 1.05rem;
+  width: 1px;
+  background: var(--color-border-separator);
+  pointer-events: none;
+}
+
 .timeline-row {
   display: grid;
   grid-template-columns: 16px 6.25rem minmax(0, 1fr) 18px;
   align-items: center;
   column-gap: 0.5rem;
+  width: 100%;
   padding: 0.3rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   line-height: 16px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.timeline-row:hover {
+  background: var(--color-surface-hover);
+}
+
+.timeline-row--selected {
+  background: var(--color-surface-hover);
+}
+
+.timeline-num {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-quaternary);
+  background: var(--color-surface-well);
+}
+
+.timeline-row:hover .timeline-num,
+.timeline-row--selected .timeline-num {
+  background: var(--color-surface-hover);
 }
 
 .timeline-icon-wrap {
