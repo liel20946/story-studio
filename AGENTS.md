@@ -121,6 +121,9 @@ gh release delete v<VERSION> --yes --cleanup-tag
 
 ## Common pitfalls
 
+- **Unsigned CI builds.** If the Action logs `Signing: disabled`, the zip has no `_CodeSignature`
+  and Restart/install will no-op for every existing client. Compare a good release (v1.5.7 has
+  `_CodeSignature`) vs a bad one (v1.5.11 has none). Always sign; the workflow now requires it.
 - **Manual GitHub UI uploads** skip `latest-mac.yml` and break auto-update. Use the scripts.
 - **Wrong asset name form in the yml.** GitHub serves the space-named artifact with a dot
   (`Story Studio` -> `Story.Studio`). The yml must use the dotted name. A dash form (`Story-Studio`)
