@@ -3,20 +3,28 @@
 # Security:
 # - No tokens/certs in this file. Only references to GitHub Actions Secrets.
 # - Uses the ephemeral job GITHUB_TOKEN (auto-masked; dies with the job).
-# - Apple signing secrets are optional. Blank secrets are never exported as
-#   CSC_LINK (electron-builder treats empty CSC_LINK as a filesystem path).
+# - Apple signing secrets are REQUIRED for publish. Blank CSC_* must never become
+#   empty CSC_LINK (electron-builder treats that as a filesystem path).
 # - Secrets are injected only into the packaging step env — never echoed,
 #   never written to $GITHUB_ENV / artifacts / the GitHub Release.
 # - No pull_request trigger (forks cannot use this to publish).
+#
+# Why signing is required:
+#   macOS auto-update (Squirrel.Mac / electron-updater quitAndInstall) only works
+#   with Developer ID–signed zips. Unsigned CI builds (1.5.8–1.5.11) downloaded
+#   fine but Restart did nothing. Local Mac publishes work because the keychain
+#   identity signs the app. CI must use the same cert via secrets.
 #
 # Triggers:
 #   - Manual: Actions → "Release macOS" → Run workflow
 #   - Tag push: git tag vX.Y.Z && git push origin vX.Y.Z
 #     (package.json "version" must match the tag, without the leading v)
 #
-# Optional repository Secrets (Settings → Secrets and variables → Actions):
-#   CSC_LINK                      base64-encoded .p12 Developer ID cert
+# Required repository Secrets (Settings → Secrets and variables → Actions):
+#   CSC_LINK                      base64-encoded .p12 Developer ID Application cert
 #   CSC_KEY_PASSWORD              password for that .p12
+#
+# Optional (notarization — recommended):
 #   APPLE_ID                      Apple ID email
 #   APPLE_APP_SPECIFIC_PASSWORD   app-specific password
 #   APPLE_TEAM_ID                 10-char team id
@@ -78,11 +86,25 @@ jobs:
             exit 1
           fi
 
+      - name: Require Apple signing secrets
+        env:
+          CSC_LINK_RAW: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD_RAW: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CSC_LINK_RAW}" ] || [ -z "${CSC_KEY_PASSWORD_RAW}" ]; then
+            echo "::error::CSC_LINK and CSC_KEY_PASSWORD secrets are required."
+            echo "Unsigned mac builds break auto-update (Restart does nothing)."
+            echo "Export your Developer ID .p12 as base64 for CSC_LINK, set CSC_KEY_PASSWORD,"
+            echo "or publish from a Mac with the cert in the keychain: GH_TOKEN=\$(gh auth token) npm run dist:publish"
+            exit 1
+          fi
+          echo "Signing secrets: present"
+
       - name: Build + publish release
         if: ${{ github.event_name == 'push' || inputs.publish }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # *_RAW keeps blank secrets from becoming empty CSC_LINK / APPLE_*.
           CSC_LINK_RAW: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD_RAW: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID_RAW: ${{ secrets.APPLE_ID }}
@@ -91,7 +113,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Mask before any tool can print them.
           [ -n "${CSC_LINK_RAW}" ] && echo "::add-mask::${CSC_LINK_RAW}"
           [ -n "${CSC_KEY_PASSWORD_RAW}" ] && echo "::add-mask::${CSC_KEY_PASSWORD_RAW}"
           [ -n "${APPLE_ID_RAW}" ] && echo "::add-mask::${APPLE_ID_RAW}"
@@ -100,14 +121,9 @@ jobs:
 
           unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID || true
 
-          if [ -n "${CSC_LINK_RAW}" ] && [ -n "${CSC_KEY_PASSWORD_RAW}" ]; then
-            export CSC_LINK="${CSC_LINK_RAW}"
-            export CSC_KEY_PASSWORD="${CSC_KEY_PASSWORD_RAW}"
-            echo "Signing: enabled"
-          else
-            export CSC_IDENTITY_AUTO_DISCOVERY=false
-            echo "Signing: disabled (unsigned build)"
-          fi
+          export CSC_LINK="${CSC_LINK_RAW}"
+          export CSC_KEY_PASSWORD="${CSC_KEY_PASSWORD_RAW}"
+          echo "Signing: enabled"
 
           if [ -n "${APPLE_ID_RAW}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD_RAW}" ] && [ -n "${APPLE_TEAM_ID_RAW}" ]; then
             export APPLE_ID="${APPLE_ID_RAW}"
@@ -118,7 +134,6 @@ jobs:
             echo "Notarization: skipped (no Apple ID secrets)"
           fi
 
-          # Drop raw aliases from the environment before packaging.
           unset CSC_LINK_RAW CSC_KEY_PASSWORD_RAW APPLE_ID_RAW APPLE_APP_SPECIFIC_PASSWORD_RAW APPLE_TEAM_ID_RAW
 
           npm run dist:publish
@@ -142,14 +157,9 @@ jobs:
 
           unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID || true
 
-          if [ -n "${CSC_LINK_RAW}" ] && [ -n "${CSC_KEY_PASSWORD_RAW}" ]; then
-            export CSC_LINK="${CSC_LINK_RAW}"
-            export CSC_KEY_PASSWORD="${CSC_KEY_PASSWORD_RAW}"
-            echo "Signing: enabled"
-          else
-            export CSC_IDENTITY_AUTO_DISCOVERY=false
-            echo "Signing: disabled (unsigned build)"
-          fi
+          export CSC_LINK="${CSC_LINK_RAW}"
+          export CSC_KEY_PASSWORD="${CSC_KEY_PASSWORD_RAW}"
+          echo "Signing: enabled"
 
           if [ -n "${APPLE_ID_RAW}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD_RAW}" ] && [ -n "${APPLE_TEAM_ID_RAW}" ]; then
             export APPLE_ID="${APPLE_ID_RAW}"
@@ -165,6 +175,28 @@ jobs:
           npm run build
           npx electron-builder --mac --publish never
           node scripts/generate-latest-mac-yml.mjs "${{ steps.version.outputs.version }}"
+
+      - name: Verify zip is Developer ID signed
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP="$(ls release/Story*Studio-${VERSION}-arm64-mac.zip | head -1)"
+          echo "Checking signatures inside: $ZIP"
+          if ! unzip -l "$ZIP" | grep -q '_CodeSignature/CodeResources'; then
+            echo "::error::Release zip has no _CodeSignature — unsigned builds break auto-update."
+            exit 1
+          fi
+          # Spot-check the main app bundle signature after extract (shallow).
+          TMP="$(mktemp -d)"
+          ditto -xk "$ZIP" "$TMP"
+          APP="$(find "$TMP" -maxdepth 1 -name '*.app' | head -1)"
+          codesign --verify --deep --strict "$APP"
+          codesign -dv --verbose=2 "$APP" 2>&1 | tee /tmp/codesign-dv.txt
+          if ! grep -q 'Authority=Developer ID Application' /tmp/codesign-dv.txt; then
+            echo "::error::App is not signed with Developer ID Application (adhoc/unsigned will break Squirrel updates)."
+            exit 1
+          fi
+          echo "Signature OK"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -187,7 +219,6 @@ jobs:
           set -euo pipefail
           TAG="v${VERSION}"
           echo "=== latest-mac.yml ==="
-          # Public release asset URL — no credentials in the request.
           curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${TAG}/latest-mac.yml"
           echo
           echo "=== release assets (name + size only) ==="
