@@ -4,6 +4,7 @@ import {
   listStories,
   getStory,
   createManualStory,
+  duplicateStory,
   deleteStory,
   importStories,
   exportStories,
@@ -53,6 +54,21 @@ export function registerStoriesHandlers(): void {
     }
     const { title, url } = params as { title: string; url: string };
     return createManualStory(title, url);
+  });
+
+  ipcMain.handle("stories:duplicate", async (_event, params: unknown) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      typeof (params as Record<string, unknown>)["name"] !== "string"
+    ) {
+      throw new Error("stories:duplicate requires { name: string, title?: string }");
+    }
+
+    const p = params as Record<string, unknown>;
+    const name = p["name"] as string;
+    const title = typeof p["title"] === "string" ? p["title"] : undefined;
+    return duplicateStory(name, title);
   });
 
   ipcMain.handle("stories:delete", async (_event, params: unknown) => {

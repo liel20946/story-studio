@@ -207,6 +207,43 @@ export async function createManualStory(
   return getBowserStory(compositeStoryName(siteSlug, storyId), new Map());
 }
 
+export async function duplicateStory(
+  name: string,
+  title?: string,
+): Promise<StoryDetail> {
+  const parsed = parseCompositeName(name);
+  if (!parsed) throw new Error(`Invalid story name: ${name}`);
+
+  const file = await loadSiteFile(parsed.siteSlug);
+  const existing = file.stories.find((s) => s.id === parsed.storyId);
+  if (!existing) throw new Error(`Story not found: ${name}`);
+
+  const storyTitle = (title?.trim() || `${existing.name} (Copy)`).trim();
+  if (!storyTitle) throw new Error("Story title is required");
+
+  const baseId = slugify(storyTitle) || "story";
+  let storyId = baseId;
+  let suffix = 2;
+  while (file.stories.some((s) => s.id === storyId)) {
+    storyId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  await appendStoryToSite(parsed.siteSlug, {
+    id: storyId,
+    name: storyTitle,
+    url: existing.url,
+    mode: existing.mode,
+    workflow: existing.workflow,
+    assertions: existing.assertions,
+    global_rules: existing.global_rules,
+    variables: existing.variables,
+    created_at: Date.now(),
+  });
+
+  return getBowserStory(compositeStoryName(parsed.siteSlug, storyId), new Map());
+}
+
 export async function deleteStory(name: string): Promise<void> {
   const parsed = parseCompositeName(name);
   if (!parsed) throw new Error(`Invalid story name: ${name}`);
