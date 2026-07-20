@@ -8,6 +8,7 @@ import {
   ensureCodexProjectConfig,
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
+import { buildCodexChromeConfigArgs } from "./codex-chrome-extension.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { writeClaudeMcpConfigFile } from "./browser-mcp-config.js";
 import {
@@ -59,14 +60,17 @@ function buildCodexModelConfigArgs(agentConfig: AgentRunConfig): string[] {
   ];
 }
 
-function buildCodexSharedFlags(agentConfig: AgentRunConfig): string[] {
+function buildCodexSharedFlags(
+  agentConfig: AgentRunConfig,
+  options: { ignoreUserConfig: boolean },
+): string[] {
   return [
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
     "--json",
-    // Isolate from the user's global ~/.codex/config.toml — see codex-runner.ts
-    // for why (notably `[features] multi_agent = true`).
-    "--ignore-user-config",
+    // Playwright / text-only: isolate from ~/.codex (notably multi_agent).
+    // Codex Chrome must keep user config so @Chrome / node_repl load.
+    ...(options.ignoreUserConfig ? ["--ignore-user-config"] : []),
     ...buildCodexModelConfigArgs(agentConfig),
   ];
 }
@@ -282,21 +286,16 @@ async function invokeCodex(
     return parseAgentMessageFromCodexStdout(stdout);
   };
 
-  // Always isolate from the user's global ~/.codex/config.toml (see codex-runner.ts
-  // for why). Playwright access is self-contained via inline `-c mcp_servers.*`
-  // injection below, so exploring never depends on external Codex config.
-  // Codex Chrome mode skips MCP and enables the Chrome extension feature instead.
-  const sharedFlags = buildCodexSharedFlags(agentConfig);
+  // Playwright / private: isolate from ~/.codex. Codex Chrome keeps user config
+  // so chrome@openai-bundled + node_repl remain available for @Chrome.
   const browserMode = getSettingsValue().browserMode;
   const useCodexChrome = browserMode === "codex-chrome";
+  const sharedFlags = buildCodexSharedFlags(agentConfig, {
+    ignoreUserConfig: !(exploring && useCodexChrome),
+  });
   const mcpArgs = exploring
     ? useCodexChrome
-      ? [
-          "-c",
-          "features.browser_use_external=true",
-          "-c",
-          "features.browser_use=false",
-        ]
+      ? buildCodexChromeConfigArgs()
       : await buildCodexPlaywrightMcpConfigArgs()
     : [];
 
@@ -331,7 +330,7 @@ async function invokeCodex(
     return { message };
   }
 
-  if (exploring) {
+  if (exploring && !useCodexChrome) {
     await ensureCodexProjectConfig(outputDir);
   }
 

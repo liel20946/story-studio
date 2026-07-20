@@ -323,7 +323,7 @@ function AgentPanel({
 
         <SettingsRow
           label="Browser"
-          description="Private and Playwright are reliable. Codex uses the Chrome extension via Codex CLI (often unavailable)."
+          description="Private browser, Playwright Chrome bridge, or Codex Chrome extension."
         >
           <LabeledSegment
             value={browserMode}
@@ -472,7 +472,7 @@ function AgentPanel({
           <>
             <SettingsRow
               label="Codex extension"
-              description="Required files only. Story Studio runs Codex CLI, which often cannot drive the extension even when Installed."
+              description="Install the official Codex Chrome extension. Uses your Codex CLI Chrome plugin config — no token needed."
             >
               <Button
                 variant="filled"
@@ -487,14 +487,7 @@ function AgentPanel({
               </Button>
             </SettingsRow>
 
-            <SettingsRow
-              label="Status"
-              description={
-                codexChromeInstalled === true
-                  ? "Found on disk — not a live CLI connection. Prefer Private or Playwright if runs fail with empty Actions."
-                  : undefined
-              }
-            >
+            <SettingsRow label="Status">
               <div className="flex items-center gap-2">
                 {codexChromeInstalled === true ? (
                   <CheckIcon
@@ -504,7 +497,7 @@ function AgentPanel({
                 ) : null}
                 <span className="text-small text-secondary">
                   {codexChromeInstalled === true
-                    ? "Installed (disk)"
+                    ? "Installed"
                     : codexChromeInstalled === false
                       ? "Not found"
                       : "Checking…"}
