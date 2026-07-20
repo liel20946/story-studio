@@ -8,6 +8,7 @@ import {
   ensureCodexProjectConfig,
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
+import { buildCodexChromeConfigArgs } from "./codex-chrome-config.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { writeClaudeMcpConfigFile } from "./browser-mcp-config.js";
 import {
@@ -64,8 +65,8 @@ function buildCodexSharedFlags(agentConfig: AgentRunConfig): string[] {
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
     "--json",
-    // Isolate from the user's global ~/.codex/config.toml — see codex-runner.ts
-    // for why (notably `[features] multi_agent = true`).
+    // Isolate from ~/.codex — browser tools injected via `-c` (Playwright MCP
+    // or Chrome node_repl), same as story runs in codex-runner.ts.
     "--ignore-user-config",
     ...buildCodexModelConfigArgs(agentConfig),
   ];
@@ -282,21 +283,14 @@ async function invokeCodex(
     return parseAgentMessageFromCodexStdout(stdout);
   };
 
-  // Always isolate from the user's global ~/.codex/config.toml (see codex-runner.ts
-  // for why). Playwright access is self-contained via inline `-c mcp_servers.*`
-  // injection below, so exploring never depends on external Codex config.
-  // Codex Chrome mode skips MCP and enables the Chrome extension feature instead.
+  // Always isolate from ~/.codex. Playwright MCP or Chrome node_repl is
+  // injected via `-c` below — never load the user's full MCP set.
   const sharedFlags = buildCodexSharedFlags(agentConfig);
   const browserMode = getSettingsValue().browserMode;
   const useCodexChrome = browserMode === "codex-chrome";
   const mcpArgs = exploring
     ? useCodexChrome
-      ? [
-          "-c",
-          "features.browser_use_external=true",
-          "-c",
-          "features.browser_use=false",
-        ]
+      ? await buildCodexChromeConfigArgs()
       : await buildCodexPlaywrightMcpConfigArgs()
     : [];
 
@@ -331,7 +325,7 @@ async function invokeCodex(
     return { message };
   }
 
-  if (exploring) {
+  if (exploring && !useCodexChrome) {
     await ensureCodexProjectConfig(outputDir);
   }
 

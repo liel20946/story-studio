@@ -32,6 +32,7 @@ import {
   deleteRunPid,
   ensureActionTimeline,
   flushPersistRunEvents,
+  hasActionTimelineEvents,
   schedulePersistRunEvents,
   writeRunPid,
 } from "./run-events-persist.js";
@@ -46,6 +47,7 @@ import {
   playwrightMcpSecretEnv,
 } from "./codex-mcp-config.js";
 import { probeCodexChromeExtension } from "./codex-chrome-extension.js";
+import { buildCodexChromeConfigArgs } from "./codex-chrome-config.js";
 import {
   DEFAULT_CODEX_EFFORT,
   DEFAULT_CODEX_MODEL,
@@ -237,6 +239,10 @@ function isBenignCodexStderr(text: string): boolean {
   return /reading additional input from stdin/i.test(trimmed);
 }
 
+/** Surfaced when a Codex Chrome run finishes with no browser actions / @Chrome unavailable. */
+export const CODEX_CHROME_CLI_UNAVAILABLE_HINT =
+  "@Chrome was unavailable for this run. Check the Codex Chrome extension is installed, and that Codex.app has configured node_repl (open Codex once if needed), then retry.";
+
 function isBenignCodexStderrEvent(event: RunEvent): boolean {
   return event.kind === "error" && !!event.detail && isBenignCodexStderr(event.detail);
 }
@@ -307,7 +313,13 @@ export async function startRun(
 
   // codex --output-schema reads this file; it must exist before spawn.
   await fs.writeFile(schemaPath, JSON.stringify(RUN_OUTPUT_SCHEMA), "utf-8");
-  await ensureCodexProjectConfig(runOutputDir);
+  const browserMode = getSettingsValue().browserMode;
+  const useCodexChrome = browserMode === "codex-chrome";
+  // Project config is Playwright-oriented; Chrome injects node_repl via `-c`
+  // instead (same isolation pattern as Playwright MCP).
+  if (!useCodexChrome) {
+    await ensureCodexProjectConfig(runOutputDir);
+  }
 
   const storyContents = storyFilePath.includes("\n")
     ? storyFilePath
@@ -325,55 +337,15 @@ export async function startRun(
     });
 
   const effort = agentConfig?.effort ?? DEFAULT_CODEX_EFFORT;
-  const browserMode = getSettingsValue().browserMode;
-  const useCodexChrome = browserMode === "codex-chrome";
-  const mcpConfigArgs = useCodexChrome
-    ? [
-        "-c",
-        "features.browser_use_external=true",
-        "-c",
-        "features.browser_use=false",
-      ]
-    : await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
   const mcpSecretEnv = useCodexChrome
     ? {}
     : await playwrightMcpSecretEnv();
-
-  const args = [
-    "exec",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "--json",
-    "--skip-git-repo-check",
-    // Isolate the run from the user's ~/.codex/config.toml. Without this, codex
-    // inherits global settings — notably `[features] multi_agent = true` — and
-    // fans a single deterministic story out to PARALLEL sub-agents that each
-    // drive the same flow, producing duplicate real-world side effects (e.g.
-    // issuing store credit 2–3×), plus loading every global MCP server. The
-    // Playwright MCP is registered regardless via the inline `-c mcp_servers.*`
-    // injection below (mcpConfigArgs), so runs never depend on the user's
-    // global or project Codex config at all. Codex Chrome mode skips MCP and
-    // enables features.browser_use_external instead.
-    "--ignore-user-config",
-    "-C",
-    runOutputDir,
-    "-c",
-    `model="${state.agentModel}"`,
-    "-c",
-    `model_reasoning_effort="${effort}"`,
-    ...mcpConfigArgs,
-    "--output-schema",
-    schemaPath,
-    "-o",
-    resultPath,
-    prompt,
-  ];
 
   console.log("[codex:run] starting", {
     runId,
     storyName,
     codexBinary,
     browserMode,
-    mcpConfigArgs,
   });
 
   const events = state.events;
@@ -423,7 +395,7 @@ export async function startRun(
   // change had inserted a blocking ensurePlaywrightReady() preflight here (an
   // extra `npx -y` round-trip plus a "Preparing browser environment…" phase)
   // that delayed the start of every run; that per-run gate is removed.
-  // Codex Chrome mode only needs the Chrome extension present (no Playwright MCP).
+  // Codex Chrome: extension on disk + injectable node_repl (no Playwright MCP).
   if (useCodexChrome) {
     const chromeExt = await probeCodexChromeExtension();
     if (!chromeExt.installed) {
@@ -458,6 +430,71 @@ export async function startRun(
       return finalizeRun(failResult, events);
     }
   }
+
+  let mcpConfigArgs: string[];
+  try {
+    // Same pattern for both modes: --ignore-user-config + inject ONE browser MCP
+    // via `-c` (Playwright or node_repl). Never load the user's full MCP set.
+    mcpConfigArgs = useCodexChrome
+      ? await buildCodexChromeConfigArgs()
+      : await buildCodexPlaywrightMcpConfigArgs(screenshotsDir);
+  } catch (err) {
+    releaseRunSlot();
+    const message = err instanceof Error ? err.message : String(err);
+    const failEvent: RunEvent = {
+      runId,
+      seq: state.seq++,
+      ts: Date.now(),
+      kind: "status",
+      label: "Failed",
+      detail: message,
+      status: "failed",
+    };
+    events.push(failEvent);
+    broadcast("run:event", failEvent);
+    syncRunTimeline(runId, events);
+    const failResult: RunResult = {
+      runId,
+      storyName,
+      storyTitle,
+      status: "error",
+      summary: "",
+      assertions: [],
+      screenshotPath,
+      screenshotUrl: buildScreenshotUrl(runId, screenshotPath),
+      startedAt,
+      finishedAt: Date.now(),
+      error: message,
+      agentProvider: state.agentProvider,
+      agentModel: state.agentModel,
+    };
+    return finalizeRun(failResult, events);
+  }
+
+  const args = [
+    "exec",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "--json",
+    "--skip-git-repo-check",
+    // Isolate from ~/.codex/config.toml (multi_agent + unrelated global MCPs).
+    // Browser tools are injected explicitly via `-c` below — Playwright MCP
+    // for Private/Playwright modes, node_repl + Chrome plugin for Codex Chrome.
+    "--ignore-user-config",
+    "-C",
+    runOutputDir,
+    "-c",
+    `model="${state.agentModel}"`,
+    "-c",
+    `model_reasoning_effort="${effort}"`,
+    ...mcpConfigArgs,
+    "--output-schema",
+    schemaPath,
+    "-o",
+    resultPath,
+    prompt,
+  ];
+
+  console.log("[codex:run] mcp config ready", { runId, browserMode, mcpConfigArgs });
 
   await acquirePlaywrightSlot();
 
@@ -575,7 +612,7 @@ export async function startRun(
 
       // Try to read result JSON
       readResultJson(resultPath)
-        .then((structured) => {
+        .then(async (structured) => {
           const status: RunStatus = cancelled
             ? "cancelled"
             : structured
@@ -599,6 +636,44 @@ export async function startRun(
               ? stderrLog.trim() || `Codex exited with code ${code}`
               : undefined;
 
+          let error: string | undefined = cancelled
+            ? "Cancelled by user"
+            : exitError;
+
+          // Codex Chrome mode: extension "Installed" is disk-only. When the CLI
+          // never drove the browser (or the agent reports @Chrome unavailable),
+          // surface a clear hint instead of empty Actions with no explanation.
+          const summarySuggestsChromeUnavailable =
+            /@Chrome/i.test(summary) &&
+            /unavailable|not available|browser tool unavailable/i.test(summary);
+          if (
+            useCodexChrome &&
+            !cancelled &&
+            (status === "failed" || status === "error")
+          ) {
+            const withSteps = await ensureActionTimeline(runId, events);
+            events.length = 0;
+            events.push(...withSteps);
+            if (
+              !hasActionTimelineEvents(events) ||
+              summarySuggestsChromeUnavailable
+            ) {
+              error = CODEX_CHROME_CLI_UNAVAILABLE_HINT;
+              const hintEvent: RunEvent = {
+                runId,
+                seq: state.seq++,
+                ts: Date.now(),
+                kind: "error",
+                label: "Browser unavailable",
+                detail: CODEX_CHROME_CLI_UNAVAILABLE_HINT,
+                status: "failed",
+              };
+              events.push(hintEvent);
+              broadcast("run:event", hintEvent);
+              syncRunTimeline(runId, events);
+            }
+          }
+
           const result: RunResult = {
             runId,
             storyName,
@@ -612,7 +687,7 @@ export async function startRun(
             startedAt,
             finishedAt: Date.now(),
             tokenUsage,
-            error: cancelled ? "Cancelled by user" : exitError,
+            error,
             agentProvider: state.agentProvider,
             agentModel: state.agentModel,
           };

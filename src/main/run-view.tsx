@@ -646,6 +646,14 @@ function ResultPanel({
 
   return (
     <>
+      {result.error ? (
+        <Section title="Error">
+          <Text variant="small" color="secondary" className="whitespace-pre-wrap">
+            {result.error}
+          </Text>
+        </Section>
+      ) : null}
+
       <RunVariablesSection variables={result.variableOverrides} />
 
       <Section title="Assertions">
