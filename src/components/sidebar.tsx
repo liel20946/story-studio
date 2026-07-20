@@ -1372,7 +1372,7 @@ export function AppSidebar() {
                 iconOnly
                 onClick={(e) => {
                   e.currentTarget.blur();
-                  navigate({ to: "/settings", search: { section: "appearance" } });
+                  navigate({ to: "/settings", search: { section: "agent" } });
                 }}
                 aria-label="Settings"
               >

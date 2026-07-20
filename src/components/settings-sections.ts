@@ -28,11 +28,12 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 export function parseSettingsSection(value: unknown): SettingsSection {
   if (
     value === "setup" ||
+    value === "appearance" ||
     value === "agent" ||
     value === "recording" ||
     value === "data"
   ) {
     return value;
   }
-  return "appearance";
+  return "agent";
 }

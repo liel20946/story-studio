@@ -39,7 +39,7 @@ export function MainApp() {
       if (path === "/settings" || path.startsWith("/settings")) {
         void router.navigate({
           to: "/settings",
-          search: { section: "appearance" },
+          search: { section: "agent" },
         });
       } else {
         void router.navigate({ to: path });

@@ -13,7 +13,7 @@ export function useOpenSettingsShortcut() {
       if (event.code !== "Comma") return;
 
       event.preventDefault();
-      navigate({ to: "/settings", search: { section: "appearance" } });
+      navigate({ to: "/settings", search: { section: "agent" } });
     }
 
     window.addEventListener("keydown", onKeyDown);

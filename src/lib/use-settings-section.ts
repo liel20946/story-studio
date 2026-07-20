@@ -21,7 +21,7 @@ export function useSettingsSection(): SettingsSection {
         return parseSettingsSection(search?.section);
       }
 
-      return "appearance";
+      return "agent";
     },
   });
 }
