@@ -71,17 +71,19 @@ async function shot(app, name) {
 }
 
 async function openBulkSelection(page) {
-  await page
-    .getByRole("button", { name: "Run stories" })
-    .filter({ hasText: "Run stories" })
-    .click({ force: true });
+  const homeCta = page.getByRole("button", { name: /^Run stories$/i });
+  if (await homeCta.isVisible().catch(() => false)) {
+    await homeCta.click({ force: true });
+  } else {
+    await page.getByRole("button", { name: "Run stories" }).first().click({ force: true });
+  }
   await wait(1200);
   const runMore = page.getByRole("button", { name: /Run more/i });
   if (await runMore.isVisible().catch(() => false)) {
     await runMore.click({ force: true });
     await wait(600);
   }
-  await page.getByText("Parallel subagents").waitFor();
+  await page.getByText("Stop condition").waitFor();
 }
 
 async function main() {
@@ -145,7 +147,7 @@ async function main() {
   await page
     .getByRole("button", { name: /Configure variable runs for Login Flow/i })
     .click({ force: true });
-  await page.getByText("Variable runs — Login Flow").waitFor();
+  await page.getByText(/Variable runs[:\s].*Login Flow/i).waitFor();
   await wait(400);
   await shot(app, "04-bulk-variables-modal");
 
