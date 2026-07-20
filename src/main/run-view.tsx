@@ -512,7 +512,7 @@ function RunVariablesSection({
               key={key}
               className="group/var flex items-center gap-1.5 py-0.5 min-w-0 rounded-control transition-colors hover:bg-surface-hover"
             >
-              <span className="w-[5.5rem] shrink-0 truncate font-mono text-[12px] leading-[16px] text-primary">
+              <span className="max-w-[18rem] shrink-0 truncate font-mono text-[12px] leading-[16px] text-primary">
                 {key}
               </span>
               <span
