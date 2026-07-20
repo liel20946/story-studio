@@ -2536,9 +2536,10 @@
     gap: 2rem;
   }
 
-  /* Keep long run timelines inside the viewport and scroll the Actions card
-     independently instead of letting its bottom disappear below the window. */
-  .run-detail-view {
+  /* Keep long run/story panels inside the viewport and scroll each card
+     independently instead of letting their bottoms disappear below the window. */
+  .run-detail-view,
+  .story-detail-view {
     height: calc(100vh - 2.75rem);
     min-height: 0;
     box-sizing: border-box;
@@ -2548,18 +2549,22 @@
   }
 
   .run-detail-view .detail-view-main,
-  .run-actions-card {
+  .story-detail-view .detail-view-main,
+  .run-actions-card,
+  .story-detail-view .detail-view-main > .content-card {
     min-height: 0;
     height: 100%;
   }
 
-  .run-actions-card {
+  .run-actions-card,
+  .story-detail-view .detail-view-main > .content-card {
     display: flex;
     flex-direction: column;
     max-height: 100%;
   }
 
-  .run-actions-card .content-card-header {
+  .run-actions-card .content-card-header,
+  .story-detail-view .detail-view-main > .content-card .content-card-header {
     flex-shrink: 0;
   }
 
@@ -2568,7 +2573,8 @@
     padding: 0.25rem 0.75rem 0.75rem;
   }
 
-  .run-actions-card-body {
+  .run-actions-card-body,
+  .story-detail-view .detail-view-main > .content-card .content-card-body {
     min-height: 0;
     flex: 1 1 auto;
     overflow-y: auto;
