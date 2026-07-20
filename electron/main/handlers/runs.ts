@@ -8,7 +8,7 @@ import { startBulkRun, stopBulkRun, resumeBulkRun } from "../services/bulk-runne
 import { startAgentRun, cancelAgentRun, listActiveRuns } from "../services/agent-runner.js";
 import { resolveAgentBinary } from "../services/agent-provider.js";
 import { buildLastRunMap } from "../services/run-service.js";
-import { formatStoryForRun } from "../services/bowser-stories-service.js";
+import { formatStoryForRun, resolveRunVariables } from "../services/bowser-stories-service.js";
 import {
   buildBulkStoryInputs,
   expandBulkRunRequests,
@@ -149,7 +149,21 @@ export function registerRunsHandlers(): void {
     ) {
       throw new Error("run:start requires { storyName: string }");
     }
-    const { storyName } = params as { storyName: string };
+    const p = params as {
+      storyName: string;
+      variableOverrides?: Record<string, string>;
+    };
+    const { storyName } = p;
+    const rawOverrides =
+      p.variableOverrides &&
+      typeof p.variableOverrides === "object" &&
+      !Array.isArray(p.variableOverrides)
+        ? Object.fromEntries(
+            Object.entries(p.variableOverrides).filter(
+              (entry): entry is [string, string] => typeof entry[1] === "string",
+            ),
+          )
+        : undefined;
     const settings = getSettingsValue();
 
     const agentBinary = mockRunsEnabled()
@@ -164,6 +178,7 @@ export function registerRunsHandlers(): void {
     const runs = await listRuns();
     const lastRunMap = buildLastRunMap(runs);
     const story = await getStory(storyName, lastRunMap);
+    const variableOverrides = resolveRunVariables(story, rawOverrides);
 
     const runId = randomUUID();
 
@@ -175,10 +190,11 @@ export function registerRunsHandlers(): void {
       runId,
       storyName,
       story.title,
-      formatStoryForRun(story),
+      formatStoryForRun(story, variableOverrides),
       agentBinary,
       settings.runHook,
       agentConfig,
+      variableOverrides,
     ).catch((err) => {
       console.error("[agent:run] unhandled run error", { runId, err: String(err) });
     });

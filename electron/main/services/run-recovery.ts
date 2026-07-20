@@ -67,7 +67,11 @@ async function finalizeRecoveredRun(
   const withSteps = ensureActionTimelineFromSteps(meta.runId, events, steps);
   events.length = 0;
   events.push(...withSteps);
-  const enriched = await enrichRunResult(result);
+  const enriched = await enrichRunResult(
+    meta.variableOverrides && Object.keys(meta.variableOverrides).length > 0
+      ? { ...result, variableOverrides: meta.variableOverrides }
+      : result,
+  );
   const record: RunRecord = { ...enriched, events };
   await saveRun(record);
   await deleteRunMeta(meta.runId);

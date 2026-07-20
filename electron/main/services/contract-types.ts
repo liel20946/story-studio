@@ -98,6 +98,8 @@ export interface RunResult {
   error?: string;
   agentProvider?: AgentProvider;
   agentModel?: string;
+  /** Effective variable values used for this run (for retry). */
+  variableOverrides?: Record<string, string>;
 }
 
 export interface RunRecord extends RunResult {

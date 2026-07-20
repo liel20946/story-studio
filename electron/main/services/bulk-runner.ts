@@ -19,6 +19,7 @@ export interface BulkStoryInput {
   storyName: string;
   storyTitle: string;
   storyContents: string;
+  variableOverrides?: Record<string, string>;
 }
 
 export type BulkItemPhase = "pending" | "running" | "done" | "skipped";
@@ -231,6 +232,7 @@ async function runBulkItem(session: BulkSession, item: BulkItemState): Promise<v
       session.agentBinary,
       session.runHook,
       session.agentConfig,
+      item.variableOverrides,
     );
     item.result = result;
     // Don't overwrite skipped — stop/cancel may have already reserved this

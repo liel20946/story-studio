@@ -23,6 +23,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   BookOpenIcon,
+  RotateCcwIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -40,6 +41,7 @@ import {
 import {
   runsGet,
   runCancel,
+  runStart,
   clipboardWriteText,
   runsLiveScreenshots,
   runsLiveTimeline,
@@ -55,7 +57,7 @@ import type {
   AgentProvider,
 } from "../lib/contract-types";
 import { formatAgentModelLabel, formatAgentProviderLabel } from "../lib/agent-config";
-import { useRun } from "../lib/run-store";
+import { useRegisterRun, useRun } from "../lib/run-store";
 import { formatRunLogs } from "../lib/format-run-logs";
 import {
   filterTimelineEvents,
@@ -140,6 +142,61 @@ function ViewStoryButton({ storyName }: { storyName?: string }) {
     >
       <BookOpenIcon className="size-4" />
       View story
+    </Button>
+  );
+}
+
+// ---------- retry a finished run with the same variables ----------
+function RetryRunButton({
+  storyName,
+  storyTitle,
+  variableOverrides,
+}: {
+  storyName?: string;
+  storyTitle?: string;
+  variableOverrides?: Record<string, string>;
+}) {
+  const navigate = useNavigate();
+  const registerRun = useRegisterRun();
+  const [isStarting, setIsStarting] = React.useState(false);
+
+  if (!storyName) return null;
+
+  async function handleRetry() {
+    if (!storyName || isStarting) return;
+    setIsStarting(true);
+    try {
+      const { runId, agentProvider, agentModel } = await runStart(
+        storyName,
+        variableOverrides,
+      );
+      registerRun(runId, storyName, storyTitle ?? storyName, {
+        agentProvider,
+        agentModel,
+      });
+      navigate({ to: "/run/$runId", params: { runId } });
+    } catch (err) {
+      reportAppErrorFromUnknown("Failed to retry run", err);
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
+  return (
+    <Button
+      variant="accent"
+      size="titlebar"
+      radius="full"
+      onClick={handleRetry}
+      disabled={isStarting}
+      aria-label="Retry run"
+    >
+      {isStarting ? (
+        <Loader2Icon className="size-4 animate-spin" />
+      ) : (
+        <RotateCcwIcon className="size-4" />
+      )}
+      Retry
     </Button>
   );
 }
@@ -681,6 +738,13 @@ function LiveRunView({ runId }: { runId: string }) {
                   Cancel
                 </Button>
               )}
+              {isFinished && (
+                <RetryRunButton
+                  storyName={run?.storyName || result?.storyName}
+                  storyTitle={run?.storyTitle || result?.storyTitle}
+                  variableOverrides={result?.variableOverrides}
+                />
+              )}
             </ToolbarActions>
           </ToolbarRow>
         </Toolbar>
@@ -766,6 +830,11 @@ function HistoricalRunView({
                 startedAt={record.startedAt}
                 events={record.events}
                 result={record}
+              />
+              <RetryRunButton
+                storyName={record.storyName}
+                storyTitle={record.storyTitle}
+                variableOverrides={record.variableOverrides}
               />
             </ToolbarActions>
           </ToolbarRow>
