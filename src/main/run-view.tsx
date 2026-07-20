@@ -510,7 +510,7 @@ function RunVariablesSection({
           return (
             <div
               key={key}
-              className="group/var flex items-center gap-1.5 py-0.5 min-w-0 rounded-control transition-colors hover:bg-surface-hover"
+              className="flex items-center gap-1.5 py-0.5 min-w-0"
             >
               <span className="max-w-[18rem] shrink-0 truncate font-mono text-[11px] leading-[14px] text-primary">
                 {key}
