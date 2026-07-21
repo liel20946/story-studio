@@ -98,7 +98,7 @@ function ImportStoriesDialog({
               <span className="flex flex-col gap-1">
                 <Text variant="regular">Overwrite existing data</Text>
                 <Text variant="small" color="secondary">
-                  Replace site files that match the imported filenames. Other stories
+                  Replace site files for the imported story URLs. Other stories
                   are left unchanged.
                 </Text>
               </span>

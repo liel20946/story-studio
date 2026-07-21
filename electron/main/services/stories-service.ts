@@ -3,7 +3,7 @@ import * as fsSync from "fs";
 import * as path from "path";
 import { broadcast } from "../broadcast.js";
 import type { StorySummary, StoryDetail } from "./contract-types.js";
-import { getStoriesDir, getDraftsDir } from "./paths.js";
+import { getDraftsDir } from "./paths.js";
 import {
   listBowserSummaries,
   getBowserStory,
@@ -16,6 +16,7 @@ import {
   slugify,
   loadSiteFile,
   saveSiteFile,
+  listSiteSlugs,
   watchBowserFiles,
   findStoryById,
   resolveCreatedAt,
@@ -28,7 +29,7 @@ import {
   type BowserStoryEntry,
   type BowserSiteFile,
 } from "./bowser-stories-service.js";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 export type ImportMode = "overwrite" | "add";
 
@@ -62,6 +63,51 @@ async function parseImportSiteFile(srcPath: string): Promise<BowserSiteFile> {
 
 function siteSlugFromImportPath(srcPath: string): string {
   return path.basename(srcPath).replace(/\.(yaml|yml)$/, "");
+}
+
+/** Match create/record flows: route stories to URL-derived site files, not import filenames. */
+function resolveImportSiteSlug(story: BowserStoryEntry, importPath: string): string {
+  const url = story.url?.trim();
+  if (url) {
+    try {
+      new URL(url);
+      return siteSlugFromUrl(url);
+    } catch {
+      // fall through to filename slug
+    }
+  }
+  return siteSlugFromImportPath(importPath);
+}
+
+function groupValidStoriesBySiteSlug(
+  stories: BowserStoryEntry[],
+  importPath: string,
+): Map<string, BowserStoryEntry[]> {
+  const bySite = new Map<string, BowserStoryEntry[]>();
+  for (const story of stories) {
+    if (validateBowserEntry(story).length > 0) continue;
+    const siteSlug = resolveImportSiteSlug(story, importPath);
+    const list = bySite.get(siteSlug) ?? [];
+    list.push(story);
+    bySite.set(siteSlug, list);
+  }
+  return bySite;
+}
+
+async function collectStoriesByCanonicalSiteSlug(): Promise<Map<string, BowserStoryEntry[]>> {
+  const bySite = new Map<string, BowserStoryEntry[]>();
+  for (const slug of await listSiteSlugs()) {
+    const file = await loadSiteFile(slug);
+    for (const story of file.stories) {
+      const canonicalSlug = resolveImportSiteSlug(story, `${slug}.yaml`);
+      const list = bySite.get(canonicalSlug) ?? [];
+      if (!list.some((entry) => entry.id === story.id)) {
+        list.push(story);
+      }
+      bySite.set(canonicalSlug, list);
+    }
+  }
+  return bySite;
 }
 
 function summariesFromSite(
@@ -103,7 +149,7 @@ export async function previewImportStories(filePaths: string[]): Promise<ImportP
         continue;
       }
 
-      const siteSlug = siteSlugFromImportPath(srcPath);
+      const siteSlugs = new Set<string>();
       let validInFile = 0;
       for (const story of file.stories) {
         const entryErrors = validateBowserEntry(story);
@@ -113,6 +159,7 @@ export async function previewImportStories(filePaths: string[]): Promise<ImportP
           continue;
         }
         validInFile += 1;
+        siteSlugs.add(resolveImportSiteSlug(story, srcPath));
       }
 
       if (validInFile === 0) {
@@ -121,7 +168,11 @@ export async function previewImportStories(filePaths: string[]): Promise<ImportP
       }
 
       storyCount += validInFile;
-      files.push({ path: srcPath, siteSlug, storyCount: validInFile });
+      files.push({
+        path: srcPath,
+        siteSlug: [...siteSlugs].sort().join(", "),
+        storyCount: validInFile,
+      });
     } catch (err) {
       errors.push(`${basename}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -142,15 +193,8 @@ export async function getExportPreview(): Promise<ExportPreview> {
     { status: import("./contract-types.js").RunStatus; finishedAt: number }
   >();
   const stories = await listStories(lastRunMap);
-  const storiesDir = getStoriesDir();
-  let fileCount = 0;
-  try {
-    const entries = await fs.readdir(storiesDir);
-    fileCount = entries.filter((entry) => entry.endsWith(".yaml")).length;
-  } catch {
-    fileCount = 0;
-  }
-  return { storyCount: stories.length, fileCount };
+  const bySite = await collectStoriesByCanonicalSiteSlug();
+  return { storyCount: stories.length, fileCount: bySite.size };
 }
 
 export async function listStories(
@@ -255,15 +299,29 @@ async function importStoriesOverwrite(
   filePaths: string[],
   lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): Promise<StorySummary[]> {
-  const results: StorySummary[] = [];
+  const siteReplacements = new Map<string, BowserStoryEntry[]>();
   for (const srcPath of filePaths) {
     if (!srcPath.endsWith(".yaml") && !srcPath.endsWith(".yml")) continue;
 
-    const siteSlug = siteSlugFromImportPath(srcPath);
-    const destPath = path.join(getStoriesDir(), `${siteSlug}.yaml`);
-    await fs.copyFile(srcPath, destPath);
-    const file = parseYaml(await fs.readFile(destPath, "utf-8")) as BowserSiteFile;
-    results.push(...summariesFromSite(siteSlug, file.stories ?? [], lastRunMap));
+    const imported = await parseImportSiteFile(srcPath);
+    const bySite = groupValidStoriesBySiteSlug(imported.stories, srcPath);
+    for (const [siteSlug, stories] of bySite) {
+      siteReplacements.set(
+        siteSlug,
+        stories.map((story) =>
+          normalizeBowserEntryForStorage({
+            ...story,
+            created_at: resolveCreatedAt(story.created_at, Date.now()),
+          }),
+        ),
+      );
+    }
+  }
+
+  const results: StorySummary[] = [];
+  for (const [siteSlug, stories] of siteReplacements) {
+    await saveSiteFile(siteSlug, { stories });
+    results.push(...summariesFromSite(siteSlug, stories, lastRunMap));
   }
   return results;
 }
@@ -276,27 +334,29 @@ async function importStoriesAdd(
   for (const srcPath of filePaths) {
     if (!srcPath.endsWith(".yaml") && !srcPath.endsWith(".yml")) continue;
 
-    const siteSlug = siteSlugFromImportPath(srcPath);
     const imported = await parseImportSiteFile(srcPath);
-    const existing = await loadSiteFile(siteSlug);
-    const existingIds = new Set(existing.stories.map((story) => story.id));
-    const added: BowserStoryEntry[] = [];
+    const bySite = groupValidStoriesBySiteSlug(imported.stories, srcPath);
 
-    for (const story of imported.stories) {
-      if (validateBowserEntry(story).length > 0) continue;
-      if (existingIds.has(story.id)) continue;
-      const normalized = normalizeBowserEntryForStorage({
-        ...story,
-        created_at: resolveCreatedAt(story.created_at, Date.now()),
-      });
-      existing.stories.push(normalized);
-      existingIds.add(story.id);
-      added.push(normalized);
-    }
+    for (const [siteSlug, storiesToAdd] of bySite) {
+      const existing = await loadSiteFile(siteSlug);
+      const existingIds = new Set(existing.stories.map((story) => story.id));
+      const added: BowserStoryEntry[] = [];
 
-    if (added.length > 0) {
-      await saveSiteFile(siteSlug, existing);
-      results.push(...summariesFromSite(siteSlug, added, lastRunMap));
+      for (const story of storiesToAdd) {
+        if (existingIds.has(story.id)) continue;
+        const normalized = normalizeBowserEntryForStorage({
+          ...story,
+          created_at: resolveCreatedAt(story.created_at, Date.now()),
+        });
+        existing.stories.push(normalized);
+        existingIds.add(story.id);
+        added.push(normalized);
+      }
+
+      if (added.length > 0) {
+        await saveSiteFile(siteSlug, existing);
+        results.push(...summariesFromSite(siteSlug, added, lastRunMap));
+      }
     }
   }
   return results;
@@ -314,24 +374,20 @@ export async function importStories(
 }
 
 export async function exportStories(destDir: string): Promise<{ fileCount: number }> {
-  const storiesDir = getStoriesDir();
-  let entries: string[];
-  try {
-    entries = await fs.readdir(storiesDir);
-  } catch {
-    return { fileCount: 0 };
-  }
-
-  const yamlFiles = entries.filter((entry) => entry.endsWith(".yaml"));
-  if (yamlFiles.length === 0) {
+  const bySite = await collectStoriesByCanonicalSiteSlug();
+  if (bySite.size === 0) {
     return { fileCount: 0 };
   }
 
   await fs.mkdir(destDir, { recursive: true });
-  for (const entry of yamlFiles) {
-    await fs.copyFile(path.join(storiesDir, entry), path.join(destDir, entry));
+  for (const [siteSlug, stories] of bySite) {
+    const normalized: BowserSiteFile = {
+      stories: stories.map((story) => normalizeBowserEntryForStorage(story)),
+    };
+    const content = stringifyYaml(normalized, { lineWidth: 0 });
+    await fs.writeFile(path.join(destDir, `${siteSlug}.yaml`), content, "utf-8");
   }
-  return { fileCount: yamlFiles.length };
+  return { fileCount: bySite.size };
 }
 
 export async function updateStoryContent(
