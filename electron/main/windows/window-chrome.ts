@@ -23,6 +23,15 @@ export function applyMacWindowChrome(win: BrowserWindow): void {
   };
   hideNativeButtons();
   win.once("ready-to-show", hideNativeButtons);
+
+  // Keep the Chromium content view clipped to the same curve as the OS window.
+  // Electron 38+ uses macOS Tahoe’s regular-window radius; CSS alone cannot enlarge
+  // the native window silhouette (that comes from the Electron/macOS SDK).
+  try {
+    win.contentView?.setBorderRadius?.(18);
+  } catch {
+    // Older Electron builds without contentView.setBorderRadius — ignore.
+  }
 }
 
 export function withMacWindowChromeQuery(
