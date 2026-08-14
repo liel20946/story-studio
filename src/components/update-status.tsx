@@ -74,7 +74,8 @@ export function SidebarUpdateStatus() {
     status.phase === "available" ||
     status.phase === "downloading" ||
     status.phase === "ready" ||
-    status.phase === "error";
+    status.phase === "error" ||
+    Boolean(status.notice);
   if (!visible) return null;
 
   async function run(action: () => Promise<unknown>) {
@@ -92,11 +93,16 @@ export function SidebarUpdateStatus() {
   const percent = Math.max(0, Math.min(100, Math.round(status.percent ?? 0)));
   let label = "";
   let icon: React.ReactNode = null;
-  let tone: "available" | "downloading" | "ready" | "error" = "available";
+  let tone: "notice" | "available" | "downloading" | "ready" | "error" =
+    "notice";
   let onClick: (() => void) | undefined;
   let ariaLabel = label;
 
-  if (status.phase === "available") {
+  if (status.phase === "idle" && status.notice) {
+    tone = "notice";
+    label = status.notice;
+    ariaLabel = status.notice;
+  } else if (status.phase === "available") {
     tone = "available";
     label = "Update";
     ariaLabel = status.availableVersion
@@ -151,6 +157,7 @@ export function SidebarUpdateStatus() {
       }}
       className={cn(
         "sidebar-update-chip",
+        tone === "notice" && "sidebar-update-chip--notice",
         tone === "available" && "sidebar-update-chip--available",
         tone === "downloading" && "sidebar-update-chip--downloading",
         tone === "ready" && "sidebar-update-chip--ready",

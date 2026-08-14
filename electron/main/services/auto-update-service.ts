@@ -22,6 +22,7 @@ const RELEASES_LATEST_URL =
 
 /** Quiet background poll. */
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const NOTICE_MS = 4000;
 const MOCK_VERSION = "99.0.0";
 
 let downloadedVersion: string | null = null;
@@ -30,6 +31,7 @@ let installInProgress = false;
 let downloadInFlight = false;
 let checkInFlight = false;
 let initialized = false;
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let mockDownloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 let phase: UpdatePhase = "idle";
@@ -37,6 +39,7 @@ let availableVersion: string | undefined;
 let percent: number | undefined;
 let error: string | undefined;
 let errorKind: UpdateErrorKind | undefined;
+let notice: string | undefined;
 
 function isMockUpdates(): boolean {
   return (
@@ -63,6 +66,7 @@ function snapshot(): UpdateStatus {
     percent,
     error,
     errorKind,
+    notice,
   };
 }
 
@@ -72,19 +76,45 @@ function emitStatus(): UpdateStatus {
   return status;
 }
 
-function setIdle(): UpdateStatus {
+function clearNoticeTimer(): void {
+  if (noticeTimer) {
+    clearTimeout(noticeTimer);
+    noticeTimer = null;
+  }
+}
+
+function setNotice(message: string): UpdateStatus {
+  notice = message;
+  clearNoticeTimer();
+  noticeTimer = setTimeout(() => {
+    notice = undefined;
+    noticeTimer = null;
+    emitStatus();
+  }, NOTICE_MS);
+  return emitStatus();
+}
+
+function setIdle(options?: { notice?: string }): UpdateStatus {
   phase = "idle";
   availableVersion = undefined;
   percent = undefined;
   error = undefined;
   errorKind = undefined;
+  if (options?.notice) {
+    return setNotice(options.notice);
+  }
+  notice = undefined;
+  clearNoticeTimer();
   return emitStatus();
 }
 
 function setPhase(
   next: UpdatePhase,
   patch?: Partial<
-    Pick<UpdateStatus, "availableVersion" | "percent" | "error" | "errorKind">
+    Pick<
+      UpdateStatus,
+      "availableVersion" | "percent" | "error" | "errorKind" | "notice"
+    >
   >,
 ): UpdateStatus {
   phase = next;
@@ -104,6 +134,10 @@ function setPhase(
   } else {
     error = undefined;
     errorKind = undefined;
+  }
+  if (next !== "idle") {
+    notice = undefined;
+    clearNoticeTimer();
   }
   return emitStatus();
 }
@@ -293,6 +327,9 @@ export async function checkForUpdates(options?: {
   const userInitiated = options?.userInitiated === true;
 
   if (!isUpdateEnabled()) {
+    if (userInitiated) {
+      setIdle({ notice: "Up to date" });
+    }
     return snapshot();
   }
 
@@ -318,7 +355,9 @@ export async function checkForUpdates(options?: {
     if (!latestVersion || latestVersion === installed) {
       downloadedVersion = null;
       downloadedFilePath = null;
-      if (userInitiated || phase === "checking" || phase === "available") {
+      if (userInitiated) {
+        setIdle({ notice: "Up to date" });
+      } else if (phase === "checking" || phase === "available") {
         setIdle();
       }
       return snapshot();
@@ -415,6 +454,7 @@ export function applyMockUpdateStatus(patch: {
   percent?: number;
   error?: string;
   errorKind?: UpdateErrorKind;
+  notice?: string;
 }): UpdateStatus {
   if (app.isPackaged) {
     throw new Error("Mock update status is only available in development");
@@ -428,7 +468,7 @@ export function applyMockUpdateStatus(patch: {
   if (nextPhase === "idle") {
     downloadedVersion = null;
     downloadedFilePath = null;
-    return setIdle();
+    return setIdle(patch.notice ? { notice: patch.notice } : undefined);
   }
   if (nextPhase === "ready") {
     const version = patch.availableVersion ?? availableVersion ?? MOCK_VERSION;

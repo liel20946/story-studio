@@ -62,6 +62,7 @@ export function registerUpdateHandlers(): void {
       percent: typeof patch.percent === "number" ? patch.percent : undefined,
       error: typeof patch.error === "string" ? patch.error : undefined,
       errorKind,
+      notice: typeof patch.notice === "string" ? patch.notice : undefined,
     });
   });
 }
