@@ -159,7 +159,7 @@ export function RecordView() {
           setPrepMessage("Playwright browser not found. Install Chromium below.");
         } else {
           setPrepPhase("ready");
-          setPrepMessage("Ready to record.");
+          setPrepMessage("Ready to record. Logins stay saved for next time.");
         }
       })
       .catch((err) => {
@@ -191,7 +191,7 @@ export function RecordView() {
       const res = await recordingInstallBrowser();
       if (res.ok) {
         setPrepPhase("ready");
-        setPrepMessage("Chromium installed. Ready to record.");
+        setPrepMessage("Chromium installed. Ready to record. Logins stay saved for next time.");
         setAvailability((prev) =>
           prev ? { ...prev, browserInstalled: true } : prev,
         );
@@ -301,6 +301,7 @@ export function RecordView() {
         <DialogTitle>Record Story</DialogTitle>
         <DialogDescription>
           Perform your actions, land on the final screen, then click Save Recording.
+          Logins and cookies stay saved for the next recording.
         </DialogDescription>
       </DialogHeader>
       <DialogBody>

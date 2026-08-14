@@ -16,7 +16,7 @@ import { createDraftDir, discardDraftDir, saveDraftToLibrary, listStories } from
 import { convertRecordingWithAgent } from "./recording-convert-service.js";
 import { formatRecordingFailure } from "./recording-errors.js";
 import { siteSlugFromUrl, parseCompositeName } from "./bowser-stories-service.js";
-import { getRunsDir } from "./paths.js";
+import { getRunsDir, getRecordingStoragePath } from "./paths.js";
 import { listRuns, buildLastRunMap } from "./run-service.js";
 import {
   buildPlaywrightEnv,
@@ -192,6 +192,66 @@ export async function cancelRecording(): Promise<void> {
   }
 }
 
+export function buildCodegenArgs(opts: {
+  prefixArgs: string[];
+  url: string;
+  outputPath: string;
+  storagePath: string;
+  loadStorage: boolean;
+  channel?: string;
+}): string[] {
+  const args = [
+    ...opts.prefixArgs,
+    "codegen",
+    opts.url,
+    "-o",
+    opts.outputPath,
+    "--save-storage",
+    opts.storagePath,
+  ];
+  if (opts.loadStorage) {
+    args.push("--load-storage", opts.storagePath);
+  }
+  if (opts.channel) args.push("--channel", opts.channel);
+  return args;
+}
+
+export async function recordingProfileHasSavedLogins(): Promise<boolean> {
+  try {
+    const raw = await fs.readFile(getRecordingStoragePath(), "utf-8");
+    const state = JSON.parse(raw) as {
+      cookies?: unknown[];
+      origins?: unknown[];
+    };
+    return (state.cookies?.length ?? 0) > 0 || (state.origins?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function recordingStorageIsReadable(): Promise<boolean> {
+  try {
+    JSON.parse(await fs.readFile(getRecordingStoragePath(), "utf-8"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function clearRecordingProfile(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  if (_recordingProcess) {
+    return {
+      ok: false,
+      message: "Stop the current recording before clearing saved logins.",
+    };
+  }
+  await fs.rm(getRecordingStoragePath(), { force: true });
+  return { ok: true, message: "Saved recording logins cleared." };
+}
+
 export async function abortRecording(): Promise<void> {
   _recordingAborted = true;
   if (_recordingProcess) {
@@ -314,16 +374,24 @@ async function startPlaywrightCodegenRecording(
 
   const agentConfig = getAgentRunConfig(agentSettings.agentProvider, agentSettings);
   const playwright = resolvePlaywrightInvocation();
+  const storagePath = getRecordingStoragePath();
+  const loadStorage = await recordingStorageIsReadable();
 
   return new Promise<RecordingStartResult>((resolve) => {
-    const codegenArgs = [...playwright.prefixArgs, "codegen", url, "-o", recScriptPath];
-    if (recordingBrowser.channel) {
-      codegenArgs.push("--channel", recordingBrowser.channel);
-    }
+    const codegenArgs = buildCodegenArgs({
+      prefixArgs: playwright.prefixArgs,
+      url,
+      outputPath: recScriptPath,
+      storagePath,
+      loadStorage,
+      channel: recordingBrowser.channel,
+    });
     console.log("[recording] spawning playwright codegen", {
       command: playwright.command,
       url,
       recScriptPath,
+      storagePath,
+      loadStorage,
     });
 
     const codegenProcess = spawn(playwright.command, codegenArgs, {
@@ -338,7 +406,7 @@ async function startPlaywrightCodegenRecording(
     broadcast({
       phase: "recording",
       message:
-        "Recording in progress. End on the page you want as the final screenshot, then click Save Recording.",
+        "Recording in progress. Logins stay saved for next time. End on the final screen, then click Save Recording.",
     });
 
     codegenProcess.stdout?.on("data", (chunk: Buffer) => {

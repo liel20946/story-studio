@@ -129,6 +129,8 @@ export interface AppSettings {
 // invoke  recording:start         req: { name: string; url: string } res: { ok: boolean; storyName?: string; error?: string }
 //                                  (resolves only AFTER codegen window closes + story written)
 // invoke  recording:cancel        req: void                         res: { ok: true }
+// invoke  recording:profileStatus req: void                         res: { hasSavedLogins: boolean }
+// invoke  recording:clearProfile  req: void                         res: { ok: boolean; message: string }
 //
 // invoke  run:start               req: { storyName: string }        res: { runId: string }
 // invoke  run:cancel              req: { runId: string }            res: { ok: true }
