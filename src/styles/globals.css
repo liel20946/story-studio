@@ -391,6 +391,12 @@ body {
   cursor: default;
 }
 
+.sidebar-update-chip--checking {
+  color: var(--color-text-secondary);
+  cursor: default;
+  padding: 0 0.35rem;
+}
+
 .sidebar-update-chip--available {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);

@@ -328,7 +328,9 @@ export async function checkForUpdates(options?: {
 
   if (!isUpdateEnabled()) {
     if (userInitiated) {
-      setIdle({ notice: "Up to date" });
+      setPhase("checking");
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return setIdle({ notice: "Up to date" });
     }
     return snapshot();
   }
