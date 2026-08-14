@@ -4,11 +4,13 @@ import * as path from "path";
 import { playwrightMcpPackageSpec } from "./setup-versions.js";
 import {
   buildPlaywrightEnv,
-  electronAsNodeLaunch,
-  resolveNodeCommand,
   resolveNpxCommand,
 } from "./playwright-runtime.js";
-import { resolveInstalledMcpCli } from "./playwright-mcp-install.js";
+import {
+  ensureSpacelessMcpCli,
+  resolveInstalledMcpCli,
+  writeElectronMcpWrapper,
+} from "./playwright-mcp-install.js";
 import type { BrowserMode } from "./contract-types.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { readBrowserExtensionToken } from "./browser-extension-auth.js";
@@ -47,8 +49,12 @@ function pickLaunchEnv(
   baseEnv: NodeJS.ProcessEnv,
   extra: Record<string, string> = {},
 ): Record<string, string> {
+  const pathValue = (baseEnv.PATH ?? "")
+    .split(":")
+    .filter((part) => part && !part.includes(".app/Contents/MacOS"))
+    .join(":");
   const env: Record<string, string> = {
-    PATH: baseEnv.PATH ?? "",
+    PATH: pathValue,
     HOME: baseEnv.HOME ?? os.homedir(),
     ...extra,
   };
@@ -61,6 +67,9 @@ function pickLaunchEnv(
     "XAUTHORITY",
     "XDG_RUNTIME_DIR",
     "LD_LIBRARY_PATH",
+    "TMPDIR",
+    "USER",
+    "LANG",
   ]) {
     const value = process.env[key];
     if (value) env[key] = value;
@@ -91,14 +100,14 @@ export async function playwrightMcpSecretEnv(
 /**
  * Full MCP launch spec for agent child processes.
  *
- * Prefers the shipped extraResources (or userData) MCP CLI.
+ * Prefers the shipped extraResources (or userData) MCP CLI, copied to
+ * `~/.story-studio/playwright-mcp` so Claude never sees a space-containing
+ * `Story Studio.app` path.
  *
- * Launch order:
- * 1. system `node` + CLI — what Claude Code can spawn (it strips
- *    ELECTRON_RUN_AS_NODE, so a raw Electron `command` boots Story Studio
- *    as a GUI and the run fails immediately).
- * 2. `/usr/bin/env ELECTRON_RUN_AS_NODE=1 <electron> <cli>` — no system Node.
- * 3. `npx -y @playwright/mcp@<pinned>` when the local CLI is missing.
+ * Launch via `~/.story-studio/mcp-run` (Electron-as-Node wrapper). Never use
+ * the user's system `node` — Playwright rejects Node 23, which broke recording
+ * for both Codex and Claude. Claude cannot spawn `Story Studio.app` directly
+ * (spaces + it strips ELECTRON_RUN_AS_NODE), so the wrapper is the command.
  */
 export async function buildPlaywrightMcpServerLaunch(
   outputDir?: string,
@@ -108,27 +117,14 @@ export async function buildPlaywrightMcpServerLaunch(
   const secretEnv = await playwrightMcpSecretEnv(browserMode);
   const flags = mcpServerFlags(outputDir, browserMode);
 
-  const cli = await resolveInstalledMcpCli();
+  const cli =
+    (await ensureSpacelessMcpCli()) ?? (await resolveInstalledMcpCli());
   if (cli) {
-    const node = await resolveNodeCommand();
-    if (node) {
-      console.log("[mcp] launch via node", { command: node, cli });
-      return {
-        command: node,
-        args: [cli, ...flags],
-        env: pickLaunchEnv(buildPlaywrightEnv()),
-        secretEnv,
-      };
-    }
-    const electronLaunch = electronAsNodeLaunch(cli, flags);
-    console.log("[mcp] launch via electron-as-node", {
-      command: electronLaunch.command,
-      electron: electronLaunch.args[1],
-      cli,
-    });
+    const wrapper = await writeElectronMcpWrapper();
+    console.log("[mcp] launch via electron wrapper", { command: wrapper, cli });
     return {
-      command: electronLaunch.command,
-      args: electronLaunch.args,
+      command: wrapper,
+      args: [cli, ...flags],
       env: pickLaunchEnv(buildPlaywrightEnv({ electronAsNode: true }), {
         ELECTRON_RUN_AS_NODE: "1",
       }),
@@ -205,7 +201,14 @@ export async function writeClaudeMcpConfigFile(
   const mcpPath = path.join(configDir, "story-studio-mcp.json");
   const contents = await buildClaudeMcpConfigJson(outputDir);
   await fs.writeFile(mcpPath, contents, "utf-8");
-  console.log("[mcp] wrote Claude MCP config", { mcpPath, command: JSON.parse(contents).mcpServers.playwright.command });
+  const parsed = JSON.parse(contents) as {
+    mcpServers: { playwright: { command: string; args: string[] } };
+  };
+  console.log("[mcp] wrote Claude MCP config", {
+    mcpPath,
+    command: parsed.mcpServers.playwright.command,
+    args: parsed.mcpServers.playwright.args,
+  });
   return mcpPath;
 }
 

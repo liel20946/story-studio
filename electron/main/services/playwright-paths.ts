@@ -62,6 +62,15 @@ export function getUserDataMcpDir(): string {
   return path.join(app.getPath("userData"), "playwright-mcp");
 }
 
+/**
+ * MCP install used when Claude Code spawns the server. Claude's MCP client
+ * breaks on command/args that contain spaces (`Story Studio.app`, userData),
+ * so this path is always under `~/.story-studio/` with no spaces.
+ */
+export function getSpacelessMcpDir(): string {
+  return path.join(os.homedir(), ".story-studio", "playwright-mcp");
+}
+
 /** Playwright's historical default cache (pre-bundling). */
 export function getLegacyPlaywrightBrowsersDir(): string {
   if (process.platform === "darwin") {

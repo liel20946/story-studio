@@ -12,8 +12,8 @@ import { existsSync } from "fs";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { PLAYWRIGHT_MCP_VERSION, playwrightMcpPackageSpec } from "./setup-versions.js";
-import { buildPlaywrightEnv, resolveNpxCommand } from "./playwright-runtime.js";
-import { getBundledMcpDir, getUserDataMcpDir } from "./playwright-paths.js";
+import { buildPlaywrightEnv, resolveElectronAsNode, resolveNpxCommand } from "./playwright-runtime.js";
+import { getBundledMcpDir, getSpacelessMcpDir, getUserDataMcpDir } from "./playwright-paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -71,6 +71,53 @@ export async function resolveInstalledMcpCli(): Promise<string | null> {
     if (cli) return cli;
   }
   return cliFromHostDir(getMcpInstallDir());
+}
+
+/**
+ * Copy the bundled MCP to `~/.story-studio/playwright-mcp` so Claude Code's
+ * MCP spawn never sees a path with spaces (`Story Studio.app`).
+ */
+export async function ensureSpacelessMcpCli(): Promise<string | null> {
+  const dest = getSpacelessMcpDir();
+  const existing = await cliFromHostDir(dest);
+  if (existing) return existing;
+
+  const bundled = getBundledMcpDir();
+  const source = bundled ?? getMcpInstallDir();
+  const sourceCli = await cliFromHostDir(source);
+  if (!sourceCli) return null;
+  if (!source.includes(" ")) return sourceCli;
+
+  try {
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.rm(dest, { recursive: true, force: true });
+    await fs.symlink(source, dest);
+    console.log("[playwright] linked MCP to spaceless dir", { dest, source });
+  } catch (linkErr) {
+    try {
+      await fs.cp(source, dest, { recursive: true, dereference: true });
+      console.log("[playwright] copied MCP to spaceless dir", { dest });
+    } catch (err) {
+      console.warn(
+        "[playwright] spaceless MCP copy failed",
+        err instanceof Error ? err.message : String(err),
+      );
+      return sourceCli;
+    }
+  }
+  return (await cliFromHostDir(dest)) ?? sourceCli;
+}
+
+/** Shell wrapper so Claude never uses `Story Studio.app` as the MCP `command`. */
+export async function writeElectronMcpWrapper(): Promise<string> {
+  const dir = path.join(path.dirname(getSpacelessMcpDir()));
+  await fs.mkdir(dir, { recursive: true });
+  const wrapper = path.join(dir, "mcp-run");
+  const electron = resolveElectronAsNode();
+  const body = `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${JSON.stringify(electron)} "$@"\n`;
+  await fs.writeFile(wrapper, body, "utf-8");
+  await fs.chmod(wrapper, 0o755);
+  return wrapper;
 }
 
 /** Resolve the absolute `npm` binary that sits next to the resolved npx. */
