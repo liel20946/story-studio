@@ -142,42 +142,47 @@ export function SidebarUpdateStatus() {
 
   const interactive = Boolean(onClick) && !busy;
   const tooltip = chipTooltip(status);
+  const showTooltip = Boolean(tooltip) && tooltip !== label;
+
+  const chip = (
+    <button
+      type="button"
+      data-update-phase={status.phase}
+      aria-label={ariaLabel}
+      disabled={!interactive}
+      onClick={(e) => {
+        e.currentTarget.blur();
+        onClick?.();
+      }}
+      className={cn(
+        "sidebar-update-chip",
+        tone === "available" && "sidebar-update-chip--available",
+        tone === "downloading" && "sidebar-update-chip--downloading",
+        tone === "ready" && "sidebar-update-chip--ready",
+        tone === "error" && "sidebar-update-chip--error",
+      )}
+    >
+      {status.phase === "downloading" ? (
+        <span
+          className="sidebar-update-chip-fill"
+          style={{ width: `${percent}%` }}
+        />
+      ) : null}
+      <span className="sidebar-update-chip-content">
+        {icon}
+        <span className={status.phase === "downloading" ? "tabular-nums" : undefined}>
+          {label}
+        </span>
+      </span>
+    </button>
+  );
+
+  if (!showTooltip) return chip;
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          data-update-phase={status.phase}
-          aria-label={ariaLabel}
-          disabled={!interactive}
-          onClick={(e) => {
-            e.currentTarget.blur();
-            onClick?.();
-          }}
-          className={cn(
-            "sidebar-update-chip",
-            tone === "available" && "sidebar-update-chip--available",
-            tone === "downloading" && "sidebar-update-chip--downloading",
-            tone === "ready" && "sidebar-update-chip--ready",
-            tone === "error" && "sidebar-update-chip--error",
-          )}
-        >
-          {status.phase === "downloading" ? (
-            <span
-              className="sidebar-update-chip-fill"
-              style={{ width: `${percent}%` }}
-            />
-          ) : null}
-          <span className="sidebar-update-chip-content">
-            {icon}
-            <span className={status.phase === "downloading" ? "tabular-nums" : undefined}>
-              {label}
-            </span>
-          </span>
-        </button>
-      </TooltipTrigger>
-      {tooltip ? <TooltipContent side="top">{tooltip}</TooltipContent> : null}
+      <TooltipTrigger asChild>{chip}</TooltipTrigger>
+      <TooltipContent side="top">{tooltip}</TooltipContent>
     </Tooltip>
   );
 }

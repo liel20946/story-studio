@@ -72,6 +72,30 @@ async function setUpdate(page, patch) {
   await wait(350);
 }
 
+async function clearHover(page) {
+  await page.mouse.move(720, 360);
+  await wait(250);
+}
+
+async function shotFooter(app, name) {
+  const file = path.join(outDir, `${name}.png`);
+  const png = await app.evaluate(async ({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    if (!w) return null;
+    const bounds = w.getBounds();
+    const img = await w.capturePage({
+      x: 0,
+      y: Math.max(0, bounds.height - 72),
+      width: 248,
+      height: 72,
+    });
+    return img.toPNG().toString("base64");
+  });
+  if (!png) throw new Error("footer capturePage failed");
+  fs.writeFileSync(file, Buffer.from(png, "base64"));
+  console.log("wrote", file);
+}
+
 async function main() {
   ensureCursorThemeSettings();
 
@@ -103,31 +127,43 @@ async function main() {
   await wait(800);
 
   await setUpdate(page, { phase: "idle" });
+  await clearHover(page);
   await shot(app, "01-update-idle-settings-only");
+  await shotFooter(app, "01b-update-idle-footer");
 
   await setUpdate(page, { phase: "checking" });
+  await clearHover(page);
   await shot(app, "02-update-checking");
+  await shotFooter(app, "02b-update-checking-footer");
 
   await setUpdate(page, {
     phase: "available",
     availableVersion: "1.6.0",
   });
-  await page.getByRole("button", { name: "Download update 1.6.0" }).hover();
-  await wait(400);
+  await clearHover(page);
   await shot(app, "03-update-available");
+  await shotFooter(app, "03b-update-available-footer");
+  await page.getByRole("button", { name: "Download update 1.6.0" }).hover();
+  await wait(500);
+  await shot(app, "03c-update-available-tooltip");
+  await clearHover(page);
 
   await setUpdate(page, {
     phase: "downloading",
     availableVersion: "1.6.0",
     percent: 42,
   });
+  await clearHover(page);
   await shot(app, "04-update-downloading");
+  await shotFooter(app, "04b-update-downloading-footer");
 
   await setUpdate(page, {
     phase: "ready",
     availableVersion: "1.6.0",
   });
+  await clearHover(page);
   await shot(app, "05-update-restart");
+  await shotFooter(app, "05b-update-restart-footer");
 
   await setUpdate(page, {
     phase: "error",
@@ -135,10 +171,14 @@ async function main() {
     error: "Network request failed",
     availableVersion: "1.6.0",
   });
+  await clearHover(page);
   await shot(app, "06-update-retry");
+  await shotFooter(app, "06b-update-retry-footer");
 
   await setUpdate(page, { phase: "idle", notice: "Up to date" });
+  await clearHover(page);
   await shot(app, "07-update-up-to-date");
+  await shotFooter(app, "07b-update-up-to-date-footer");
 
   await app.close();
   console.log("done");

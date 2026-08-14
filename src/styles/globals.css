@@ -384,25 +384,26 @@ body {
   white-space: nowrap;
 }
 
-.sidebar-update-chip-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  pointer-events: none;
-}
-
 .sidebar-update-chip--available {
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .sidebar-update-chip--available:not(:disabled):hover {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent);
 }
 
 .sidebar-update-chip--downloading {
   color: var(--color-text-primary);
   background: var(--color-surface-hover);
+}
+
+.sidebar-update-chip-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  pointer-events: none;
 }
 
 .sidebar-update-chip--ready {
