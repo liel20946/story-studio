@@ -18,6 +18,8 @@ import {
   settingsGet,
   settingsSet,
   setupOpenUrl,
+  recordingProfileStatus,
+  recordingClearProfile,
 } from "../lib/ipc";
 import type { AppSettings, AgentCapabilities } from "../lib/contract-types";
 import { useAgentCapabilities } from "../lib/agent-capabilities-store";
@@ -643,6 +645,34 @@ function RecordingPanel({
   onSaveStartingUrl: () => void;
   onSaveHook: () => void;
 }) {
+  const [hasSavedLogins, setHasSavedLogins] = useState(false);
+  const [clearingLogins, setClearingLogins] = useState(false);
+
+  useEffect(() => {
+    void recordingProfileStatus()
+      .then((status) => setHasSavedLogins(status.hasSavedLogins))
+      .catch((error) =>
+        reportAppErrorFromUnknown("Could not read recording logins", error),
+      );
+  }, []);
+
+  const handleClearLogins = async () => {
+    setClearingLogins(true);
+    try {
+      const result = await recordingClearProfile();
+      if (result.ok) {
+        setHasSavedLogins(false);
+        toast.success(result.message);
+      } else {
+        reportAppError("Couldn't clear logins", result.message);
+      }
+    } catch (error) {
+      reportAppErrorFromUnknown("Couldn't clear logins", error);
+    } finally {
+      setClearingLogins(false);
+    }
+  };
+
   return (
     <div className="settings-panel">
       <SettingsGroup>
@@ -673,6 +703,24 @@ function RecordingPanel({
             onChange={(e) => onRunHookChange(e.target.value)}
             onBlur={onSaveHook}
           />
+        </SettingsRow>
+
+        <SettingsRow
+          label="Saved logins"
+          description="The recording browser keeps cookies so you don't sign in every time."
+        >
+          <Button
+            variant="filled"
+            size="small"
+            radius="full"
+            onClick={() => void handleClearLogins()}
+            disabled={!hasSavedLogins || clearingLogins}
+          >
+            {clearingLogins ? (
+              <Loader2Icon className="size-3.5 animate-spin text-accent" />
+            ) : null}
+            {clearingLogins ? "Clearing…" : "Clear saved logins"}
+          </Button>
         </SettingsRow>
       </SettingsGroup>
     </div>

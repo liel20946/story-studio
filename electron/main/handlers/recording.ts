@@ -6,6 +6,8 @@ import {
   startRecording,
   cancelRecording,
   abortRecording,
+  recordingProfileHasSavedLogins,
+  clearRecordingProfile,
 } from "../services/recording-service.js";
 import { getSettingsValue } from "./settings.js";
 
@@ -52,5 +54,13 @@ export function registerRecordingHandlers(): void {
   ipcMain.handle("recording:abort", async () => {
     await abortRecording();
     return { ok: true as const };
+  });
+
+  ipcMain.handle("recording:profileStatus", async () => {
+    return { hasSavedLogins: await recordingProfileHasSavedLogins() };
+  });
+
+  ipcMain.handle("recording:clearProfile", async () => {
+    return clearRecordingProfile();
   });
 }

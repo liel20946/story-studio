@@ -21,6 +21,11 @@ export function getDraftsDir(): string {
   return _draftsDir;
 }
 
+/** Playwright storageState JSON — cookies/localStorage reused across recordings. */
+export function getRecordingStoragePath(): string {
+  return path.join(app.getPath("userData"), "recording-storage.json");
+}
+
 export async function initPaths(overrides?: {
   storiesDir?: string | null;
   runsDir?: string | null;

@@ -163,6 +163,15 @@ export const recordingCancel = (): Promise<{ ok: true }> =>
 export const recordingAbort = (): Promise<{ ok: true }> =>
   ipcInvoke("recording:abort");
 
+export const recordingProfileStatus = (): Promise<{
+  hasSavedLogins: boolean;
+}> => ipcInvoke("recording:profileStatus");
+
+export const recordingClearProfile = (): Promise<{
+  ok: boolean;
+  message: string;
+}> => ipcInvoke("recording:clearProfile");
+
 export const runStart = (
   storyName: string,
   variableOverrides?: Record<string, string>,
