@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/overlays";
 
 export type SegmentOption<T extends string> = {
   value: T;

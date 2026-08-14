@@ -126,10 +126,7 @@ async function main() {
     agentProvider: "codex",
   });
   await shot(codexOnly.app, "01-agent-provider-codex-only");
-  await codexOnly.page
-    .locator('[aria-label="Agent provider"]')
-    .getByRole("tab", { name: "Claude Code" })
-    .hover();
+  await codexOnly.page.locator(".segment-control-option-disabled").hover();
   await wait(500);
   await shot(codexOnly.app, "02-agent-provider-codex-only-claude-tooltip");
   await codexOnly.app.close();
@@ -140,10 +137,7 @@ async function main() {
     agentProvider: "codex",
   });
   await shot(claudeOnly.app, "03-agent-provider-claude-only");
-  await claudeOnly.page
-    .locator('[aria-label="Agent provider"]')
-    .getByRole("tab", { name: "Codex" })
-    .hover();
+  await claudeOnly.page.locator(".segment-control-option-disabled").hover();
   await wait(500);
   await shot(claudeOnly.app, "04-agent-provider-claude-only-codex-tooltip");
   await claudeOnly.app.close();
