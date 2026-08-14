@@ -12,7 +12,11 @@ import {
   resolveNpxCommand,
   resolvePlaywrightInvocation,
 } from "./playwright-runtime.js";
-import { ensurePlaywrightMcpInstalled, isPlaywrightMcpBundled } from "./playwright-mcp-install.js";
+import {
+  ensurePlaywrightMcpInstalled,
+  isPlaywrightMcpBundled,
+  resolveInstalledMcpCli,
+} from "./playwright-mcp-install.js";
 import { buildPlaywrightMcpServerLaunch } from "./browser-mcp-config.js";
 import type { BrowserMode } from "./contract-types.js";
 import { getSettingsValue } from "../handlers/settings.js";
@@ -507,14 +511,20 @@ async function runPreflight(options: {
     console.log("[playwright] cache stale — re-running preflight");
   }
 
-  onProgress?.({ phase: "mcp", message: "Preparing Playwright…" });
-  const cli = await verifyPlaywrightCli();
-  if (!cli.ok) {
-    return {
-      ok: false,
-      message: "Playwright CLI is unavailable. Open Settings → Setup to fix.",
-      error: cli.error,
-    };
+  // Bundled MCP + Chromium do not need the Playwright CLI. Claude runs always
+  // hit this gate; Codex does not — requiring npx here made Claude fail after
+  // we started shipping the runtime inside the app.
+  const localMcp = await resolveInstalledMcpCli();
+  if (!localMcp) {
+    onProgress?.({ phase: "mcp", message: "Preparing Playwright…" });
+    const cli = await verifyPlaywrightCli();
+    if (!cli.ok) {
+      return {
+        ok: false,
+        message: "Playwright CLI is unavailable. Open Settings → Setup to fix.",
+        error: cli.error,
+      };
+    }
   }
 
   onProgress?.({ phase: "mcp", message: "Preparing Playwright MCP…" });
