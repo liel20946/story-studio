@@ -2,8 +2,13 @@ import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 import { playwrightMcpPackageSpec } from "./setup-versions.js";
-import { buildPlaywrightEnv, resolveNpxCommand } from "./playwright-runtime.js";
-import { resolveElectronAsNode, resolveInstalledMcpCli } from "./playwright-mcp-install.js";
+import {
+  buildPlaywrightEnv,
+  electronAsNodeLaunch,
+  resolveNodeCommand,
+  resolveNpxCommand,
+} from "./playwright-runtime.js";
+import { resolveInstalledMcpCli } from "./playwright-mcp-install.js";
 import type { BrowserMode } from "./contract-types.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { readBrowserExtensionToken } from "./browser-extension-auth.js";
@@ -86,10 +91,14 @@ export async function playwrightMcpSecretEnv(
 /**
  * Full MCP launch spec for agent child processes.
  *
- * Prefers the shipped extraResources (or userData) install via Electron-as-Node
- * so the MCP starts without an `npx -y` registry round-trip and without a
- * system Node install. Falls back to `npx -y @playwright/mcp@<pinned>` when
- * the local CLI is missing.
+ * Prefers the shipped extraResources (or userData) MCP CLI.
+ *
+ * Launch order:
+ * 1. system `node` + CLI — what Claude Code can spawn (it strips
+ *    ELECTRON_RUN_AS_NODE, so a raw Electron `command` boots Story Studio
+ *    as a GUI and the run fails immediately).
+ * 2. `/usr/bin/env ELECTRON_RUN_AS_NODE=1 <electron> <cli>` — no system Node.
+ * 3. `npx -y @playwright/mcp@<pinned>` when the local CLI is missing.
  */
 export async function buildPlaywrightMcpServerLaunch(
   outputDir?: string,
@@ -97,14 +106,32 @@ export async function buildPlaywrightMcpServerLaunch(
 ): Promise<PlaywrightMcpServerLaunch> {
   const browserMode = options.browserMode ?? getSettingsValue().browserMode;
   const secretEnv = await playwrightMcpSecretEnv(browserMode);
+  const flags = mcpServerFlags(outputDir, browserMode);
 
   const cli = await resolveInstalledMcpCli();
   if (cli) {
-    const baseEnv = buildPlaywrightEnv({ electronAsNode: true });
+    const node = await resolveNodeCommand();
+    if (node) {
+      console.log("[mcp] launch via node", { command: node, cli });
+      return {
+        command: node,
+        args: [cli, ...flags],
+        env: pickLaunchEnv(buildPlaywrightEnv()),
+        secretEnv,
+      };
+    }
+    const electronLaunch = electronAsNodeLaunch(cli, flags);
+    console.log("[mcp] launch via electron-as-node", {
+      command: electronLaunch.command,
+      electron: electronLaunch.args[1],
+      cli,
+    });
     return {
-      command: resolveElectronAsNode(),
-      args: [cli, ...mcpServerFlags(outputDir, browserMode)],
-      env: pickLaunchEnv(baseEnv, { ELECTRON_RUN_AS_NODE: "1" }),
+      command: electronLaunch.command,
+      args: electronLaunch.args,
+      env: pickLaunchEnv(buildPlaywrightEnv({ electronAsNode: true }), {
+        ELECTRON_RUN_AS_NODE: "1",
+      }),
       secretEnv,
     };
   }

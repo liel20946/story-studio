@@ -339,43 +339,8 @@ export async function startClaudeRun(
       runHook,
     });
 
-  const mcpConfigPath = await writeClaudeMcpConfigFile(
-    runOutputDir,
-    screenshotsDir,
-  );
   const mcpSecretEnv = await playwrightMcpSecretEnv();
-
   const effort = agentConfig?.effort ?? DEFAULT_CLAUDE_EFFORT;
-
-  const args = [
-    "-p",
-    prompt,
-    "--dangerously-skip-permissions",
-    "--strict-mcp-config",
-    "--model",
-    state.agentModel,
-    "--effort",
-    effort,
-    "--output-format",
-    "stream-json",
-    "--include-partial-messages",
-    "--verbose",
-    "--json-schema",
-    JSON.stringify(RUN_OUTPUT_SCHEMA),
-    "--add-dir",
-    runsDir,
-    "--add-dir",
-    runOutputDir,
-    "--mcp-config",
-    mcpConfigPath,
-  ];
-
-  console.log("[claude:run]", {
-    runId,
-    storyName,
-    claudeBinary,
-    args: args.slice(0, 6),
-  });
 
   const events = state.events;
 
@@ -510,6 +475,42 @@ export async function startClaudeRun(
       events,
     );
   }
+
+  // Write MCP config after preflight so it picks up a just-installed local CLI
+  // instead of baking in the npx fallback.
+  const mcpConfigPath = await writeClaudeMcpConfigFile(
+    runOutputDir,
+    screenshotsDir,
+  );
+  const args = [
+    "-p",
+    prompt,
+    "--dangerously-skip-permissions",
+    "--strict-mcp-config",
+    "--model",
+    state.agentModel,
+    "--effort",
+    effort,
+    "--output-format",
+    "stream-json",
+    "--include-partial-messages",
+    "--verbose",
+    "--json-schema",
+    JSON.stringify(RUN_OUTPUT_SCHEMA),
+    "--add-dir",
+    runsDir,
+    "--add-dir",
+    runOutputDir,
+    "--mcp-config",
+    mcpConfigPath,
+  ];
+
+  console.log("[claude:run]", {
+    runId,
+    storyName,
+    claudeBinary,
+    args: args.slice(0, 6),
+  });
 
   await acquirePlaywrightSlot();
 

@@ -3,7 +3,7 @@
 //
 // Packaged builds ship the MCP under extraResources/playwright-mcp. Dev/fallback
 // still installs once into userData and lets runs invoke the CLI by absolute
-// path via Electron-as-Node — no per-run `npx -y` registry round-trip.
+// path (system node, else Electron-as-Node) — no per-run `npx -y` round-trip.
 // ============================================================================
 
 import { execFile } from "child_process";
@@ -71,21 +71,6 @@ export async function resolveInstalledMcpCli(): Promise<string | null> {
     if (cli) return cli;
   }
   return cliFromHostDir(getMcpInstallDir());
-}
-
-/** Electron binary used as Node so MCP does not require a system Node install. */
-export function resolveElectronAsNode(): string {
-  return process.execPath;
-}
-
-/** Resolve the absolute `node` binary that sits next to the resolved npx. */
-export async function resolveNodeCommand(): Promise<string | null> {
-  const npx = await resolveNpxCommand();
-  if (npx && npx !== "npx" && path.isAbsolute(npx)) {
-    const node = path.join(path.dirname(npx), "node");
-    if (existsSync(node)) return node;
-  }
-  return null;
 }
 
 /** Resolve the absolute `npm` binary that sits next to the resolved npx. */
