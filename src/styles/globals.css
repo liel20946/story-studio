@@ -355,7 +355,7 @@ body {
   align-items: center;
   height: 1.75rem;
   min-height: 1.75rem;
-  max-width: 9.5rem;
+  max-width: 10.5rem;
   padding: 0 0.5rem;
   border: none;
   border-radius: var(--radius-pill);
@@ -384,6 +384,11 @@ body {
   line-height: 1;
   letter-spacing: 0.01em;
   white-space: nowrap;
+}
+
+.sidebar-update-chip--notice {
+  color: var(--color-text-secondary);
+  cursor: default;
 }
 
 .sidebar-update-chip--available {
