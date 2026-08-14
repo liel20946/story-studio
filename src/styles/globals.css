@@ -420,12 +420,14 @@ body {
 }
 
 .sidebar-update-chip--error {
-  color: var(--color-support-red, #e5484d);
+  color: #fff;
+  background: var(--red);
 }
 
 .sidebar-update-chip--error:not(:disabled):hover {
-  background: color-mix(in srgb, var(--color-support-red, #e5484d) 12%, transparent);
-  color: var(--color-support-red, #e5484d);
+  opacity: 0.92;
+  background: var(--red);
+  color: #fff;
 }
 
 /* Flat surfaces — no backdrop-filter (Codex-style, avoids GPU compositor bugs) */
