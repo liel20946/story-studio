@@ -24,6 +24,7 @@ import { registerSchedulesHandlers } from "./schedules.js";
 import { registerGenerateHandlers } from "./generate.js";
 import { registerBulkVariablesHandlers } from "./bulk-variables.js";
 import { registerSetupHandlers } from "./setup.js";
+import { registerUpdateHandlers } from "./updates.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -107,6 +108,7 @@ export function registerHandlers(): void {
   registerGenerateHandlers();
   registerBulkVariablesHandlers();
   registerSetupHandlers();
+  registerUpdateHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 }

@@ -319,3 +319,26 @@ export interface GenerateProgress {
   conversationId: string;
   message: string;
 }
+
+// ---------- App updates ----------
+export type UpdatePhase =
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "error";
+
+export type UpdateErrorKind = "check" | "download" | "install";
+
+export interface UpdateStatus {
+  phase: UpdatePhase;
+  enabled: boolean;
+  currentVersion: string;
+  availableVersion?: string;
+  percent?: number;
+  error?: string;
+  errorKind?: UpdateErrorKind;
+  /** Brief footer notice after a manual check (e.g. "Up to date"). */
+  notice?: string;
+}

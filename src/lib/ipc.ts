@@ -21,6 +21,7 @@ import type {
   ImportMode,
   ImportPreview,
   ExportPreview,
+  UpdateStatus,
 } from "./contract-types";
 
 export function ipcInvoke<Res>(channel: string, req?: unknown): Promise<Res> {
@@ -466,5 +467,28 @@ export function onGenerateProgress(
 ): () => void {
   return window.electronAPI.on("generate:progress", (payload: unknown) =>
     cb(payload as import("./contract-types").GenerateProgress),
+  );
+}
+
+export const updatesGetStatus = (): Promise<UpdateStatus> =>
+  ipcInvoke("updates:getStatus");
+
+export const updatesCheck = (): Promise<UpdateStatus> =>
+  ipcInvoke("updates:check");
+
+export const updatesDownload = (): Promise<UpdateStatus> =>
+  ipcInvoke("updates:download");
+
+export const updatesInstall = (): Promise<{ ok: true }> =>
+  ipcInvoke("updates:install");
+
+export const updatesOpenDownloadPage = (): Promise<{ ok: true }> =>
+  ipcInvoke("updates:openDownloadPage");
+
+export function onUpdatesStatus(
+  cb: (status: UpdateStatus) => void,
+): () => void {
+  return window.electronAPI.on("updates:status", (payload: unknown) =>
+    cb(payload as UpdateStatus),
   );
 }
