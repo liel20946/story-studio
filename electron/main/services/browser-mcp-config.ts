@@ -4,7 +4,6 @@ import * as path from "path";
 import { playwrightMcpPackageSpec } from "./setup-versions.js";
 import {
   buildPlaywrightEnv,
-  resolveNodeCommand,
   resolveNpxCommand,
 } from "./playwright-runtime.js";
 import {
@@ -105,11 +104,10 @@ export async function playwrightMcpSecretEnv(
  * `~/.story-studio/playwright-mcp` so Claude never sees a space-containing
  * `Story Studio.app` path.
  *
- * Launch order:
- * 1. system `node` + spaceless CLI
- * 2. `~/.story-studio/mcp-run` wrapper that sets ELECTRON_RUN_AS_NODE and
- *    execs Electron — Claude's `command` has no spaces and is not our .app
- * 3. `npx -y @playwright/mcp@<pinned>` when the local CLI is missing.
+ * Launch via `~/.story-studio/mcp-run` (Electron-as-Node wrapper). Never use
+ * the user's system `node` — Playwright rejects Node 23, which broke recording
+ * for both Codex and Claude. Claude cannot spawn `Story Studio.app` directly
+ * (spaces + it strips ELECTRON_RUN_AS_NODE), so the wrapper is the command.
  */
 export async function buildPlaywrightMcpServerLaunch(
   outputDir?: string,
@@ -122,16 +120,6 @@ export async function buildPlaywrightMcpServerLaunch(
   const cli =
     (await ensureSpacelessMcpCli()) ?? (await resolveInstalledMcpCli());
   if (cli) {
-    const node = await resolveNodeCommand();
-    if (node) {
-      console.log("[mcp] launch via node", { command: node, cli });
-      return {
-        command: node,
-        args: [cli, ...flags],
-        env: pickLaunchEnv(buildPlaywrightEnv()),
-        secretEnv,
-      };
-    }
     const wrapper = await writeElectronMcpWrapper();
     console.log("[mcp] launch via electron wrapper", { command: wrapper, cli });
     return {

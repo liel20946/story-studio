@@ -1,5 +1,5 @@
 import * as fs from "fs/promises";
-import { existsSync, readdirSync } from "fs";
+import { existsSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 import { execFile } from "child_process";
@@ -52,73 +52,6 @@ export function resolveElectronAsNode(): string {
   return process.execPath;
 }
 
-/**
- * Run a JS CLI via `/usr/bin/env ELECTRON_RUN_AS_NODE=1 <electron> <cli> …`.
- * Survives hosts that strip ELECTRON_RUN_AS_NODE from env, and avoids a
- * `command` path with spaces (`Story Studio.app`).
- */
-export function electronAsNodeLaunch(
-  cli: string,
-  extraArgs: string[] = [],
-): { command: string; args: string[] } {
-  return {
-    command: "/usr/bin/env",
-    args: ["ELECTRON_RUN_AS_NODE=1", resolveElectronAsNode(), cli, ...extraArgs],
-  };
-}
-
-function discoverNodeBinaries(): string[] {
-  const home = os.homedir();
-  const candidates = [
-    "/opt/homebrew/bin/node",
-    "/usr/local/bin/node",
-    "/usr/bin/node",
-    path.join(home, ".local/bin/node"),
-    path.join(home, ".volta/bin/node"),
-  ];
-  const nvmBase = path.join(home, ".nvm/versions/node");
-  try {
-    if (existsSync(nvmBase)) {
-      for (const version of readdirSync(nvmBase)) {
-        candidates.push(path.join(nvmBase, version, "bin", "node"));
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return candidates;
-}
-
-export function resolveNodeCommandSync(): string | null {
-  for (const candidate of discoverNodeBinaries()) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
-}
-
-/** Resolve an absolute `node` binary (preferred launcher for Claude Code + codegen). */
-export async function resolveNodeCommand(): Promise<string | null> {
-  const npx = await resolveNpxCommand();
-  if (npx && npx !== "npx" && path.isAbsolute(npx)) {
-    const node = path.join(path.dirname(npx), "node");
-    if (existsSync(node)) return node;
-  }
-  const sync = resolveNodeCommandSync();
-  if (sync) return sync;
-  try {
-    const { stdout } = await execFileAsync("which", ["node"], {
-      env: buildPlaywrightEnv(),
-      timeout: 10_000,
-      maxBuffer: 4096,
-    });
-    const resolved = stdout.trim().split("\n")[0]?.trim();
-    if (resolved && existsSync(resolved)) return resolved;
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
 function findPlaywrightCli(): string | null {
   const candidates = [
     path.join(process.cwd(), "node_modules", "playwright", "cli.js"),
@@ -142,14 +75,11 @@ function findPlaywrightCli(): string | null {
 export function resolvePlaywrightInvocation(): PlaywrightInvocation {
   const cli = findPlaywrightCli();
   if (cli) {
-    const node = resolveNodeCommandSync();
-    if (node) {
-      return { command: node, prefixArgs: [cli], useElectronAsNode: false };
-    }
-    const launch = electronAsNodeLaunch(cli);
+    // Story Studio spawns codegen itself, so ELECTRON_RUN_AS_NODE in env works.
+    // Never use the user's system node — Playwright rejects Node 23+.
     return {
-      command: launch.command,
-      prefixArgs: launch.args,
+      command: resolveElectronAsNode(),
+      prefixArgs: [cli],
       useElectronAsNode: true,
     };
   }
