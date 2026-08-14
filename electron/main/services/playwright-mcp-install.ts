@@ -1,18 +1,9 @@
 // ============================================================================
-// One-time local install of the pinned @playwright/mcp package.
+// Resolve (and if needed, install) the pinned @playwright/mcp package.
 //
-// Story runs launch the Playwright MCP server on every run. Historically the
-// launch command was `npx -y @playwright/mcp@<pinned> …`, and the `-y` flag
-// makes npx re-resolve the package against the registry on EVERY launch. On a
-// machine whose npm `_npx` cache was cleared/evicted that means a network
-// download before the browser is usable — and the run pays for it twice (the
-// preflight warm-up and Codex's own MCP launch). That is the "slow to start"
-// symptom.
-//
-// Instead we install the pinned package ONCE into an app-managed directory and
-// let runs invoke its CLI by absolute path via `node <cli>` — no registry
-// round-trip. If the install is missing/fails, callers fall back to the old
-// `npx -y` behaviour, so this is a pure speed-up with no reliability regression.
+// Packaged builds ship the MCP under extraResources/playwright-mcp. Dev/fallback
+// still installs once into userData and lets runs invoke the CLI by absolute
+// path via Electron-as-Node — no per-run `npx -y` registry round-trip.
 // ============================================================================
 
 import { execFile } from "child_process";
@@ -20,41 +11,40 @@ import { promisify } from "util";
 import { existsSync } from "fs";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { app } from "../electron-api.js";
 import { PLAYWRIGHT_MCP_VERSION, playwrightMcpPackageSpec } from "./setup-versions.js";
 import { buildPlaywrightEnv, resolveNpxCommand } from "./playwright-runtime.js";
+import { getBundledMcpDir, getUserDataMcpDir } from "./playwright-paths.js";
 
 const execFileAsync = promisify(execFile);
 
-/** App-managed directory that holds the pinned @playwright/mcp install. */
+/** App-managed directory that holds a fallback @playwright/mcp install. */
 export function getMcpInstallDir(): string {
-  return path.join(app.getPath("userData"), "playwright-mcp");
+  return getUserDataMcpDir();
 }
 
-function mcpPackageJsonPath(): string {
-  return path.join(getMcpInstallDir(), "node_modules", "@playwright", "mcp", "package.json");
+function mcpPackageJsonPath(hostDir: string): string {
+  return path.join(hostDir, "node_modules", "@playwright", "mcp", "package.json");
 }
 
-/**
- * Absolute path to the installed @playwright/mcp CLI entry, or null when the
- * pinned version is not installed. The bin path is read from the package's own
- * package.json so we never hard-code an internal filename.
- */
-export async function resolveInstalledMcpCli(): Promise<string | null> {
+async function cliFromHostDir(hostDir: string): Promise<string | null> {
   try {
-    const raw = await fs.readFile(mcpPackageJsonPath(), "utf-8");
+    const pkgPath = mcpPackageJsonPath(hostDir);
+    const raw = await fs.readFile(pkgPath, "utf-8");
     const pkg = JSON.parse(raw) as {
       version?: string;
       bin?: string | Record<string, string>;
     };
     if (pkg.version !== PLAYWRIGHT_MCP_VERSION) return null;
 
-    const pkgDir = path.dirname(mcpPackageJsonPath());
+    const pkgDir = path.dirname(pkgPath);
     let binRel: string | undefined;
     if (typeof pkg.bin === "string") {
       binRel = pkg.bin;
     } else if (pkg.bin && typeof pkg.bin === "object") {
-      binRel = pkg.bin["mcp-server-playwright"] ?? Object.values(pkg.bin)[0];
+      binRel =
+        pkg.bin["playwright-mcp"] ??
+        pkg.bin["mcp-server-playwright"] ??
+        Object.values(pkg.bin)[0];
     }
     if (!binRel) return null;
 
@@ -63,6 +53,29 @@ export async function resolveInstalledMcpCli(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+export function isPlaywrightMcpBundled(): boolean {
+  return Boolean(getBundledMcpDir());
+}
+
+/**
+ * Absolute path to the installed @playwright/mcp CLI entry, or null when the
+ * pinned version is not installed. Prefers the extraResources copy shipped
+ * with the app, then the userData fallback install.
+ */
+export async function resolveInstalledMcpCli(): Promise<string | null> {
+  const bundled = getBundledMcpDir();
+  if (bundled) {
+    const cli = await cliFromHostDir(bundled);
+    if (cli) return cli;
+  }
+  return cliFromHostDir(getMcpInstallDir());
+}
+
+/** Electron binary used as Node so MCP does not require a system Node install. */
+export function resolveElectronAsNode(): string {
+  return process.execPath;
 }
 
 /** Resolve the absolute `node` binary that sits next to the resolved npx. */
@@ -87,9 +100,9 @@ function resolveNpmCommand(npxPath: string): string {
 let _installInFlight: Promise<string | null> | null = null;
 
 /**
- * Ensure @playwright/mcp@<pinned> is installed in the app-managed dir. Returns
- * the CLI path on success, or null on failure (callers fall back to npx). Safe
- * to call concurrently — a single install is shared across callers.
+ * Ensure @playwright/mcp@<pinned> is available. Returns the CLI path on success,
+ * or null on failure (callers fall back to npx). Prefers the shipped extraResources
+ * copy; only npm-installs into userData when that is missing.
  */
 export async function ensurePlaywrightMcpInstalled(): Promise<string | null> {
   const existing = await resolveInstalledMcpCli();
@@ -123,7 +136,10 @@ export async function ensurePlaywrightMcpInstalled(): Promise<string | null> {
           "error",
         ],
         {
-          env: buildPlaywrightEnv(),
+          env: {
+            ...buildPlaywrightEnv(),
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1",
+          },
           timeout: 3 * 60_000,
           maxBuffer: 10 * 1024 * 1024,
         },

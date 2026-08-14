@@ -15,14 +15,11 @@ Use it to capture a flow in the browser, turn it into a reusable story, and re-r
 ## Requirements
 
 - macOS (Apple Silicon)
-- [Codex CLI](https://github.com/openai/codex) installed and authenticated in Terminal
-- [Playwright](https://playwright.dev/) Chromium (for recording only):
+- [Codex CLI](https://github.com/openai/codex) or [Claude Code](https://docs.anthropic.com/en/docs/claude-code/quickstart) installed and authenticated in Terminal
 
-```bash
-npx playwright install chromium
-```
+Playwright MCP and Chromium ship inside the app — no separate `npx` / browser install.
 
-Story Studio uses your local Codex setup — your auth and API usage stay on your machine.
+Story Studio uses your local Codex or Claude setup — your auth and API usage stay on your machine.
 
 ## Install
 

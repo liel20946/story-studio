@@ -34,7 +34,7 @@ if (!fs.existsSync(iconSrc)) {
 const electronVersion = JSON.parse(
   fs.readFileSync(path.join(root, "node_modules/electron/package.json"), "utf8"),
 ).version;
-const stamp = `${electronVersion}-${fs.statSync(iconSrc).mtimeMs}-v4`;
+const stamp = `${electronVersion}-${fs.statSync(iconSrc).mtimeMs}-v5`;
 
 if (fs.existsSync(stampFile) && fs.readFileSync(stampFile, "utf8") === stamp && fs.existsSync(devApp)) {
   process.exit(0);
@@ -60,6 +60,14 @@ const skillsSrc = path.join(root, "resources/skills");
 const skillsDest = path.join(devApp, "Contents/Resources/skills");
 if (fs.existsSync(skillsSrc)) {
   fs.cpSync(skillsSrc, skillsDest, { recursive: true });
+}
+
+for (const name of ["playwright-mcp", "ms-playwright"]) {
+  const src = path.join(root, "resources", name);
+  const dest = path.join(devApp, "Contents/Resources", name);
+  if (fs.existsSync(src)) {
+    fs.cpSync(src, dest, { recursive: true });
+  }
 }
 
 fs.writeFileSync(stampFile, stamp);

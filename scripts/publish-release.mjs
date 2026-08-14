@@ -43,6 +43,7 @@ if (!process.env.GH_TOKEN) {
   process.exit(1);
 }
 
+run("node", ["scripts/bundle-playwright-runtime.mjs"]);
 run("npm", ["run", "build"]);
 // Build locally only — electron-builder's GitHub publisher rewrites spaces to
 // dashes (Story-Studio-*), which breaks latest-mac.yml (must use Story.Studio-*).

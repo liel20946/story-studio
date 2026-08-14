@@ -5,63 +5,37 @@ import * as path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { app } from "../electron-api.js";
+import {
+  dirHasChromium,
+  getBundledBrowsersDir,
+  getPlaywrightBrowsersInstallDir,
+  getPlaywrightBrowsersSearchDirs,
+  resolvePlaywrightBrowsersPath,
+} from "./playwright-paths.js";
 
 const execFileAsync = promisify(execFile);
 
-const CHROMIUM_EXECUTABLE_SUFFIX: Record<string, string[]> = {
-  darwin: ["chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"],
-  linux: ["chrome-linux", "chrome"],
-  win32: ["chrome-win", "chrome.exe"],
-};
-
-function getPlaywrightBrowsersCacheDir(): string {
-  const envPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
-  if (envPath === "0") {
-    return path.join(process.cwd(), "node_modules", "playwright-core", ".local-browsers");
-  }
-  if (envPath) return envPath;
-  if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Caches", "ms-playwright");
-  }
-  if (process.platform === "linux") {
-    const xdg = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
-    return path.join(xdg, "ms-playwright");
-  }
-  if (process.platform === "win32") {
-    const local = process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local");
-    return path.join(local, "ms-playwright");
-  }
-  return path.join(os.homedir(), ".cache", "ms-playwright");
-}
-
 /** True when Playwright's bundled Chromium is on disk (required for headless MCP runs). */
 export async function isPlaywrightChromiumInstalled(): Promise<boolean> {
-  const suffix = CHROMIUM_EXECUTABLE_SUFFIX[process.platform];
-  if (!suffix) return false;
-
-  const cacheDir = getPlaywrightBrowsersCacheDir();
-  try {
-    const entries = await fs.readdir(cacheDir);
-    const chromiumDirs = entries.filter((entry) => /^chromium-\d+/.test(entry));
-    for (const chromiumDir of chromiumDirs) {
-      const execPath = path.join(cacheDir, chromiumDir, ...suffix);
-      try {
-        await fs.access(execPath);
-        return true;
-      } catch {
-        // try next revision directory
-      }
-    }
-    return false;
-  } catch {
-    return false;
+  const envPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (envPath && envPath !== "0" && dirHasChromium(envPath)) return true;
+  if (envPath === "0") {
+    return dirHasChromium(
+      path.join(process.cwd(), "node_modules", "playwright-core", ".local-browsers"),
+    );
   }
+  return getPlaywrightBrowsersSearchDirs().some((dir) => dirHasChromium(dir));
+}
+
+export function isPlaywrightChromiumBundled(): boolean {
+  const bundled = getBundledBrowsersDir();
+  return Boolean(bundled && dirHasChromium(bundled));
 }
 
 export function headlessPlaywrightMissingMessage(): string {
   return (
     "Playwright Chromium is not installed, so headless story runs cannot start a browser. " +
-    "Open Record Story and click Install Chromium, or run: npx playwright install chromium"
+    "Open Record Story and click Install Chromium, or reinstall Story Studio."
   );
 }
 
@@ -112,6 +86,7 @@ export function buildPlaywrightEnv(opts?: { electronAsNode?: boolean }): NodeJS.
     ...process.env,
     HOME: home,
     PATH: `${extraPath}:${process.env.PATH ?? ""}`,
+    PLAYWRIGHT_BROWSERS_PATH: resolvePlaywrightBrowsersPath(),
   };
   if (opts?.electronAsNode) {
     env.ELECTRON_RUN_AS_NODE = "1";
@@ -155,12 +130,20 @@ export async function resolveNpxCommand(): Promise<string> {
 
 /** Install Playwright's bundled Chromium (required for headless MCP). */
 export async function installPlaywrightChromium(): Promise<{ ok: boolean; error?: string }> {
+  if (await isPlaywrightChromiumInstalled()) {
+    return { ok: true };
+  }
   const playwright = resolvePlaywrightInvocation();
+  const installDir = getPlaywrightBrowsersInstallDir();
+  await fs.mkdir(installDir, { recursive: true });
   const installArgs = [...playwright.prefixArgs, "install", "chromium"];
-  console.log("[playwright] installing chromium via", playwright.command, installArgs.join(" "));
+  console.log("[playwright] installing chromium via", playwright.command, installArgs.join(" "), "→", installDir);
   try {
     await execFileAsync(playwright.command, installArgs, {
-      env: buildPlaywrightEnv({ electronAsNode: playwright.useElectronAsNode }),
+      env: {
+        ...buildPlaywrightEnv({ electronAsNode: playwright.useElectronAsNode }),
+        PLAYWRIGHT_BROWSERS_PATH: installDir,
+      },
       timeout: 5 * 60_000,
       maxBuffer: 10 * 1024 * 1024,
     });

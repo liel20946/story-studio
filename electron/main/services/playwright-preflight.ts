@@ -8,10 +8,11 @@ import {
   buildPlaywrightEnv,
   installPlaywrightChromium,
   isPlaywrightChromiumInstalled,
+  isPlaywrightChromiumBundled,
   resolveNpxCommand,
   resolvePlaywrightInvocation,
 } from "./playwright-runtime.js";
-import { ensurePlaywrightMcpInstalled } from "./playwright-mcp-install.js";
+import { ensurePlaywrightMcpInstalled, isPlaywrightMcpBundled } from "./playwright-mcp-install.js";
 import { buildPlaywrightMcpServerLaunch } from "./browser-mcp-config.js";
 import type { BrowserMode } from "./contract-types.js";
 import { getSettingsValue } from "../handlers/settings.js";
@@ -35,8 +36,8 @@ export interface PlaywrightPreflightResult {
 export interface PlaywrightSetupProbe {
   npx: { ready: boolean; path?: string; error?: string };
   playwrightCli: { ready: boolean; version?: string; bundled: boolean; error?: string };
-  playwrightMcp: { ready: boolean; version?: string; error?: string };
-  chromium: { ready: boolean };
+  playwrightMcp: { ready: boolean; version?: string; error?: string; bundled: boolean };
+  chromium: { ready: boolean; bundled: boolean };
 }
 
 let preflightCacheAt: number | null = null;
@@ -365,7 +366,10 @@ export async function probePlaywrightSetup(): Promise<PlaywrightSetupProbe> {
     playwrightCli.error = err instanceof Error ? err.message : String(err);
   }
 
-  let playwrightMcp: PlaywrightSetupProbe["playwrightMcp"] = { ready: false };
+  let playwrightMcp: PlaywrightSetupProbe["playwrightMcp"] = {
+    ready: false,
+    bundled: isPlaywrightMcpBundled(),
+  };
   try {
     const handshake = await probePlaywrightMcpHandshake({
       browserMode: "private",
@@ -374,6 +378,7 @@ export async function probePlaywrightSetup(): Promise<PlaywrightSetupProbe> {
       ready: handshake.ready,
       version: handshake.serverVersion,
       error: handshake.ready ? undefined : handshake.error,
+      bundled: isPlaywrightMcpBundled(),
     };
   } catch (err) {
     playwrightMcp.error = err instanceof Error ? err.message : String(err);
@@ -383,14 +388,16 @@ export async function probePlaywrightSetup(): Promise<PlaywrightSetupProbe> {
     npx: npxProbe,
     playwrightCli,
     playwrightMcp,
-    chromium: { ready: await isPlaywrightChromiumInstalled() },
+    chromium: {
+      ready: await isPlaywrightChromiumInstalled(),
+      bundled: isPlaywrightChromiumBundled(),
+    },
   };
 }
 
 async function warmPlaywrightMcpPackage(): Promise<{ ok: boolean; error?: string }> {
-  // Prefer a one-time local install so story runs launch the MCP by absolute
-  // path (no per-run npx registry round-trip). Fall back to warming the npx
-  // cache if the local install could not be created.
+  // Prefer the extraResources copy shipped with the app. Fall back to a
+  // one-time userData install, then the npx cache.
   const installed = await ensurePlaywrightMcpInstalled();
   if (installed) return { ok: true };
 
@@ -510,12 +517,12 @@ async function runPreflight(options: {
     };
   }
 
-  onProgress?.({ phase: "mcp", message: "Downloading Playwright MCP…" });
+  onProgress?.({ phase: "mcp", message: "Preparing Playwright MCP…" });
   const warm = await warmPlaywrightMcpPackage();
   if (!warm.ok) {
     return {
       ok: false,
-      message: "Failed to download Playwright MCP. Open Settings → Setup to fix.",
+      message: "Failed to prepare Playwright MCP. Open Settings → Setup to fix.",
       error: warm.error,
     };
   }

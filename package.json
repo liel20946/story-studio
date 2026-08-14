@@ -14,11 +14,12 @@
     "dev": "node scripts/dev.mjs",
     "build": "electron-vite build",
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
+    "pack": "npm run bundle:playwright && npm run build && electron-builder --dir",
+    "dist": "npm run bundle:playwright && npm run build && electron-builder",
     "dist:publish": "node scripts/publish-release.mjs",
     "upload-update-metadata": "node scripts/upload-update-metadata.mjs",
     "seed:demo": "node scripts/seed-demo-data.mjs",
+    "bundle:playwright": "node scripts/bundle-playwright-runtime.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
@@ -93,11 +94,26 @@
       {
         "from": "resources/skills",
         "to": "skills"
+      },
+      {
+        "from": "resources/playwright-mcp",
+        "to": "playwright-mcp",
+        "filter": [
+          "**/*",
+          "!**/node_modules/playwright-core/.local-browsers/**"
+        ]
+      },
+      {
+        "from": "resources/ms-playwright",
+        "to": "ms-playwright"
       }
     ],
     "mac": {
       "icon": "build/icon.icns",
       "category": "public.app-category.developer-tools",
+      "signIgnore": [
+        "ms-playwright"
+      ],
       "target": [
         "dmg",
         "zip"

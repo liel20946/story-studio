@@ -1,6 +1,8 @@
 node_modules/
 out/
 release/
+resources/ms-playwright/
+resources/playwright-mcp/
 build/dev/
 dist/
 .DS_Store

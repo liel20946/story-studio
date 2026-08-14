@@ -53,7 +53,7 @@ jobs:
   release:
     name: Build arm64 macOS
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     if: github.repository == 'liel20946/story-studio'
 
     steps:
@@ -172,6 +172,7 @@ jobs:
 
           unset CSC_LINK_RAW CSC_KEY_PASSWORD_RAW APPLE_ID_RAW APPLE_APP_SPECIFIC_PASSWORD_RAW APPLE_TEAM_ID_RAW
 
+          node scripts/bundle-playwright-runtime.mjs
           npm run build
           npx electron-builder --mac --publish never
           node scripts/generate-latest-mac-yml.mjs "${{ steps.version.outputs.version }}"

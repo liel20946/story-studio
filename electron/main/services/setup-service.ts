@@ -1,5 +1,3 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { shell } from "../electron-api.js";
 import type { SetupItem, SetupItemId, SetupStatus } from "./contract-types.js";
 import { resolveCodexBinary } from "./codex-runner.js";
@@ -8,12 +6,9 @@ import { installBrowser } from "./recording-service.js";
 import {
   PLAYWRIGHT_MCP_VERSION,
   PLAYWRIGHT_VERSION,
-  playwrightMcpPackageSpec,
 } from "./setup-versions.js";
-import { buildPlaywrightEnv } from "./playwright-runtime.js";
 import { probePlaywrightSetup } from "./playwright-preflight.js";
-
-const execFileAsync = promisify(execFile);
+import { ensurePlaywrightMcpInstalled } from "./playwright-mcp-install.js";
 
 const SETUP_DOWNLOAD_URLS: Record<"codex" | "claude", string> = {
   codex: "https://github.com/openai/codex",
@@ -108,27 +103,29 @@ export async function checkSetupStatus(
     makeItem(
       "playwright-mcp",
       `Playwright MCP (${PLAYWRIGHT_MCP_VERSION})`,
-      "MCP server agents use to control the browser during runs.",
+      "MCP server agents use to control the browser during runs. Ships with the app.",
       playwrightMcp.ready,
       {
         detail: playwrightMcp.ready
-          ? `v${playwrightMcp.version ?? PLAYWRIGHT_MCP_VERSION} · handshake ok`
+          ? `v${playwrightMcp.version ?? PLAYWRIGHT_MCP_VERSION} · handshake ok${playwrightMcp.bundled ? " · bundled" : ""}`
           : playwrightMcp.error ?? probe.npx.error,
-        installable: true,
+        installable: !playwrightMcp.ready && !playwrightMcp.bundled,
       },
     ),
     makeItem(
       "chromium",
       "Chromium browser",
-      "Required for headless recording. Installed via Playwright.",
+      "Required for headless recording and private-browser runs. Ships with the app.",
       chromiumReady,
-      { installable: true },
+      {
+        detail: probe.chromium.bundled ? "bundled" : undefined,
+        installable: !chromiumReady,
+      },
     ),
   ];
 
   const essentialReady =
     (codexReady || claudeReady) &&
-    probe.npx.ready &&
     playwright.ready &&
     playwrightMcp.ready &&
     chromiumReady;
@@ -158,25 +155,23 @@ export async function installSetupItem(
     }
     case "playwright-mcp": {
       try {
-        const npxPath = await import("./playwright-runtime.js").then((m) => m.resolveNpxCommand());
-        await execFileAsync(
-          npxPath,
-          ["-y", playwrightMcpPackageSpec(), "--version"],
-          {
-            env: buildPlaywrightEnv(),
-            timeout: 5 * 60_000,
-            maxBuffer: 10 * 1024 * 1024,
-          },
-        );
+        const cli = await ensurePlaywrightMcpInstalled();
+        if (!cli) {
+          return {
+            ok: false,
+            message: "Failed to prepare Playwright MCP.",
+            error: "Bundled MCP missing and npm install failed.",
+          };
+        }
         return {
           ok: true,
-          message: `Playwright MCP ${PLAYWRIGHT_MCP_VERSION} downloaded.`,
+          message: `Playwright MCP ${PLAYWRIGHT_MCP_VERSION} ready.`,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
           ok: false,
-          message: "Failed to download Playwright MCP.",
+          message: "Failed to prepare Playwright MCP.",
           error: msg,
         };
       }

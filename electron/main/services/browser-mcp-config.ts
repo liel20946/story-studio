@@ -3,10 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { playwrightMcpPackageSpec } from "./setup-versions.js";
 import { buildPlaywrightEnv, resolveNpxCommand } from "./playwright-runtime.js";
-import {
-  resolveInstalledMcpCli,
-  resolveNodeCommand,
-} from "./playwright-mcp-install.js";
+import { resolveElectronAsNode, resolveInstalledMcpCli } from "./playwright-mcp-install.js";
 import type { BrowserMode } from "./contract-types.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { readBrowserExtensionToken } from "./browser-extension-auth.js";
@@ -41,6 +38,31 @@ export function playwrightMcpArgs(
   return ["-y", pkg, ...mcpServerFlags(outputDir, browserMode)];
 }
 
+function pickLaunchEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  const env: Record<string, string> = {
+    PATH: baseEnv.PATH ?? "",
+    HOME: baseEnv.HOME ?? os.homedir(),
+    ...extra,
+  };
+  if (baseEnv.PLAYWRIGHT_BROWSERS_PATH) {
+    env.PLAYWRIGHT_BROWSERS_PATH = baseEnv.PLAYWRIGHT_BROWSERS_PATH;
+  }
+  for (const key of [
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "LD_LIBRARY_PATH",
+  ]) {
+    const value = process.env[key];
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
 export interface PlaywrightMcpServerLaunch {
   command: string;
   args: string[];
@@ -64,39 +86,35 @@ export async function playwrightMcpSecretEnv(
 /**
  * Full MCP launch spec for agent child processes.
  *
- * Prefers the app-managed local install (`node <cli> …`) so the MCP starts
- * without an `npx -y` registry round-trip on every run. Falls back to the
- * original `npx -y @playwright/mcp@<pinned>` launch when the local install or a
- * resolvable node binary is unavailable, so runs never break.
+ * Prefers the shipped extraResources (or userData) install via Electron-as-Node
+ * so the MCP starts without an `npx -y` registry round-trip and without a
+ * system Node install. Falls back to `npx -y @playwright/mcp@<pinned>` when
+ * the local CLI is missing.
  */
 export async function buildPlaywrightMcpServerLaunch(
   outputDir?: string,
   options: PlaywrightMcpLaunchOptions = {},
 ): Promise<PlaywrightMcpServerLaunch> {
   const browserMode = options.browserMode ?? getSettingsValue().browserMode;
-  const baseEnv = buildPlaywrightEnv();
-  const env: Record<string, string> = {
-    PATH: baseEnv.PATH ?? "",
-    HOME: baseEnv.HOME ?? os.homedir(),
-  };
   const secretEnv = await playwrightMcpSecretEnv(browserMode);
 
   const cli = await resolveInstalledMcpCli();
-  const node = cli ? await resolveNodeCommand() : null;
-  if (cli && node) {
+  if (cli) {
+    const baseEnv = buildPlaywrightEnv({ electronAsNode: true });
     return {
-      command: node,
+      command: resolveElectronAsNode(),
       args: [cli, ...mcpServerFlags(outputDir, browserMode)],
-      env,
+      env: pickLaunchEnv(baseEnv, { ELECTRON_RUN_AS_NODE: "1" }),
       secretEnv,
     };
   }
 
+  const baseEnv = buildPlaywrightEnv();
   const command = await resolveNpxCommand();
   return {
     command,
     args: playwrightMcpArgs(outputDir, browserMode),
-    env,
+    env: pickLaunchEnv(baseEnv),
     secretEnv,
   };
 }

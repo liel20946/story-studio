@@ -72,11 +72,17 @@ Ground truth: a working release (e.g. v1.4.8) has both the asset and the yml `ur
 
 ```bash
 npm install
-npm run build      # electron-vite build -> out/
-npm run dist       # build + electron-builder -> release/ (.dmg, .zip, .blockmap, latest-mac.yml)
+npm run bundle:playwright  # downloads pinned MCP + Chromium into resources/ (gitignored)
+npm run build              # electron-vite build -> out/
+npm run dist               # bundle:playwright + build + electron-builder -> release/
 ```
 
+`dist` / `pack` / `dist:publish` already run `bundle:playwright`. Chromium lives in
+`Contents/Resources/ms-playwright` and is excluded from codesign (`mac.signIgnore`)
+so nested Chromium.app is not re-signed. MCP is `Contents/Resources/playwright-mcp`.
+
 Artifacts land in `release/`.
+The zip is larger than older releases because Chromium ships inside the app.
 
 ## Release (publish)
 
