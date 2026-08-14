@@ -576,7 +576,11 @@ export async function startClaudeRun(
             },
           );
         } catch {
-          // non-JSON stdout line — ignore
+          const text = stripAnsi(line).trim();
+          if (text) {
+            console.error("[claude:run] stdout:", text);
+            stderrLog = stderrLog ? `${stderrLog}\n${text}` : text;
+          }
         }
       }
     });
@@ -626,6 +630,35 @@ export async function startClaudeRun(
         state.cancelled || signal === "SIGTERM" || signal === "SIGKILL";
       _runs.delete(runId);
       console.log("[claude:run] process closed", { runId, code, signal, cancelled });
+
+      const flushLine = (raw: string): void => {
+        const line = stripAnsi(raw).trim();
+        if (!line) return;
+        console.error("[claude:run] trailing:", line);
+        stderrLog = stderrLog ? `${stderrLog}\n${line}` : line;
+      };
+      if (stderrBuffer) flushLine(stderrBuffer);
+      if (buffer) {
+        try {
+          const parsed = JSON.parse(buffer) as Record<string, unknown>;
+          handleClaudeLine(
+            parsed,
+            state,
+            events,
+            (value) => {
+              structuredOutput = value;
+            },
+            (tu) => {
+              tokenUsage = tu;
+            },
+            (msg) => {
+              lastAgentMessage = msg;
+            },
+          );
+        } catch {
+          flushLine(buffer);
+        }
+      }
 
       if (structuredOutput) {
         await fs.writeFile(resultPath, JSON.stringify(structuredOutput), "utf-8").catch(() => {});

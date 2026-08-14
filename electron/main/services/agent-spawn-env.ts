@@ -42,14 +42,18 @@ export function buildBaseAgentSpawnEnv(): NodeJS.ProcessEnv {
     "/usr/local/bin",
     path.join(home, ".local/bin"),
     path.join(home, ".npm-global/bin"),
-    path.dirname(process.execPath),
   ].join(":");
   const existingPath = process.env.PATH ?? "";
-  return {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
     PATH: `${extraPath}:${existingPath}`,
   };
+  // Story Studio / Claude Code are Electron apps. If this leaks into `claude`,
+  // the CLI boots as Node and dies immediately with exit code 1 and no stderr.
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env.ATOM_SHELL_INTERNAL_RUN_AS_NODE;
+  return env;
 }
 
 /** Spawn env for `claude` CLI — base PATH/HOME plus stripped host OAuth vars. */
