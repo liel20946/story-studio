@@ -108,20 +108,20 @@ export function SidebarUpdateStatus() {
     ariaLabel = status.availableVersion
       ? `Download update ${status.availableVersion}`
       : "Download update";
-    icon = <ArrowDownToLineIcon className="size-3.5" />;
+    icon = <ArrowDownToLineIcon className="size-3" />;
     onClick = () => void run(() => updatesDownload());
   } else if (status.phase === "downloading") {
     tone = "downloading";
     label = `${percent}%`;
     ariaLabel = `Downloading update, ${percent} percent`;
-    icon = <Loader2Icon className="size-3.5 animate-spin" />;
+    icon = <Loader2Icon className="size-3 animate-spin" />;
   } else if (status.phase === "ready") {
     tone = "ready";
     label = "Restart";
     ariaLabel = status.availableVersion
       ? `Restart to install ${status.availableVersion}`
       : "Restart to install update";
-    icon = <RotateCwIcon className="size-3.5" />;
+    icon = <RotateCwIcon className="size-3" />;
     onClick = () => void run(() => updatesInstall());
   } else if (status.phase === "error") {
     tone = "error";
@@ -138,7 +138,7 @@ export function SidebarUpdateStatus() {
       ariaLabel = "Retry update";
       onClick = () => void run(() => updatesDownload());
     }
-    icon = <CircleAlertIcon className="size-3.5" />;
+    icon = <CircleAlertIcon className="size-3" />;
   }
 
   const interactive = Boolean(onClick) && !busy;
