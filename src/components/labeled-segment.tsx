@@ -35,7 +35,12 @@ export function LabeledSegment<T extends string>({
 
   return (
     <div
-      className={cn("segment-control shrink-0", segmentClass, className)}
+      className={cn(
+        "segment-control shrink-0",
+        segmentClass,
+        className,
+        selectedEnabledIndex < 0 && "segment-control--no-selection",
+      )}
       role="tablist"
       aria-label={ariaLabel}
       data-active-index={activeIndex}

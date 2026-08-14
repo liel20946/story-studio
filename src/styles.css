@@ -320,6 +320,10 @@
     background-color 200ms ease;
 }
 
+.segment-control.segment-control--no-selection .segment-control-thumb {
+  display: none;
+}
+
 .segment-control.segment-control--labeled button {
   width: 100%;
   min-width: 3.25rem;
