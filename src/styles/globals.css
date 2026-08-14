@@ -329,12 +329,14 @@ body {
 .sidebar-footer-settings {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 0.25rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
   padding: 0.25rem calc(var(--spacing) * 2) 0.75rem calc(var(--spacing) * 2);
 }
 
 .sidebar-footer-settings .sidebar-footer-gear {
+  margin-left: auto;
   width: 1.75rem;
   height: 1.75rem;
   min-width: 1.75rem;

@@ -128,24 +128,19 @@ async function main() {
 
   await setUpdate(page, { phase: "idle" });
   await clearHover(page);
-  await shot(app, "01-update-idle-settings-only");
+  await shot(app, "01-update-idle-settings-right");
   await shotFooter(app, "01b-update-idle-footer");
-
-  await setUpdate(page, { phase: "checking" });
-  await clearHover(page);
-  await shot(app, "02-update-checking");
-  await shotFooter(app, "02b-update-checking-footer");
 
   await setUpdate(page, {
     phase: "available",
     availableVersion: "1.6.0",
   });
   await clearHover(page);
-  await shot(app, "03-update-available");
-  await shotFooter(app, "03b-update-available-footer");
+  await shot(app, "02-update-available");
+  await shotFooter(app, "02b-update-available-footer");
   await page.getByRole("button", { name: "Download update 1.6.0" }).hover();
   await wait(500);
-  await shot(app, "03c-update-available-tooltip");
+  await shot(app, "02c-update-available-tooltip");
   await clearHover(page);
 
   await setUpdate(page, {
@@ -154,16 +149,16 @@ async function main() {
     percent: 42,
   });
   await clearHover(page);
-  await shot(app, "04-update-downloading");
-  await shotFooter(app, "04b-update-downloading-footer");
+  await shot(app, "03-update-downloading");
+  await shotFooter(app, "03b-update-downloading-footer");
 
   await setUpdate(page, {
     phase: "ready",
     availableVersion: "1.6.0",
   });
   await clearHover(page);
-  await shot(app, "05-update-restart");
-  await shotFooter(app, "05b-update-restart-footer");
+  await shot(app, "04-update-restart");
+  await shotFooter(app, "04b-update-restart-footer");
 
   await setUpdate(page, {
     phase: "error",
@@ -172,13 +167,8 @@ async function main() {
     availableVersion: "1.6.0",
   });
   await clearHover(page);
-  await shot(app, "06-update-retry");
-  await shotFooter(app, "06b-update-retry-footer");
-
-  await setUpdate(page, { phase: "idle", notice: "Up to date" });
-  await clearHover(page);
-  await shot(app, "07-update-up-to-date");
-  await shotFooter(app, "07b-update-up-to-date-footer");
+  await shot(app, "05-update-retry");
+  await shotFooter(app, "05b-update-retry-footer");
 
   await app.close();
   console.log("done");

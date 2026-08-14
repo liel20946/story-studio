@@ -20,9 +20,8 @@ const execFileAsync = promisify(execFile);
 const RELEASES_LATEST_URL =
   "https://github.com/liel20946/story-studio/releases/latest";
 
-/** Quiet background poll — matches Cursor-style "check every few hours". */
-const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
-const NOTICE_MS = 4000;
+/** Quiet background poll. */
+const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const MOCK_VERSION = "99.0.0";
 
 let downloadedVersion: string | null = null;
@@ -31,7 +30,6 @@ let installInProgress = false;
 let downloadInFlight = false;
 let checkInFlight = false;
 let initialized = false;
-let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let mockDownloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 let phase: UpdatePhase = "idle";
@@ -39,7 +37,6 @@ let availableVersion: string | undefined;
 let percent: number | undefined;
 let error: string | undefined;
 let errorKind: UpdateErrorKind | undefined;
-let notice: string | undefined;
 
 function isMockUpdates(): boolean {
   return (
@@ -66,7 +63,6 @@ function snapshot(): UpdateStatus {
     percent,
     error,
     errorKind,
-    notice,
   };
 }
 
@@ -76,45 +72,19 @@ function emitStatus(): UpdateStatus {
   return status;
 }
 
-function clearNoticeTimer(): void {
-  if (noticeTimer) {
-    clearTimeout(noticeTimer);
-    noticeTimer = null;
-  }
-}
-
-function setNotice(message: string): void {
-  notice = message;
-  clearNoticeTimer();
-  noticeTimer = setTimeout(() => {
-    notice = undefined;
-    noticeTimer = null;
-    emitStatus();
-  }, NOTICE_MS);
-  emitStatus();
-}
-
-function setIdle(options?: { notice?: string }): UpdateStatus {
+function setIdle(): UpdateStatus {
   phase = "idle";
   availableVersion = undefined;
   percent = undefined;
   error = undefined;
   errorKind = undefined;
-  if (options?.notice) {
-    setNotice(options.notice);
-    return snapshot();
-  }
-  notice = undefined;
   return emitStatus();
 }
 
 function setPhase(
   next: UpdatePhase,
   patch?: Partial<
-    Pick<
-      UpdateStatus,
-      "availableVersion" | "percent" | "error" | "errorKind" | "notice"
-    >
+    Pick<UpdateStatus, "availableVersion" | "percent" | "error" | "errorKind">
   >,
 ): UpdateStatus {
   phase = next;
@@ -134,14 +104,6 @@ function setPhase(
   } else {
     error = undefined;
     errorKind = undefined;
-  }
-  if (patch?.notice) {
-    setNotice(patch.notice);
-    return snapshot();
-  }
-  if (next !== "idle") {
-    notice = undefined;
-    clearNoticeTimer();
   }
   return emitStatus();
 }
@@ -318,10 +280,7 @@ function startMockDownload(): void {
 
 async function checkMock(userInitiated: boolean): Promise<UpdateStatus> {
   if (phase === "downloading" || downloadInFlight) return snapshot();
-  if (phase === "ready") {
-    if (userInitiated) setNotice(`Story Studio ${availableVersion} is ready`);
-    return snapshot();
-  }
+  if (phase === "ready") return snapshot();
   if (userInitiated) setPhase("checking");
   await new Promise((resolve) => setTimeout(resolve, userInitiated ? 350 : 0));
   availableVersion = MOCK_VERSION;
@@ -334,9 +293,6 @@ export async function checkForUpdates(options?: {
   const userInitiated = options?.userInitiated === true;
 
   if (!isUpdateEnabled()) {
-    if (userInitiated) {
-      setIdle({ notice: "Updates only in the packaged app" });
-    }
     return snapshot();
   }
 
@@ -362,9 +318,7 @@ export async function checkForUpdates(options?: {
     if (!latestVersion || latestVersion === installed) {
       downloadedVersion = null;
       downloadedFilePath = null;
-      if (userInitiated) {
-        setIdle({ notice: "Up to date" });
-      } else if (phase === "checking" || phase === "available") {
+      if (userInitiated || phase === "checking" || phase === "available") {
         setIdle();
       }
       return snapshot();
@@ -408,7 +362,6 @@ export async function downloadAvailableUpdate(): Promise<UpdateStatus> {
   if (phase === "downloading" || downloadInFlight) return snapshot();
 
   if (!isUpdateEnabled()) {
-    setIdle({ notice: "Updates only in the packaged app" });
     return snapshot();
   }
 
@@ -445,7 +398,7 @@ export async function downloadAvailableUpdate(): Promise<UpdateStatus> {
 export async function installDownloadedUpdate(): Promise<{ ok: true }> {
   if (isMockUpdates()) {
     logger.info("updates", "Mock install — skipping quit");
-    setIdle({ notice: "Restart (mock)" });
+    setIdle();
     return { ok: true };
   }
 
@@ -462,7 +415,6 @@ export function applyMockUpdateStatus(patch: {
   percent?: number;
   error?: string;
   errorKind?: UpdateErrorKind;
-  notice?: string;
 }): UpdateStatus {
   if (app.isPackaged) {
     throw new Error("Mock update status is only available in development");
@@ -476,7 +428,7 @@ export function applyMockUpdateStatus(patch: {
   if (nextPhase === "idle") {
     downloadedVersion = null;
     downloadedFilePath = null;
-    return setIdle(patch.notice ? { notice: patch.notice } : undefined);
+    return setIdle();
   }
   if (nextPhase === "ready") {
     const version = patch.availableVersion ?? availableVersion ?? MOCK_VERSION;

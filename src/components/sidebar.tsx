@@ -1376,7 +1376,7 @@ export function AppSidebar() {
   return (
     <Sidebar
       className="!p-0 [&>div]:rounded-none"
-      // Bottom-left gear opens in-app settings (same as Cmd+,).
+      // Bottom-right gear opens in-app settings (same as Cmd+,).
       footer={
         <SidebarFooter className="sidebar-footer-settings mt-auto">
           <SidebarUpdateStatus />
@@ -1386,7 +1386,7 @@ export function AppSidebar() {
                 variant="transparent"
                 size="titlebar"
                 iconOnly
-                className="sidebar-footer-gear"
+                className="sidebar-footer-gear ml-auto"
                 onClick={(e) => {
                   e.currentTarget.blur();
                   navigate({ to: "/settings", search: { section: "agent" } });

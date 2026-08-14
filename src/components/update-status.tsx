@@ -46,8 +46,6 @@ function chipTooltip(status: UpdateStatus): string {
     ? `Story Studio ${status.availableVersion}`
     : "An update";
   switch (status.phase) {
-    case "checking":
-      return "Checking for updates…";
     case "available":
       return `${version} is available`;
     case "downloading":
@@ -64,7 +62,7 @@ function chipTooltip(status: UpdateStatus): string {
         ? `Update failed. ${status.error}`
         : "Could not update. Try again.";
     default:
-      return status.notice ?? "";
+      return "";
   }
 }
 
@@ -73,7 +71,10 @@ export function SidebarUpdateStatus() {
   const [busy, setBusy] = React.useState(false);
 
   const visible =
-    status.phase !== "idle" || Boolean(status.notice);
+    status.phase === "available" ||
+    status.phase === "downloading" ||
+    status.phase === "ready" ||
+    status.phase === "error";
   if (!visible) return null;
 
   async function run(action: () => Promise<unknown>) {
@@ -89,19 +90,13 @@ export function SidebarUpdateStatus() {
   }
 
   const percent = Math.max(0, Math.min(100, Math.round(status.percent ?? 0)));
-  let label = status.notice ?? "";
+  let label = "";
   let icon: React.ReactNode = null;
-  let tone: "notice" | "available" | "downloading" | "ready" | "error" =
-    "notice";
+  let tone: "available" | "downloading" | "ready" | "error" = "available";
   let onClick: (() => void) | undefined;
   let ariaLabel = label;
 
-  if (status.phase === "checking") {
-    tone = "notice";
-    label = "Checking";
-    ariaLabel = "Checking for updates";
-    icon = <Loader2Icon className="size-3.5 animate-spin" />;
-  } else if (status.phase === "available") {
+  if (status.phase === "available") {
     tone = "available";
     label = "Update";
     ariaLabel = status.availableVersion

@@ -368,5 +368,4 @@ export interface UpdateStatus {
   percent?: number;
   error?: string;
   errorKind?: UpdateErrorKind;
-  notice?: string;
 }

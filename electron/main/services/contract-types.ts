@@ -339,6 +339,4 @@ export interface UpdateStatus {
   percent?: number;
   error?: string;
   errorKind?: UpdateErrorKind;
-  /** Brief footer notice after a manual check (e.g. "Up to date"). */
-  notice?: string;
 }
