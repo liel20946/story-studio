@@ -1,5 +1,13 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/overlays";
+
+export type SegmentOption<T extends string> = {
+  value: T;
+  label: string;
+  disabled?: boolean;
+  disabledReason?: string;
+};
 
 export function LabeledSegment<T extends string>({
   value,
@@ -10,25 +18,29 @@ export function LabeledSegment<T extends string>({
   className,
 }: {
   value: T;
-  options: readonly { value: T; label: string }[];
+  options: readonly SegmentOption<T>[];
   onChange: (value: T) => void;
   ariaLabel: string;
   segmentClass?: string;
   className?: string;
 }) {
-  const selectedIndex = Math.max(
-    0,
-    options.findIndex((opt) => opt.value === value),
+  const selectedEnabledIndex = options.findIndex(
+    (opt) => opt.value === value && !opt.disabled,
   );
-  const [activeIndex, setActiveIndex] = useState(selectedIndex);
+  const [activeIndex, setActiveIndex] = useState(selectedEnabledIndex);
 
   useEffect(() => {
-    setActiveIndex(selectedIndex);
-  }, [selectedIndex, value]);
+    setActiveIndex(selectedEnabledIndex);
+  }, [selectedEnabledIndex, value]);
 
   return (
     <div
-      className={cn("segment-control shrink-0", segmentClass, className)}
+      className={cn(
+        "segment-control shrink-0",
+        segmentClass,
+        className,
+        selectedEnabledIndex < 0 && "segment-control--no-selection",
+      )}
       role="tablist"
       aria-label={ariaLabel}
       data-active-index={activeIndex}
@@ -40,21 +52,37 @@ export function LabeledSegment<T extends string>({
     >
       <span className="segment-control-thumb" aria-hidden />
       {options.map((opt, index) => {
-        const active = value === opt.value;
-        return (
+        const active = selectedEnabledIndex >= 0 && value === opt.value;
+        const disabled = Boolean(opt.disabled);
+        const button = (
           <button
-            key={opt.value}
             type="button"
             role="tab"
             aria-selected={active}
+            aria-disabled={disabled || undefined}
             data-active={active ? "true" : undefined}
+            disabled={disabled}
             onClick={() => {
+              if (disabled) return;
               setActiveIndex(index);
               onChange(opt.value);
             }}
           >
             {opt.label}
           </button>
+        );
+
+        if (!disabled || !opt.disabledReason) {
+          return <span key={opt.value}>{button}</span>;
+        }
+
+        return (
+          <Tooltip key={opt.value}>
+            <TooltipTrigger asChild>
+              <span className="segment-control-option-disabled">{button}</span>
+            </TooltipTrigger>
+            <TooltipContent>{opt.disabledReason}</TooltipContent>
+          </Tooltip>
         );
       })}
     </div>

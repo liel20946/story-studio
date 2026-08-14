@@ -72,6 +72,7 @@ import {
 import { normalizeAppSettings } from "../lib/app-settings";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
 import { useSettingsSection } from "@/lib/use-settings-section";
+import { useSetupStatus } from "@/lib/use-setup-status";
 import { SetupPanel } from "../components/setup-panel";
 import {
   getCachedAppSettings,
@@ -148,6 +149,8 @@ function AgentPanel({
   claudeEffort,
   browserMode,
   capabilities,
+  codexAvailable,
+  claudeAvailable,
   onProviderChange,
   onCodexModelChange,
   onCodexEffortChange,
@@ -162,6 +165,8 @@ function AgentPanel({
   claudeEffort: ClaudeEffort;
   browserMode: BrowserMode;
   capabilities: AgentCapabilities | null;
+  codexAvailable: boolean;
+  claudeAvailable: boolean;
   onProviderChange: (provider: AgentProvider) => void;
   onCodexModelChange: (model: CodexModel) => void;
   onCodexEffortChange: (effort: CodexEffort) => void;
@@ -185,14 +190,29 @@ function AgentPanel({
     provider === "claude-code" ? claudeModel : codexModel;
   const effort =
     provider === "claude-code" ? claudeEffort : codexEffort;
+  const hasAgent = codexAvailable || claudeAvailable;
   const modelOptions = getModelOptions(provider, capabilities);
-  const effortOptions = getEffortSegmentOptions(provider, model, capabilities);
-  const modelDescription =
-    provider === "claude-code"
+  const effortOptions = getEffortSegmentOptions(provider, model, capabilities).map(
+    (option) => ({ ...option, disabled: !hasAgent }),
+  );
+  const modelDescription = !hasAgent
+    ? "Available after you install an agent in Setup."
+    : provider === "claude-code"
       ? "Claude model used when running stories."
-      : capabilities?.source === "codex-catalog"
-        ? "Codex model used when running stories."
-        : "Codex model used when running stories.";
+      : "Codex model used when running stories.";
+  const effortDescription = !hasAgent
+    ? "Available after you install an agent in Setup."
+    : provider === "claude-code"
+      ? "Reasoning effort for Claude Code runs."
+      : "Reasoning effort for Codex runs.";
+  const providerDescription =
+    !codexAvailable && !claudeAvailable
+      ? "Install Codex or Claude Code in Setup to run stories."
+      : !claudeAvailable
+        ? "Claude Code CLI is not installed. Install it in Setup to switch."
+        : !codexAvailable
+          ? "Codex CLI is not installed. Install it in Setup to switch."
+          : "Choose which coding agent runs your stories.";
 
   useEffect(() => {
     if (browserMode !== "existing-chrome") return;
@@ -277,9 +297,14 @@ function AgentPanel({
       <SettingsGroup>
         <SettingsRow
           label="Provider"
-          description="Choose which coding agent runs your stories."
+          description={providerDescription}
         >
-          <ProviderSegment value={provider} onChange={onProviderChange} />
+          <ProviderSegment
+            value={provider}
+            onChange={onProviderChange}
+            codexAvailable={codexAvailable}
+            claudeAvailable={claudeAvailable}
+          />
         </SettingsRow>
 
         <SettingsRow
@@ -290,6 +315,7 @@ function AgentPanel({
             value={model}
             options={modelOptions}
             ariaLabel="Model"
+            disabled={!hasAgent}
             onChange={(next) => {
               if (provider === "claude-code") {
                 onClaudeModelChange(next as ClaudeModel);
@@ -302,11 +328,7 @@ function AgentPanel({
 
         <SettingsRow
           label="Effort"
-          description={
-            provider === "claude-code"
-              ? "Reasoning effort for Claude Code runs."
-              : "Reasoning effort for Codex runs."
-          }
+          description={effortDescription}
         >
           <LabeledSegment
             value={effort}
@@ -329,12 +351,12 @@ function AgentPanel({
         >
           <LabeledSegment
             value={
-              provider !== "codex" && browserMode === "codex-chrome"
+              (!hasAgent || provider !== "codex") && browserMode === "codex-chrome"
                 ? "private"
                 : browserMode
             }
             options={
-              provider === "codex"
+              hasAgent && provider === "codex"
                 ? [
                     { value: "private", label: "Private" },
                     { value: "existing-chrome", label: "Playwright" },
@@ -345,7 +367,7 @@ function AgentPanel({
                     { value: "existing-chrome", label: "Playwright" },
                   ]
             }
-            segmentClass={segmentClassForCount(provider === "codex" ? 3 : 2)}
+            segmentClass={segmentClassForCount(hasAgent && provider === "codex" ? 3 : 2)}
             ariaLabel="Browser mode"
             onChange={onBrowserModeChange}
           />
@@ -475,7 +497,7 @@ function AgentPanel({
           </>
         ) : null}
 
-        {browserMode === "codex-chrome" && provider === "codex" ? (
+        {browserMode === "codex-chrome" && provider === "codex" && hasAgent ? (
           <>
             <SettingsRow
               label="Codex extension"
@@ -794,6 +816,7 @@ export function SettingsView() {
   const resolvedSettings = normalizeAppSettings(appSettings);
   const agentProvider = resolvedSettings.agentProvider;
   const agentCapabilities = useAgentCapabilities(agentProvider);
+  const { loaded: setupLoaded, codexReady, claudeReady } = useSetupStatus();
 
   const commitAppSettings = (settings: AppSettings) => {
     const normalized = setCachedAppSettings(settings);
@@ -818,6 +841,11 @@ export function SettingsView() {
 
   const handleProviderChange = async (agentProvider: AgentProvider) => {
     if (agentProvider === appSettings?.agentProvider) return;
+    if (setupLoaded) {
+      const available =
+        agentProvider === "claude-code" ? claudeReady : codexReady;
+      if (!available) return;
+    }
     const patch: Partial<AppSettings> = { agentProvider };
     if (
       agentProvider === "claude-code" &&
@@ -834,6 +862,26 @@ export function SettingsView() {
       reportAppErrorFromUnknown("Failed to set provider", error);
     }
   };
+
+  useEffect(() => {
+    if (!setupLoaded) return;
+    const current = resolvedSettings.agentProvider;
+    const currentReady =
+      current === "claude-code" ? claudeReady : codexReady;
+    if (currentReady) return;
+    const fallback: AgentProvider | null = codexReady
+      ? "codex"
+      : claudeReady
+        ? "claude-code"
+        : null;
+    if (!fallback || fallback === current) return;
+    void handleProviderChange(fallback);
+  }, [
+    setupLoaded,
+    codexReady,
+    claudeReady,
+    resolvedSettings.agentProvider,
+  ]);
 
   const handleCodexModelChange = async (codexModel: CodexModel) => {
     if (codexModel === appSettings?.codexModel) return;
@@ -1127,6 +1175,8 @@ export function SettingsView() {
               claudeEffort={resolvedSettings.claudeEffort}
               browserMode={resolvedSettings.browserMode}
               capabilities={agentCapabilities}
+              codexAvailable={!setupLoaded || codexReady}
+              claudeAvailable={!setupLoaded || claudeReady}
               onProviderChange={handleProviderChange}
               onCodexModelChange={handleCodexModelChange}
               onCodexEffortChange={handleCodexEffortChange}

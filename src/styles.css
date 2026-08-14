@@ -250,6 +250,32 @@
   color: var(--accent-contrast);
 }
 
+.segment-control.segment-control--labeled > :not(.segment-control-thumb) {
+  display: flex;
+  min-width: 0;
+}
+
+.segment-control button:disabled {
+  pointer-events: none;
+  cursor: not-allowed;
+  opacity: 0.4;
+  color: var(--color-text-quaternary);
+}
+
+.segment-control button:disabled:hover {
+  color: var(--color-text-quaternary);
+}
+
+.segment-control[data-active-index="-1"] .segment-control-thumb {
+  opacity: 0;
+}
+
+.segment-control-option-disabled {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+}
+
 /* Labeled variant — Light / Dark text segments in settings */
 .segment-control.segment-control--labeled {
   --segment-pad: 2px;
@@ -292,6 +318,10 @@
   transition:
     transform 250ms cubic-bezier(0.32, 0.72, 0, 1),
     background-color 200ms ease;
+}
+
+.segment-control.segment-control--no-selection .segment-control-thumb {
+  display: none;
 }
 
 .segment-control.segment-control--labeled button {
@@ -1837,7 +1867,12 @@
   padding-left: 0.625rem;
 }
 
-.settings-select-trigger:hover,
+.settings-select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-select-trigger:hover:not(:disabled),
 .color-theme-trigger:hover {
   background: var(--color-surface-hover);
 }

@@ -15,6 +15,21 @@ const SETUP_DOWNLOAD_URLS: Record<"codex" | "claude", string> = {
   claude: "https://docs.anthropic.com/en/docs/claude-code/quickstart",
 };
 
+function parseMockReadyFlag(envName: string): boolean | undefined {
+  const raw = process.env[envName];
+  if (raw === "0" || raw === "false") return false;
+  if (raw === "1" || raw === "true") return true;
+  return undefined;
+}
+
+function applyMockAgentReady(id: "codex" | "claude", ready: boolean): boolean {
+  const envName =
+    id === "codex"
+      ? "STORY_STUDIO_MOCK_SETUP_CODEX"
+      : "STORY_STUDIO_MOCK_SETUP_CLAUDE";
+  return parseMockReadyFlag(envName) ?? ready;
+}
+
 function makeItem(
   id: SetupItemId,
   label: string,
@@ -65,15 +80,17 @@ export async function checkSetupStatus(
   const playwright = probe.playwrightCli;
   const chromiumReady = probe.chromium.ready;
   const playwrightMcp = probe.playwrightMcp;
+  const codexAvailable = applyMockAgentReady("codex", codexReady);
+  const claudeAvailable = applyMockAgentReady("claude", claudeReady);
 
   const items: SetupItem[] = [
     makeItem(
       "codex",
       "Codex CLI",
       "Runs stories and converts recordings with OpenAI Codex.",
-      codexReady,
+      codexAvailable,
       {
-        detail: codexPath,
+        detail: codexAvailable ? codexPath : undefined,
         downloadUrl: SETUP_DOWNLOAD_URLS.codex,
       },
     ),
@@ -81,9 +98,9 @@ export async function checkSetupStatus(
       "claude",
       "Claude Code CLI",
       "Alternative agent for running stories and recording conversion.",
-      claudeReady,
+      claudeAvailable,
       {
-        detail: claudePath,
+        detail: claudeAvailable ? claudePath : undefined,
         downloadUrl: SETUP_DOWNLOAD_URLS.claude,
       },
     ),
@@ -125,7 +142,7 @@ export async function checkSetupStatus(
   ];
 
   const essentialReady =
-    (codexReady || claudeReady) &&
+    (codexAvailable || claudeAvailable) &&
     playwright.ready &&
     playwrightMcp.ready &&
     chromiumReady;
