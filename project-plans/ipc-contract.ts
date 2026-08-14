@@ -141,9 +141,16 @@ export interface AppSettings {
 // invoke  settings:get            req: void                         res: AppSettings
 // invoke  settings:set            req: { codexBinaryPath?: string | null } res: AppSettings
 //
+// invoke  updates:getStatus       req: void                         res: UpdateStatus
+// invoke  updates:check           req: void                         res: UpdateStatus
+// invoke  updates:download        req: void                         res: UpdateStatus
+// invoke  updates:install         req: void                         res: { ok: true }
+// invoke  updates:openDownloadPage req: void                        res: { ok: true }
+//
 // notify  stories:changed         payload: StorySummary[]           (fs.watch on stories dir)
 // notify  recording:progress      payload: RecordingProgress
 // notify  run:event               payload: RunEvent                 (live timeline streaming)
 // notify  run:result              payload: RunResult                (run finished)
+// notify  updates:status          payload: UpdateStatus             (live update chip)
 //
 // ============================================================================

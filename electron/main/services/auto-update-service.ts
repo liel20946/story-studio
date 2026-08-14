@@ -5,8 +5,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import electronUpdater from "electron-updater";
 
-import { app, BrowserWindow, dialog, shell } from "../electron-api.js";
+import { app, BrowserWindow, shell } from "../electron-api.js";
+import { broadcast } from "../broadcast.js";
 import { logger } from "../logger.js";
+import type {
+  UpdateErrorKind,
+  UpdatePhase,
+  UpdateStatus,
+} from "./contract-types.js";
 
 const { autoUpdater } = electronUpdater;
 const execFileAsync = promisify(execFile);
@@ -14,12 +20,96 @@ const execFileAsync = promisify(execFile);
 const RELEASES_LATEST_URL =
   "https://github.com/liel20946/story-studio/releases/latest";
 
+/** Quiet background poll. */
+const CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const MOCK_VERSION = "99.0.0";
+
 let downloadedVersion: string | null = null;
 let downloadedFilePath: string | null = null;
 let installInProgress = false;
+let downloadInFlight = false;
+let checkInFlight = false;
+let initialized = false;
+let mockDownloadTimer: ReturnType<typeof setTimeout> | null = null;
+
+let phase: UpdatePhase = "idle";
+let availableVersion: string | undefined;
+let percent: number | undefined;
+let error: string | undefined;
+let errorKind: UpdateErrorKind | undefined;
+
+function isMockUpdates(): boolean {
+  return (
+    !app.isPackaged &&
+    (process.env.STORY_STUDIO_MOCK_UPDATE === "1" ||
+      process.env.STORY_STUDIO_MOCK_UPDATE === "true")
+  );
+}
 
 function isUpdateEnabled(): boolean {
-  return app.isPackaged;
+  return app.isPackaged || isMockUpdates();
+}
+
+function currentVersion(): string {
+  return app.getVersion();
+}
+
+function snapshot(): UpdateStatus {
+  return {
+    phase,
+    enabled: isUpdateEnabled(),
+    currentVersion: currentVersion(),
+    availableVersion,
+    percent,
+    error,
+    errorKind,
+  };
+}
+
+function emitStatus(): UpdateStatus {
+  const status = snapshot();
+  broadcast("updates:status", status);
+  return status;
+}
+
+function setIdle(): UpdateStatus {
+  phase = "idle";
+  availableVersion = undefined;
+  percent = undefined;
+  error = undefined;
+  errorKind = undefined;
+  return emitStatus();
+}
+
+function setPhase(
+  next: UpdatePhase,
+  patch?: Partial<
+    Pick<UpdateStatus, "availableVersion" | "percent" | "error" | "errorKind">
+  >,
+): UpdateStatus {
+  phase = next;
+  if (patch && "availableVersion" in patch) {
+    availableVersion = patch.availableVersion;
+  }
+  if (next === "downloading") {
+    percent = patch?.percent ?? percent ?? 0;
+  } else if (patch && "percent" in patch) {
+    percent = patch.percent;
+  } else {
+    percent = undefined;
+  }
+  if (next === "error") {
+    error = patch?.error;
+    errorKind = patch?.errorKind;
+  } else {
+    error = undefined;
+    errorKind = undefined;
+  }
+  return emitStatus();
+}
+
+export function getUpdateStatus(): UpdateStatus {
+  return snapshot();
 }
 
 function prepareAppForQuit(): void {
@@ -107,21 +197,9 @@ rm -f -- "$0"
   logger.info("updates", "Spawned macOS update apply script");
 }
 
-async function openManualDownloadFallback(error: unknown): Promise<void> {
-  const detail =
-    error instanceof Error ? error.message : String(error);
-  const { response } = await dialog.showMessageBox({
-    type: "error",
-    title: "Update Install Failed",
-    message: "Could not apply the update automatically.",
-    detail: `${detail}\n\nDownload the latest DMG from GitHub and replace Story Studio in Applications.`,
-    buttons: ["Open Download Page", "OK"],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  if (response === 0) {
-    await shell.openExternal(RELEASES_LATEST_URL);
-  }
+export async function openManualDownloadPage(): Promise<{ ok: true }> {
+  await shell.openExternal(RELEASES_LATEST_URL);
+  return { ok: true };
 }
 
 async function quitAndInstallUpdate(): Promise<void> {
@@ -147,111 +225,111 @@ async function quitAndInstallUpdate(): Promise<void> {
       prepareAppForQuit();
       try {
         autoUpdater.quitAndInstall(false, true);
-      } catch (error) {
-        logger.error("updates", "quitAndInstall failed", error);
+      } catch (err) {
+        logger.error("updates", "quitAndInstall failed", err);
       }
       forceExitSoon();
     });
-  } catch (error) {
+  } catch (err) {
     installInProgress = false;
-    logger.error("updates", "Failed to install update", error);
-    await openManualDownloadFallback(error);
-  }
-}
-
-async function promptRestartToInstall(version: string): Promise<void> {
-  const { response } = await dialog.showMessageBox({
-    type: "info",
-    title: "Update Ready",
-    message: `Story Studio ${version} has been downloaded.`,
-    detail: "Restart the app to install the update.",
-    buttons: ["Restart Now", "Later"],
-    defaultId: 0,
-    cancelId: 1,
-  });
-
-  if (response === 0) {
-    await quitAndInstallUpdate();
-  }
-}
-
-export function initAutoUpdates(): void {
-  if (!isUpdateEnabled()) {
-    logger.debug("updates", "Skipping auto-updates in development");
-    return;
-  }
-
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-
-  autoUpdater.on("checking-for-update", () => {
-    logger.info("updates", "Checking for updates");
-  });
-
-  autoUpdater.on("update-available", (info) => {
-    logger.info("updates", "Update available", info.version);
-  });
-
-  autoUpdater.on("update-not-available", () => {
-    logger.debug("updates", "App is up to date");
-  });
-
-  autoUpdater.on("error", (error) => {
-    logger.error("updates", "Auto-update error", error);
-  });
-
-  autoUpdater.on("update-downloaded", (info) => {
-    downloadedVersion = info.version;
-    downloadedFilePath = info.downloadedFile;
-    logger.info("updates", "Update downloaded", {
-      version: info.version,
-      file: info.downloadedFile,
+    logger.error("updates", "Failed to install update", err);
+    setPhase("error", {
+      error: err instanceof Error ? err.message : String(err),
+      errorKind: "install",
     });
-    void promptRestartToInstall(info.version);
-  });
-
-  // Prefer checkForUpdates over checkForUpdatesAndNotify so we own the prompt
-  // (system notifications do not run our install path).
-  void autoUpdater.checkForUpdates().catch((error) => {
-    logger.debug("updates", "Update check skipped or failed", error);
-  });
+  }
 }
 
-export async function checkForUpdatesManually(): Promise<void> {
-  if (!isUpdateEnabled()) {
-    await dialog.showMessageBox({
-      type: "info",
-      title: "Check for Updates",
-      message: "Updates are only available in the packaged app.",
+function markDownloaded(version: string, filePath?: string): void {
+  downloadedVersion = version;
+  downloadedFilePath = filePath ?? downloadedFilePath;
+  availableVersion = version;
+  setPhase("ready", { availableVersion: version });
+}
+
+function startMockDownload(): void {
+  if (mockDownloadTimer) {
+    clearTimeout(mockDownloadTimer);
+    mockDownloadTimer = null;
+  }
+  downloadInFlight = true;
+  const steps = [8, 22, 41, 63, 81, 94, 100];
+  let index = 0;
+  setPhase("downloading", {
+    availableVersion: availableVersion ?? MOCK_VERSION,
+    percent: 0,
+  });
+
+  const tick = () => {
+    const value = steps[index] ?? 100;
+    setPhase("downloading", {
+      availableVersion: availableVersion ?? MOCK_VERSION,
+      percent: value,
     });
-    return;
+    index += 1;
+    if (value >= 100) {
+      downloadInFlight = false;
+      mockDownloadTimer = null;
+      markDownloaded(availableVersion ?? MOCK_VERSION);
+      return;
+    }
+    mockDownloadTimer = setTimeout(tick, 220);
+  };
+  mockDownloadTimer = setTimeout(tick, 180);
+}
+
+async function checkMock(userInitiated: boolean): Promise<UpdateStatus> {
+  if (phase === "downloading" || downloadInFlight) return snapshot();
+  if (phase === "ready") return snapshot();
+  if (userInitiated) setPhase("checking");
+  await new Promise((resolve) => setTimeout(resolve, userInitiated ? 350 : 0));
+  availableVersion = MOCK_VERSION;
+  return setPhase("available", { availableVersion: MOCK_VERSION });
+}
+
+export async function checkForUpdates(options?: {
+  userInitiated?: boolean;
+}): Promise<UpdateStatus> {
+  const userInitiated = options?.userInitiated === true;
+
+  if (!isUpdateEnabled()) {
+    return snapshot();
+  }
+
+  if (phase === "downloading" || downloadInFlight) {
+    return snapshot();
+  }
+
+  if (isMockUpdates()) {
+    return checkMock(userInitiated);
+  }
+
+  if (checkInFlight) return snapshot();
+  checkInFlight = true;
+  if (userInitiated && phase === "idle") {
+    setPhase("checking");
   }
 
   try {
-    // Always re-check the remote so we don't get stuck prompting for a
-    // previously downloaded version (e.g. 1.5.8) after a newer one ships.
     const result = await autoUpdater.checkForUpdates();
     const latestVersion = result?.updateInfo.version;
-    const currentVersion = app.getVersion();
+    const installed = currentVersion();
 
-    if (!latestVersion || latestVersion === currentVersion) {
+    if (!latestVersion || latestVersion === installed) {
       downloadedVersion = null;
       downloadedFilePath = null;
-      await dialog.showMessageBox({
-        type: "info",
-        title: "No Updates",
-        message: "You're running the latest version of Story Studio.",
-      });
-      return;
+      if (userInitiated || phase === "checking" || phase === "available") {
+        setIdle();
+      }
+      return snapshot();
     }
+
+    availableVersion = latestVersion;
 
     if (downloadedVersion === latestVersion && downloadedFilePath) {
-      await promptRestartToInstall(downloadedVersion);
-      return;
+      return setPhase("ready", { availableVersion: latestVersion });
     }
 
-    // A newer build is available than whatever we already staged — clear the
-    // stale prompt target; update-downloaded will fire when the new zip lands.
     if (downloadedVersion && downloadedVersion !== latestVersion) {
       logger.info(
         "updates",
@@ -261,20 +339,202 @@ export async function checkForUpdatesManually(): Promise<void> {
       downloadedFilePath = null;
     }
 
-    await dialog.showMessageBox({
-      type: "info",
-      title: "Update Available",
-      message: `Story Studio ${latestVersion} is available.`,
-      detail:
-        "The update will download in the background. You'll be prompted to restart when it's ready.",
-    });
-  } catch (error) {
-    logger.error("updates", "Manual update check failed", error);
-    await dialog.showMessageBox({
-      type: "error",
-      title: "Update Check Failed",
-      message: "Could not check for updates. Try again later.",
-      detail: error instanceof Error ? error.message : String(error),
+    if (phase !== "ready") {
+      setPhase("available", { availableVersion: latestVersion });
+    }
+    return snapshot();
+  } catch (err) {
+    logger.error("updates", "Update check failed", err);
+    if (userInitiated || phase === "checking" || phase === "idle") {
+      setPhase("error", {
+        error: err instanceof Error ? err.message : String(err),
+        errorKind: "check",
+      });
+    }
+    return snapshot();
+  } finally {
+    checkInFlight = false;
+  }
+}
+
+export async function downloadAvailableUpdate(): Promise<UpdateStatus> {
+  if (phase === "ready") return snapshot();
+  if (phase === "downloading" || downloadInFlight) return snapshot();
+
+  if (!isUpdateEnabled()) {
+    return snapshot();
+  }
+
+  if (isMockUpdates()) {
+    startMockDownload();
+    return snapshot();
+  }
+
+  if (phase !== "available" && phase !== "error") {
+    const after = await checkForUpdates({ userInitiated: true });
+    if (after.phase !== "available") return after;
+  }
+
+  downloadInFlight = true;
+  setPhase("downloading", {
+    availableVersion,
+    percent: 0,
+  });
+
+  try {
+    await autoUpdater.downloadUpdate();
+    return snapshot();
+  } catch (err) {
+    downloadInFlight = false;
+    logger.error("updates", "Update download failed", err);
+    return setPhase("error", {
+      error: err instanceof Error ? err.message : String(err),
+      errorKind: "download",
+      availableVersion,
     });
   }
+}
+
+export async function installDownloadedUpdate(): Promise<{ ok: true }> {
+  if (isMockUpdates()) {
+    logger.info("updates", "Mock install — skipping quit");
+    setIdle();
+    return { ok: true };
+  }
+
+  if (phase !== "ready") {
+    throw new Error("No update is ready to install.");
+  }
+  await quitAndInstallUpdate();
+  return { ok: true };
+}
+
+export function applyMockUpdateStatus(patch: {
+  phase?: UpdatePhase;
+  availableVersion?: string;
+  percent?: number;
+  error?: string;
+  errorKind?: UpdateErrorKind;
+}): UpdateStatus {
+  if (app.isPackaged) {
+    throw new Error("Mock update status is only available in development");
+  }
+  if (mockDownloadTimer) {
+    clearTimeout(mockDownloadTimer);
+    mockDownloadTimer = null;
+  }
+  downloadInFlight = patch.phase === "downloading";
+  const nextPhase = patch.phase ?? phase;
+  if (nextPhase === "idle") {
+    downloadedVersion = null;
+    downloadedFilePath = null;
+    return setIdle();
+  }
+  if (nextPhase === "ready") {
+    const version = patch.availableVersion ?? availableVersion ?? MOCK_VERSION;
+    downloadedVersion = version;
+    return setPhase("ready", { availableVersion: version });
+  }
+  if (nextPhase === "available") {
+    downloadedVersion = null;
+    downloadedFilePath = null;
+    return setPhase("available", {
+      availableVersion: patch.availableVersion ?? MOCK_VERSION,
+    });
+  }
+  if (nextPhase === "downloading") {
+    return setPhase("downloading", {
+      availableVersion: patch.availableVersion ?? availableVersion ?? MOCK_VERSION,
+      percent: patch.percent ?? 42,
+    });
+  }
+  if (nextPhase === "checking") {
+    return setPhase("checking");
+  }
+  return setPhase("error", {
+    availableVersion: patch.availableVersion ?? availableVersion,
+    error: patch.error ?? "Could not download the update.",
+    errorKind: patch.errorKind ?? "download",
+  });
+}
+
+export function initAutoUpdates(): void {
+  if (initialized) return;
+  initialized = true;
+
+  if (!app.isPackaged) {
+    logger.debug(
+      "updates",
+      isMockUpdates()
+        ? "Using mock in-app updates"
+        : "Skipping auto-updates in development",
+    );
+    return;
+  }
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    logger.info("updates", "Checking for updates");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    logger.info("updates", "Update available", info.version);
+    availableVersion = info.version;
+    if (phase === "downloading" || phase === "ready") return;
+    setPhase("available", { availableVersion: info.version });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    logger.debug("updates", "App is up to date");
+  });
+
+  autoUpdater.on("error", (err) => {
+    logger.error("updates", "Auto-update error", err);
+    if (phase === "downloading") {
+      downloadInFlight = false;
+      setPhase("error", {
+        error: err instanceof Error ? err.message : String(err),
+        errorKind: "download",
+        availableVersion,
+      });
+    }
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    const nextPercent = Math.max(
+      0,
+      Math.min(100, Math.round(progress.percent)),
+    );
+    if (phase === "downloading" && percent === nextPercent) return;
+    setPhase("downloading", {
+      availableVersion,
+      percent: nextPercent,
+    });
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    downloadInFlight = false;
+    logger.info("updates", "Update downloaded", {
+      version: info.version,
+      file: info.downloadedFile,
+    });
+    markDownloaded(info.version, info.downloadedFile);
+  });
+
+  void checkForUpdates().catch((err) => {
+    logger.debug("updates", "Update check skipped or failed", err);
+  });
+
+  setInterval(() => {
+    void checkForUpdates().catch((err) => {
+      logger.debug("updates", "Periodic update check failed", err);
+    });
+  }, CHECK_INTERVAL_MS);
+}
+
+/** Menu bar "Check for Updates…" — same in-app flow, no dialogs. */
+export async function checkForUpdatesManually(): Promise<void> {
+  await checkForUpdates({ userInitiated: true });
 }

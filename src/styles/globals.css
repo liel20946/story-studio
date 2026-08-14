@@ -329,11 +329,14 @@ body {
 .sidebar-footer-settings {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
   padding: 0.25rem calc(var(--spacing) * 2) 0.75rem calc(var(--spacing) * 2);
 }
 
-.sidebar-footer-settings button {
+.sidebar-footer-settings .sidebar-footer-gear {
+  margin-left: auto;
   width: 1.75rem;
   height: 1.75rem;
   min-width: 1.75rem;
@@ -343,6 +346,88 @@ body {
 
 .sidebar-footer-settings .lucide {
   display: block;
+}
+
+.sidebar-update-chip {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  max-width: 9.5rem;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.sidebar-update-chip:disabled {
+  cursor: default;
+}
+
+.sidebar-update-chip:not(:disabled):hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.sidebar-update-chip-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.sidebar-update-chip--available {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.sidebar-update-chip--available:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.sidebar-update-chip--downloading {
+  color: var(--color-text-primary);
+  background: var(--color-surface-hover);
+}
+
+.sidebar-update-chip-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  pointer-events: none;
+}
+
+.sidebar-update-chip--ready {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.sidebar-update-chip--ready:not(:disabled):hover {
+  opacity: 0.92;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.sidebar-update-chip--error {
+  color: #fff;
+  background: var(--red);
+}
+
+.sidebar-update-chip--error:not(:disabled):hover {
+  opacity: 0.92;
+  background: var(--red);
+  color: #fff;
 }
 
 /* Flat surfaces — no backdrop-filter (Codex-style, avoids GPU compositor bugs) */
@@ -542,6 +627,7 @@ button.bg-accent:disabled {
 .detail-view-toolbar-actions .lucide,
 .sidebar-action-buttons .lucide,
 .sidebar-footer-settings .lucide,
+.sidebar-update-chip .lucide,
 .home-actions .lucide,
 .segment-control .lucide {
   stroke-width: 1.75;

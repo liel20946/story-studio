@@ -57,6 +57,7 @@ import {
 } from "@/components/ui";
 import { MacTitlebarRow } from "./mac-traffic-lights";
 import { CommandSearch, useCommandSearchShortcut } from "./command-search";
+import { SidebarUpdateStatus } from "./update-status";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type {
@@ -1375,15 +1376,17 @@ export function AppSidebar() {
   return (
     <Sidebar
       className="!p-0 [&>div]:rounded-none"
-      // Bottom-left gear opens in-app settings (same as Cmd+,).
+      // Bottom-right gear opens in-app settings (same as Cmd+,).
       footer={
         <SidebarFooter className="sidebar-footer-settings mt-auto">
+          <SidebarUpdateStatus />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="transparent"
                 size="titlebar"
                 iconOnly
+                className="sidebar-footer-gear ml-auto"
                 onClick={(e) => {
                   e.currentTarget.blur();
                   navigate({ to: "/settings", search: { section: "agent" } });
