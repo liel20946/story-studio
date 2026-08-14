@@ -172,16 +172,18 @@ async function browseWithBundledMcp() {
     });
     await call("tools/call", {
       name: "browser_take_screenshot",
-      arguments: { filename: "example-com.png" },
+      arguments: { filename: path.join(outputDir, "example-com.png") },
     });
   } finally {
     child.kill("SIGKILL");
   }
 
-  const screenshot =
-    fs.existsSync(path.join(outputDir, "example-com.png"))
-      ? path.join(outputDir, "example-com.png")
-      : fs.readdirSync(outputDir).find((name) => name.endsWith(".png") || name.endsWith(".jpeg"));
+  const candidates = [
+    path.join(outputDir, "example-com.png"),
+    path.join(root, "example-com.png"),
+    ...fs.readdirSync(outputDir).map((name) => path.join(outputDir, name)),
+  ];
+  const screenshot = candidates.find((file) => /\.(png|jpe?g)$/i.test(file) && fs.existsSync(file));
   if (!screenshot) {
     throw new Error(`MCP browse produced no screenshot. stderr: ${stderr.slice(0, 800)}`);
   }

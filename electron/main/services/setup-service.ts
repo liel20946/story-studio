@@ -107,7 +107,7 @@ export async function checkSetupStatus(
       playwrightMcp.ready,
       {
         detail: playwrightMcp.ready
-          ? `v${playwrightMcp.version ?? PLAYWRIGHT_MCP_VERSION} · handshake ok${playwrightMcp.bundled ? " · bundled" : ""}`
+          ? `v${PLAYWRIGHT_MCP_VERSION} · handshake ok${playwrightMcp.bundled ? " · bundled" : ""}`
           : playwrightMcp.error ?? probe.npx.error,
         installable: !playwrightMcp.ready && !playwrightMcp.bundled,
       },
