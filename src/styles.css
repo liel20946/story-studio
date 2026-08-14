@@ -250,6 +250,31 @@
   color: var(--accent-contrast);
 }
 
+.segment-control.segment-control--labeled > :not(.segment-control-thumb) {
+  display: flex;
+  min-width: 0;
+}
+
+.segment-control button:disabled {
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.segment-control button:disabled:not([data-active="true"]) {
+  opacity: 0.4;
+  color: var(--color-text-quaternary);
+}
+
+.segment-control button:disabled:not([data-active="true"]):hover {
+  color: var(--color-text-quaternary);
+}
+
+.segment-control-option-disabled {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+}
+
 /* Labeled variant — Light / Dark text segments in settings */
 .segment-control.segment-control--labeled {
   --segment-pad: 2px;
