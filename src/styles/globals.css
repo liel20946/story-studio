@@ -353,10 +353,10 @@ body {
   overflow: hidden;
   display: inline-flex;
   align-items: center;
-  height: 1.75rem;
-  min-height: 1.75rem;
-  max-width: 10.5rem;
-  padding: 0 0.5rem;
+  height: 1.5rem;
+  min-height: 1.5rem;
+  max-width: 10rem;
+  padding: 0 0.4rem;
   border: none;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -378,8 +378,8 @@ body {
   z-index: 1;
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  font-size: 11px;
+  gap: 0.1875rem;
+  font-size: 10px;
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -389,6 +389,12 @@ body {
 .sidebar-update-chip--notice {
   color: var(--color-text-secondary);
   cursor: default;
+}
+
+.sidebar-update-chip--checking {
+  color: var(--color-text-secondary);
+  cursor: default;
+  padding: 0 0.35rem;
 }
 
 .sidebar-update-chip--available {

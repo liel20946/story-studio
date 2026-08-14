@@ -131,6 +131,11 @@ async function main() {
   await shot(app, "01-update-idle-settings-right");
   await shotFooter(app, "01b-update-idle-footer");
 
+  await setUpdate(page, { phase: "checking" });
+  await clearHover(page);
+  await shot(app, "01e-update-checking");
+  await shotFooter(app, "01f-update-checking-footer");
+
   await setUpdate(page, { phase: "idle", notice: "Up to date" });
   await clearHover(page);
   await shot(app, "01c-update-up-to-date");

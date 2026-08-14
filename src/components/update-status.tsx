@@ -46,6 +46,8 @@ function chipTooltip(status: UpdateStatus): string {
     ? `Story Studio ${status.availableVersion}`
     : "An update";
   switch (status.phase) {
+    case "checking":
+      return "Checking for updates…";
     case "available":
       return `${version} is available`;
     case "downloading":
@@ -71,6 +73,7 @@ export function SidebarUpdateStatus() {
   const [busy, setBusy] = React.useState(false);
 
   const visible =
+    status.phase === "checking" ||
     status.phase === "available" ||
     status.phase === "downloading" ||
     status.phase === "ready" ||
@@ -93,12 +96,21 @@ export function SidebarUpdateStatus() {
   const percent = Math.max(0, Math.min(100, Math.round(status.percent ?? 0)));
   let label = "";
   let icon: React.ReactNode = null;
-  let tone: "notice" | "available" | "downloading" | "ready" | "error" =
-    "notice";
+  let tone:
+    | "notice"
+    | "checking"
+    | "available"
+    | "downloading"
+    | "ready"
+    | "error" = "notice";
   let onClick: (() => void) | undefined;
   let ariaLabel = label;
 
-  if (status.phase === "idle" && status.notice) {
+  if (status.phase === "checking") {
+    tone = "checking";
+    ariaLabel = "Checking for updates";
+    icon = <Loader2Icon className="size-3 animate-spin" />;
+  } else if (status.phase === "idle" && status.notice) {
     tone = "notice";
     label = status.notice;
     ariaLabel = status.notice;
@@ -108,20 +120,20 @@ export function SidebarUpdateStatus() {
     ariaLabel = status.availableVersion
       ? `Download update ${status.availableVersion}`
       : "Download update";
-    icon = <ArrowDownToLineIcon className="size-3.5" />;
+    icon = <ArrowDownToLineIcon className="size-3" />;
     onClick = () => void run(() => updatesDownload());
   } else if (status.phase === "downloading") {
     tone = "downloading";
     label = `${percent}%`;
     ariaLabel = `Downloading update, ${percent} percent`;
-    icon = <Loader2Icon className="size-3.5 animate-spin" />;
+    icon = <Loader2Icon className="size-3 animate-spin" />;
   } else if (status.phase === "ready") {
     tone = "ready";
     label = "Restart";
     ariaLabel = status.availableVersion
       ? `Restart to install ${status.availableVersion}`
       : "Restart to install update";
-    icon = <RotateCwIcon className="size-3.5" />;
+    icon = <RotateCwIcon className="size-3" />;
     onClick = () => void run(() => updatesInstall());
   } else if (status.phase === "error") {
     tone = "error";
@@ -138,7 +150,7 @@ export function SidebarUpdateStatus() {
       ariaLabel = "Retry update";
       onClick = () => void run(() => updatesDownload());
     }
-    icon = <CircleAlertIcon className="size-3.5" />;
+    icon = <CircleAlertIcon className="size-3" />;
   }
 
   const interactive = Boolean(onClick) && !busy;
@@ -150,6 +162,7 @@ export function SidebarUpdateStatus() {
       type="button"
       data-update-phase={status.phase}
       aria-label={ariaLabel}
+      aria-busy={status.phase === "checking" || status.phase === "downloading"}
       disabled={!interactive}
       onClick={(e) => {
         e.currentTarget.blur();
@@ -158,6 +171,7 @@ export function SidebarUpdateStatus() {
       className={cn(
         "sidebar-update-chip",
         tone === "notice" && "sidebar-update-chip--notice",
+        tone === "checking" && "sidebar-update-chip--checking",
         tone === "available" && "sidebar-update-chip--available",
         tone === "downloading" && "sidebar-update-chip--downloading",
         tone === "ready" && "sidebar-update-chip--ready",
@@ -172,9 +186,15 @@ export function SidebarUpdateStatus() {
       ) : null}
       <span className="sidebar-update-chip-content">
         {icon}
-        <span className={status.phase === "downloading" ? "tabular-nums" : undefined}>
-          {label}
-        </span>
+        {label ? (
+          <span
+            className={
+              status.phase === "downloading" ? "tabular-nums" : undefined
+            }
+          >
+            {label}
+          </span>
+        ) : null}
       </span>
     </button>
   );
