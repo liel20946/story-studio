@@ -130,12 +130,13 @@ export async function checkRecordingAvailability(
     );
     playwrightAvailable = /\bVersion\b/i.test(stdout) || /\d+\.\d+\.\d+/.test(stdout);
   } catch {
-    // not available
+    // Bundled MCP Playwright CLI + Chromium is enough to record without npx.
+    playwrightAvailable = resolvePlaywrightInvocation().prefixArgs.some((arg) =>
+      arg.endsWith("cli.js"),
+    );
   }
 
-  if (playwrightAvailable) {
-    browserInstalled = await isPlaywrightChromiumInstalled();
-  }
+  browserInstalled = playwrightAvailable && (await isPlaywrightChromiumInstalled());
 
   console.log("[recording] availability check", {
     agentProvider: settings.agentProvider,

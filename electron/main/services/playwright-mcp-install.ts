@@ -73,42 +73,6 @@ export async function resolveInstalledMcpCli(): Promise<string | null> {
   return cliFromHostDir(getMcpInstallDir());
 }
 
-/** Electron binary used as Node so MCP does not require a system Node install. */
-export function resolveElectronAsNode(): string {
-  return process.execPath;
-}
-
-/**
- * Launch the MCP CLI via `/usr/bin/env ELECTRON_RUN_AS_NODE=1 <electron> <cli>`.
- *
- * Claude Code (an Electron app) strips `ELECTRON_RUN_AS_NODE` from MCP child
- * env, so putting the Electron binary in `command` makes it boot as a second
- * Story Studio instance and the run dies immediately. Baking the flag into
- * argv survives that sanitizer, and `command` has no spaces.
- */
-export function electronAsNodeLaunch(
-  cli: string,
-  extraArgs: string[],
-): { command: string; args: string[] } {
-  return {
-    command: "/usr/bin/env",
-    args: ["ELECTRON_RUN_AS_NODE=1", resolveElectronAsNode(), cli, ...extraArgs],
-  };
-}
-
-/** Resolve an absolute `node` binary (preferred MCP launcher for Claude Code). */
-export async function resolveNodeCommand(): Promise<string | null> {
-  const npx = await resolveNpxCommand();
-  if (npx && npx !== "npx" && path.isAbsolute(npx)) {
-    const node = path.join(path.dirname(npx), "node");
-    if (existsSync(node)) return node;
-  }
-  for (const candidate of ["/opt/homebrew/bin/node", "/usr/local/bin/node"]) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
-}
-
 /** Resolve the absolute `npm` binary that sits next to the resolved npx. */
 function resolveNpmCommand(npxPath: string): string {
   if (npxPath && npxPath !== "npx" && path.isAbsolute(npxPath)) {

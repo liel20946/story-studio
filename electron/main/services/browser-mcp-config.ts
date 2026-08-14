@@ -2,12 +2,13 @@ import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 import { playwrightMcpPackageSpec } from "./setup-versions.js";
-import { buildPlaywrightEnv, resolveNpxCommand } from "./playwright-runtime.js";
 import {
+  buildPlaywrightEnv,
   electronAsNodeLaunch,
-  resolveInstalledMcpCli,
   resolveNodeCommand,
-} from "./playwright-mcp-install.js";
+  resolveNpxCommand,
+} from "./playwright-runtime.js";
+import { resolveInstalledMcpCli } from "./playwright-mcp-install.js";
 import type { BrowserMode } from "./contract-types.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { readBrowserExtensionToken } from "./browser-extension-auth.js";
