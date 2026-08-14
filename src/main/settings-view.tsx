@@ -188,14 +188,21 @@ function AgentPanel({
     provider === "claude-code" ? claudeModel : codexModel;
   const effort =
     provider === "claude-code" ? claudeEffort : codexEffort;
+  const hasAgent = codexAvailable || claudeAvailable;
   const modelOptions = getModelOptions(provider, capabilities);
-  const effortOptions = getEffortSegmentOptions(provider, model, capabilities);
-  const modelDescription =
-    provider === "claude-code"
+  const effortOptions = getEffortSegmentOptions(provider, model, capabilities).map(
+    (option) => ({ ...option, disabled: !hasAgent }),
+  );
+  const modelDescription = !hasAgent
+    ? "Available after you install an agent in Setup."
+    : provider === "claude-code"
       ? "Claude model used when running stories."
-      : capabilities?.source === "codex-catalog"
-        ? "Codex model used when running stories."
-        : "Codex model used when running stories.";
+      : "Codex model used when running stories.";
+  const effortDescription = !hasAgent
+    ? "Available after you install an agent in Setup."
+    : provider === "claude-code"
+      ? "Reasoning effort for Claude Code runs."
+      : "Reasoning effort for Codex runs.";
   const providerDescription =
     !codexAvailable && !claudeAvailable
       ? "Install Codex or Claude Code in Setup to run stories."
@@ -306,6 +313,7 @@ function AgentPanel({
             value={model}
             options={modelOptions}
             ariaLabel="Model"
+            disabled={!hasAgent}
             onChange={(next) => {
               if (provider === "claude-code") {
                 onClaudeModelChange(next as ClaudeModel);
@@ -318,11 +326,7 @@ function AgentPanel({
 
         <SettingsRow
           label="Effort"
-          description={
-            provider === "claude-code"
-              ? "Reasoning effort for Claude Code runs."
-              : "Reasoning effort for Codex runs."
-          }
+          description={effortDescription}
         >
           <LabeledSegment
             value={effort}
@@ -345,12 +349,12 @@ function AgentPanel({
         >
           <LabeledSegment
             value={
-              provider !== "codex" && browserMode === "codex-chrome"
+              (!hasAgent || provider !== "codex") && browserMode === "codex-chrome"
                 ? "private"
                 : browserMode
             }
             options={
-              provider === "codex"
+              hasAgent && provider === "codex"
                 ? [
                     { value: "private", label: "Private" },
                     { value: "existing-chrome", label: "Playwright" },
@@ -361,7 +365,7 @@ function AgentPanel({
                     { value: "existing-chrome", label: "Playwright" },
                   ]
             }
-            segmentClass={segmentClassForCount(provider === "codex" ? 3 : 2)}
+            segmentClass={segmentClassForCount(hasAgent && provider === "codex" ? 3 : 2)}
             ariaLabel="Browser mode"
             onChange={onBrowserModeChange}
           />
@@ -491,7 +495,7 @@ function AgentPanel({
           </>
         ) : null}
 
-        {browserMode === "codex-chrome" && provider === "codex" ? (
+        {browserMode === "codex-chrome" && provider === "codex" && hasAgent ? (
           <>
             <SettingsRow
               label="Codex extension"

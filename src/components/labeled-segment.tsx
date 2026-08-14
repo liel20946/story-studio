@@ -24,15 +24,14 @@ export function LabeledSegment<T extends string>({
   segmentClass?: string;
   className?: string;
 }) {
-  const selectedIndex = Math.max(
-    0,
-    options.findIndex((opt) => opt.value === value),
+  const selectedEnabledIndex = options.findIndex(
+    (opt) => opt.value === value && !opt.disabled,
   );
-  const [activeIndex, setActiveIndex] = useState(selectedIndex);
+  const [activeIndex, setActiveIndex] = useState(selectedEnabledIndex);
 
   useEffect(() => {
-    setActiveIndex(selectedIndex);
-  }, [selectedIndex, value]);
+    setActiveIndex(selectedEnabledIndex);
+  }, [selectedEnabledIndex, value]);
 
   return (
     <div
@@ -48,7 +47,7 @@ export function LabeledSegment<T extends string>({
     >
       <span className="segment-control-thumb" aria-hidden />
       {options.map((opt, index) => {
-        const active = value === opt.value;
+        const active = selectedEnabledIndex >= 0 && value === opt.value;
         const disabled = Boolean(opt.disabled);
         const button = (
           <button

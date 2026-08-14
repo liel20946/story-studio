@@ -15,12 +15,14 @@ export function SettingsSelect<T extends string>({
   onChange,
   ariaLabel,
   className,
+  disabled,
 }: {
   value: T;
   options: readonly SettingsSelectOption<T>[];
   onChange: (value: T) => void;
   ariaLabel: string;
   className?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -210,8 +212,9 @@ export function SettingsSelect<T extends string>({
         aria-label={ariaLabel}
         aria-expanded={open}
         aria-haspopup="listbox"
+        disabled={disabled}
         onKeyDown={(event) => {
-          if (options.length === 0) return;
+          if (disabled || options.length === 0) return;
           if (event.key === "ArrowDown") {
             event.preventDefault();
             if (!open) {
@@ -239,6 +242,7 @@ export function SettingsSelect<T extends string>({
           }
         }}
         onClick={() => {
+          if (disabled) return;
           setOpen((current) => {
             const next = !current;
             if (next) {

@@ -258,15 +258,16 @@
 .segment-control button:disabled {
   pointer-events: none;
   cursor: not-allowed;
-}
-
-.segment-control button:disabled:not([data-active="true"]) {
   opacity: 0.4;
   color: var(--color-text-quaternary);
 }
 
-.segment-control button:disabled:not([data-active="true"]):hover {
+.segment-control button:disabled:hover {
   color: var(--color-text-quaternary);
+}
+
+.segment-control[data-active-index="-1"] .segment-control-thumb {
+  opacity: 0;
 }
 
 .segment-control-option-disabled {
@@ -1862,7 +1863,12 @@
   padding-left: 0.625rem;
 }
 
-.settings-select-trigger:hover,
+.settings-select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-select-trigger:hover:not(:disabled),
 .color-theme-trigger:hover {
   background: var(--color-surface-hover);
 }
