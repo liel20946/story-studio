@@ -132,15 +132,25 @@ async function main() {
   await wait(400);
   await shot(app, "03-variables-chat-modal");
 
-  await page.getByRole("button", { name: /Attach files/i }).click({ force: true });
+  await page.getByRole("button", { name: /Attach files or folder/i }).click({ force: true });
+  await page.getByRole("menuitem", { name: /Attach files/i }).click({ force: true });
   await page.getByText("welcome.html").waitFor({ timeout: 5_000 });
   await wait(300);
   await shot(app, "03a-variables-chat-with-attachments");
 
-  await page.getByRole("button", { name: /Attach folder/i }).click({ force: true });
+  await page.getByRole("button", { name: /Attach files or folder/i }).click({ force: true });
+  await page.getByRole("menuitem", { name: /Attach folder/i }).click({ force: true });
   await page.getByText("bulk-var-fixtures").waitFor({ timeout: 5_000 });
   await wait(300);
   await shot(app, "03a2-variables-chat-with-folder");
+
+  // Open the plus menu once more so reviewers can see File/Folder options.
+  await page.getByRole("button", { name: /Attach files or folder/i }).click({ force: true });
+  await page.getByRole("menuitem", { name: /Attach files/i }).waitFor();
+  await wait(200);
+  await shot(app, "03a3-attach-plus-menu");
+  await page.keyboard.press("Escape");
+  await wait(150);
 
   const composer = page.locator(".generate-composer textarea").first();
   await composer.fill(

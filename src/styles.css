@@ -498,6 +498,101 @@
   margin-top: auto;
 }
 
+.generate-composer-footer--split {
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.generate-composer-footer--inline {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.generate-composer-leading {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.generate-composer-attach-btn {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border: none;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-text-tertiary) 18%, var(--color-surface-control));
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 120ms ease;
+}
+
+.generate-composer-attach-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text-tertiary) 28%, var(--color-surface-control));
+  color: var(--color-text-primary);
+}
+
+.generate-composer-attach-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.generate-composer-attach-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.generate-composer-attach-btn-icon {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  flex-shrink: 0;
+}
+
+.generate-composer-attach-menu {
+  z-index: 80;
+  min-width: 10rem;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-separator);
+  background: var(--color-popover, var(--color-surface));
+  padding: 0.25rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.generate-composer-attach-menu-item {
+  display: flex;
+  width: 100%;
+  cursor: pointer;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-control);
+  border: none;
+  background: transparent;
+  padding: 0.4375rem 0.5rem;
+  color: var(--color-text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  text-align: left;
+  outline: none;
+}
+
+.generate-composer-attach-menu-item:hover,
+.generate-composer-attach-menu-item:focus-visible,
+.generate-composer-attach-menu-item[data-highlighted] {
+  background: var(--color-surface-hover, var(--color-control));
+}
+
+.generate-composer-attach-menu-item-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
 .generate-composer-actions {
   display: flex;
   flex-shrink: 0;

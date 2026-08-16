@@ -51,6 +51,7 @@ export function SkillComposer({
   skillLabel = SKILL_LABEL,
   placeholder,
   below,
+  leading,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -66,6 +67,8 @@ export function SkillComposer({
   placeholder?: string;
   /** Model / effort controls — right side inside the bar, before the send button. */
   below?: React.ReactNode;
+  /** Bottom-left actions inside the composer (e.g. attach). */
+  leading?: React.ReactNode;
 }) {
   const hint = placeholder ?? (showSkill ? DEFAULT_HINT : FOLLOW_UP_HINT);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -140,6 +143,9 @@ export function SkillComposer({
   );
 
   const controls = below ? <div className="generate-composer-controls">{below}</div> : null;
+  const leadingSlot = leading ? (
+    <div className="generate-composer-leading">{leading}</div>
+  ) : null;
 
   const composerActions = (
     <div className="generate-composer-actions">
@@ -148,7 +154,17 @@ export function SkillComposer({
     </div>
   );
 
-  const composerFooter = <div className="generate-composer-footer">{composerActions}</div>;
+  const composerFooter = (
+    <div
+      className={cn(
+        "generate-composer-footer",
+        leadingSlot && "generate-composer-footer--split",
+      )}
+    >
+      {leadingSlot}
+      {composerActions}
+    </div>
+  );
 
   const inputRowStyle = {
     "--skill-prefix-indent": `${prefixIndent}px`,
@@ -186,6 +202,15 @@ export function SkillComposer({
     </div>
   );
 
+  const inlineSingleLineActions = leadingSlot ? (
+    <div className="generate-composer-footer generate-composer-footer--split generate-composer-footer--inline">
+      {leadingSlot}
+      {composerActions}
+    </div>
+  ) : (
+    composerActions
+  );
+
   const composerBody = isFirstPrompt ? (
     <div className="generate-composer-stack">
       {inputRow}
@@ -199,7 +224,7 @@ export function SkillComposer({
       )}
     >
       {inputRow}
-      {isMultiline ? composerFooter : composerActions}
+      {isMultiline ? composerFooter : inlineSingleLineActions}
     </div>
   );
 

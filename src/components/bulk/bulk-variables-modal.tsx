@@ -1,9 +1,9 @@
 import * as React from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   FileIcon,
   FolderIcon,
   Loader2Icon,
-  PaperclipIcon,
   PlusIcon,
   Trash2Icon,
   XIcon,
@@ -41,6 +41,58 @@ type Attachment = {
 function basename(filePath: string): string {
   const parts = filePath.replace(/\\/g, "/").split("/");
   return parts[parts.length - 1] || filePath;
+}
+
+function AttachPlusMenu({
+  disabled,
+  busy,
+  onAttach,
+}: {
+  disabled?: boolean;
+  busy?: boolean;
+  onAttach: (mode: "files" | "folder") => void;
+}) {
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          className="generate-composer-attach-btn"
+          disabled={disabled || busy}
+          aria-label="Attach files or folder"
+        >
+          {busy ? (
+            <Loader2Icon className="generate-composer-attach-btn-icon animate-spin" />
+          ) : (
+            <PlusIcon className="generate-composer-attach-btn-icon" absoluteStrokeWidth />
+          )}
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="generate-composer-attach-menu"
+          side="top"
+          align="start"
+          sideOffset={6}
+        >
+          <DropdownMenu.Item
+            className="generate-composer-attach-menu-item"
+            onSelect={() => onAttach("files")}
+          >
+            <FileIcon className="generate-composer-attach-menu-item-icon" />
+            Attach files
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className="generate-composer-attach-menu-item"
+            onSelect={() => onAttach("folder")}
+          >
+            <FolderIcon className="generate-composer-attach-menu-item-icon" />
+            Attach folder
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
 }
 
 export function BulkVariablesModal({
@@ -230,69 +282,32 @@ export function BulkVariablesModal({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Text variant="small-strong" color="secondary">
-                    Attachments
-                  </Text>
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      variant="glass"
-                      size="small"
-                      disabled={pickingAttachments}
-                      onClick={() => void handleAttach("files")}
-                      aria-label="Attach files"
-                    >
-                      {pickingAttachments ? (
-                        <Loader2Icon className="size-3.5 animate-spin" />
-                      ) : (
-                        <PaperclipIcon className="size-3.5" />
-                      )}
-                      Files
-                    </Button>
-                    <Button
-                      variant="glass"
-                      size="small"
-                      disabled={pickingAttachments}
-                      onClick={() => void handleAttach("folder")}
-                      aria-label="Attach folder"
-                    >
-                      <FolderIcon className="size-3.5" />
-                      Folder
-                    </Button>
-                  </div>
-                </div>
-                {attachedPaths.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {attachedPaths.map((attachment) => {
-                      const Icon = attachment.kind === "folder" ? FolderIcon : FileIcon;
-                      const name = basename(attachment.path);
-                      return (
-                        <span
-                          key={attachment.path}
-                          className="inline-flex max-w-full items-center gap-1 rounded-control border border-separator bg-control px-2 py-1 text-[11px] text-secondary"
-                          title={attachment.path}
+              {attachedPaths.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {attachedPaths.map((attachment) => {
+                    const Icon = attachment.kind === "folder" ? FolderIcon : FileIcon;
+                    const name = basename(attachment.path);
+                    return (
+                      <span
+                        key={attachment.path}
+                        className="inline-flex max-w-full items-center gap-1 rounded-control border border-separator bg-control px-2 py-1 text-[11px] text-secondary"
+                        title={attachment.path}
+                      >
+                        <Icon className="size-3.5 shrink-0" />
+                        <span className="truncate">{name}</span>
+                        <button
+                          type="button"
+                          className="ml-0.5 rounded-sm p-0.5 text-tertiary hover:bg-surface hover:text-primary"
+                          aria-label={`Remove ${name}`}
+                          onClick={() => removeAttachment(attachment.path)}
                         >
-                          <Icon className="size-3.5 shrink-0" />
-                          <span className="truncate">{name}</span>
-                          <button
-                            type="button"
-                            className="ml-0.5 rounded-sm p-0.5 text-tertiary hover:bg-surface hover:text-primary"
-                            aria-label={`Remove ${name}`}
-                            onClick={() => removeAttachment(attachment.path)}
-                          >
-                            <XIcon className="size-3" />
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <Text variant="small" color="tertiary">
-                    Optional — attach HTML files, fixtures, or a folder of samples.
-                  </Text>
-                )}
-              </div>
+                          <XIcon className="size-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
 
               <SkillComposer
                 layout="inline"
@@ -302,6 +317,12 @@ export function BulkVariablesModal({
                 showSkill
                 skillLabel="bulk-variables"
                 placeholder='e.g. "One run per attached HTML file for the paste body"'
+                leading={
+                  <AttachPlusMenu
+                    busy={pickingAttachments}
+                    onAttach={(mode) => void handleAttach(mode)}
+                  />
+                }
               />
             </div>
           )}
