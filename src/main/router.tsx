@@ -12,6 +12,7 @@ import { RunView, HistoryRunDetailView } from "./run-view";
 import { RecordView } from "./record-view";
 import { BulkRunView } from "./bulk-run-view";
 import { ScheduledOverviewView, ScheduledEditorView } from "./scheduled-view";
+import { HistoryOverviewView } from "./history-view";
 import { HomeView } from "./home-view";
 import { GenerateHomeView, GenerateConversationRouteView } from "./generate-view";
 import { SettingsView } from "./settings-view";
@@ -65,6 +66,14 @@ const runRoute = createRoute({
   path: "/run/$runId",
   component: RunView,
   staticData: { title: "Run" },
+});
+
+// "/history" — run history overview in the main pane
+const historyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/history",
+  component: HistoryOverviewView,
+  staticData: { title: "History" },
 });
 
 // "/history/$runId" — single historical run detail in the main pane
@@ -156,6 +165,7 @@ const routeTree = rootRoute.addChildren([
   storiesRoute,
   storyRoute,
   runRoute,
+  historyRoute,
   historyRunRoute,
   recordRoute,
   bulkRunRoute,
