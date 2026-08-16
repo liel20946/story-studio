@@ -2,20 +2,18 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   BookOpenIcon,
-  BotIcon,
   ClockIcon,
   HistoryIcon,
   SearchIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
-  GenerateConversationSummary,
   RunResult,
   ScheduledRun,
   StorySummary,
 } from "@/lib/contract-types";
 
-type SearchItemKind = "story" | "run" | "schedule" | "conversation";
+type SearchItemKind = "story" | "run" | "schedule";
 
 interface SearchItem {
   id: string;
@@ -40,7 +38,6 @@ const SECTION_META: Record<
   story: { label: "Stories", icon: BookOpenIcon },
   run: { label: "Runs", icon: HistoryIcon },
   schedule: { label: "Schedules", icon: ClockIcon },
-  conversation: { label: "Conversations", icon: BotIcon },
 };
 
 const EMPTY_PREVIEW_LIMIT = 5;
@@ -70,13 +67,11 @@ function buildSections({
   stories,
   runs,
   schedules,
-  conversations,
 }: {
   query: string;
   stories: StorySummary[];
   runs: Array<RunResult & { isRunning?: boolean }>;
   schedules: ScheduledRun[];
-  conversations: GenerateConversationSummary[];
 }): SearchSection[] {
   const normalized = query.trim().toLowerCase();
   const limit = normalized ? SEARCH_RESULT_LIMIT : EMPTY_PREVIEW_LIMIT;
@@ -124,29 +119,14 @@ function buildSections({
         : formatRelative(schedule.scheduledAt),
     }));
 
-  const conversationItems: SearchItem[] = conversations
-    .filter((conversation) => matchesQuery(normalized, conversation.title))
-    .slice(0, limit)
-    .map((conversation) => ({
-      id: conversation.id,
-      kind: "conversation" as const,
-      title: conversation.title,
-      meta: conversation.generating
-        ? "Generating"
-        : formatRelative(conversation.updatedAt),
-      running: conversation.generating,
-    }));
-
-  return (["story", "run", "schedule", "conversation"] as const)
+  return (["story", "run", "schedule"] as const)
     .map((kind) => {
       const items =
         kind === "story"
           ? storyItems
           : kind === "run"
             ? runItems
-            : kind === "schedule"
-              ? scheduleItems
-              : conversationItems;
+            : scheduleItems;
       const meta = SECTION_META[kind];
       return {
         id: kind,
@@ -164,22 +144,18 @@ export function CommandSearch({
   stories,
   runs,
   schedules,
-  conversations,
   onSelectStory,
   onSelectRun,
   onSelectSchedule,
-  onSelectConversation,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   stories: StorySummary[];
   runs: Array<RunResult & { isRunning?: boolean }>;
   schedules: ScheduledRun[];
-  conversations: GenerateConversationSummary[];
   onSelectStory: (storyName: string) => void;
   onSelectRun: (runId: string, running: boolean) => void;
   onSelectSchedule: (scheduleId: string) => void;
-  onSelectConversation: (conversationId: string) => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
@@ -193,9 +169,8 @@ export function CommandSearch({
         stories,
         runs,
         schedules,
-        conversations,
       }),
-    [query, stories, runs, schedules, conversations],
+    [query, stories, runs, schedules],
   );
 
   const flatItems = React.useMemo(
@@ -237,9 +212,6 @@ export function CommandSearch({
       case "schedule":
         onSelectSchedule(item.id);
         break;
-      case "conversation":
-        onSelectConversation(item.id);
-        break;
     }
   }
 
@@ -277,7 +249,7 @@ export function CommandSearch({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Search stories, runs, schedules, and conversations"
+              placeholder="Search stories, runs, and schedules"
               aria-label="Search"
               className="min-w-0 flex-1 border-none bg-transparent text-small text-primary outline-none placeholder:text-tertiary"
             />

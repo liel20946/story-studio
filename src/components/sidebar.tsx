@@ -65,7 +65,6 @@ import type {
   StorySummary,
   StoryDetail,
   RunResult,
-  GenerateConversationSummary,
 } from "../lib/contract-types";
 import {
   storiesList,
@@ -80,11 +79,6 @@ import {
   onSchedulesChanged,
   schedulesDelete,
   schedulesUpdate,
-  generateList,
-  generateGet,
-  generateDelete,
-  generateRename,
-  onGenerateChanged,
   settingsGet,
 } from "../lib/ipc";
 import type { ScheduledRun } from "../lib/contract-types";
@@ -609,11 +603,13 @@ function CreateStoryDialog({
   open,
   onOpenChange,
   onRecord,
+  onGenerate,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRecord: () => void;
+  onGenerate: () => void;
   onCreated: (story: StoryDetail) => void;
 }) {
   const [view, setView] = React.useState<"choose" | "manual">("choose");
@@ -651,13 +647,13 @@ function CreateStoryDialog({
           <DialogTitle>{view === "choose" ? "New Story" : "Add Story Manually"}</DialogTitle>
           <DialogDescription>
             {view === "choose"
-              ? "Record browser actions or start from an editable template."
+              ? "Record browser actions, generate with AI, or start from an editable template."
               : "Create a template story, then edit its steps, variables, and assertions."}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
           {view === "choose" ? (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-2">
               <Button
                 variant="filled"
                 className="h-auto items-center justify-start gap-3 p-3 text-left"
@@ -667,6 +663,16 @@ function CreateStoryDialog({
                   <CircleDotIcon className="size-4" />
                 </span>
                 <span className="leading-4">Record story</span>
+              </Button>
+              <Button
+                variant="filled"
+                className="h-auto items-center justify-start gap-3 p-3 text-left"
+                onClick={onGenerate}
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <BotIcon className="size-4" />
+                </span>
+                <span className="leading-4">Generate</span>
               </Button>
               <Button
                 variant="filled"
@@ -726,8 +732,9 @@ type DialogKind =
   | "section-create"
   | "section-rename"
   | "story-rename"
-  | "schedule-rename"
-  | "generate-rename";
+  | "schedule-rename";
+
+type SidebarTab = "stories" | "runs" | "scheduled";
 
 const DIALOG_META: Record<
   DialogKind,
@@ -767,20 +774,13 @@ const DIALOG_META: Record<
     description: "Change how this schedule appears in the sidebar.",
     fieldLabel: "Schedule name",
   },
-  "generate-rename": {
-    title: "Rename Generation",
-    confirmLabel: "Rename",
-    placeholder: "Generation name",
-    description: "Change how this generation appears in the sidebar.",
-    fieldLabel: "Generation name",
-  },
 };
 
 type SidebarActionId = "bulk-run" | "new-section" | "primary-create";
 
 function sidebarActionVisible(
   id: SidebarActionId,
-  tab: "stories" | "runs" | "scheduled" | "generate",
+  tab: SidebarTab,
   hasStories: boolean,
 ): boolean {
   switch (id) {
@@ -793,9 +793,7 @@ function sidebarActionVisible(
   }
 }
 
-function sidebarListAnimKey(
-  tab: "stories" | "runs" | "scheduled" | "generate",
-): string {
+function sidebarListAnimKey(tab: SidebarTab): string {
   if (tab === "stories" || tab === "runs") return "library";
   return tab;
 }
@@ -854,27 +852,20 @@ function SegmentControl({
   onChange,
   onSearch,
 }: {
-  value: "stories" | "runs" | "scheduled" | "generate";
-  onChange: (value: "stories" | "runs" | "scheduled" | "generate") => void;
+  value: SidebarTab;
+  onChange: (value: SidebarTab) => void;
   onSearch: () => void;
 }) {
   const options = [
     { value: "stories" as const, label: "Stories", icon: BookOpenIcon },
     { value: "runs" as const, label: "Runs", icon: HistoryIcon },
     { value: "scheduled" as const, label: "Scheduled", icon: ClockIcon },
-    { value: "generate" as const, label: "Generate", icon: BotIcon },
   ];
   const activeIndex =
-    value === "stories"
-      ? 0
-      : value === "runs"
-        ? 1
-        : value === "scheduled"
-          ? 2
-          : 3;
+    value === "stories" ? 0 : value === "runs" ? 1 : 2;
   return (
     <div
-      className="segment-control segment-control--five"
+      className="segment-control segment-control--four"
       role="tablist"
       aria-label="Sidebar view"
       data-active-index={activeIndex}
@@ -945,8 +936,6 @@ export function AppSidebar() {
         onGenerateRoute:
           routeId === "/generate" ||
           routeId === "/generate/$conversationId",
-        generateConversationId:
-          routeId === "/generate/$conversationId" ? params.conversationId : undefined,
       };
     },
   });
@@ -964,16 +953,14 @@ export function AppSidebar() {
     setCollapsed,
   } = useSections();
 
-  // Sidebar tab: reusable Stories vs past Runs. Follows the main-pane route —
-  // story detail → Stories, live/history run → Runs.
-  const [tab, setTab] = React.useState<"stories" | "runs" | "scheduled" | "generate">(
-    activeSelection.onGenerateRoute
-      ? "generate"
-      : activeSelection.onScheduledRoute
-        ? "scheduled"
-        : activeSelection.historyRunId || activeSelection.liveRunId
-          ? "runs"
-          : "stories",
+  // Sidebar tab: reusable Stories vs past Runs. Generate lives under New Story
+  // (Plus), so generate routes keep the Stories tab selected.
+  const [tab, setTab] = React.useState<SidebarTab>(
+    activeSelection.onScheduledRoute
+      ? "scheduled"
+      : activeSelection.historyRunId || activeSelection.liveRunId
+        ? "runs"
+        : "stories",
   );
   const [commandSearchOpen, setCommandSearchOpen] = React.useState(false);
   const [createStoryOpen, setCreateStoryOpen] = React.useState(false);
@@ -985,11 +972,13 @@ export function AppSidebar() {
   useCommandSearchShortcut(openCommandSearch);
 
   React.useEffect(() => {
-    if (activeSelection.onGenerateRoute) {
-      setTab("generate");
-    } else if (activeSelection.onScheduledRoute) {
+    if (activeSelection.onScheduledRoute) {
       setTab("scheduled");
-    } else if (activeSelection.onStoriesHomeRoute || activeSelection.storyName) {
+    } else if (
+      activeSelection.onStoriesHomeRoute ||
+      activeSelection.storyName ||
+      activeSelection.onGenerateRoute
+    ) {
       setTab("stories");
     } else if (activeSelection.historyRunId || activeSelection.liveRunId) {
       setTab("runs");
@@ -1003,11 +992,9 @@ export function AppSidebar() {
     activeSelection.onGenerateRoute,
   ]);
 
-  function handleTabChange(next: "stories" | "runs" | "scheduled" | "generate") {
+  function handleTabChange(next: SidebarTab) {
     setTab(next);
-    if (next === "generate") {
-      navigate({ to: "/generate" });
-    } else if (next === "scheduled") {
+    if (next === "scheduled") {
       navigate({ to: "/scheduled" });
     } else if (
       next === "stories" &&
@@ -1018,7 +1005,10 @@ export function AppSidebar() {
       } else {
         navigate({ to: "/stories" });
       }
-    } else if (next === "runs" && (activeSelection.onScheduledRoute || activeSelection.onGenerateRoute)) {
+    } else if (
+      next === "runs" &&
+      (activeSelection.onScheduledRoute || activeSelection.onGenerateRoute)
+    ) {
       const runs = runsQuery.data ?? [];
       if (runs.length > 0) {
         navigate({ to: "/history/$runId", params: { runId: runs[0].runId } });
@@ -1034,7 +1024,6 @@ export function AppSidebar() {
     sectionId?: string;
     storyName?: string;
     scheduleId?: string;
-    conversationId?: string;
     pendingStory?: string;
   }>({ open: false, kind: "section-create", initialName: "" });
 
@@ -1053,22 +1042,6 @@ export function AppSidebar() {
     queryFn: schedulesList,
   });
 
-  const generateQuery = useQuery({
-    queryKey: ["generate:list"],
-    queryFn: generateList,
-  });
-
-  const prefetchGeneration = React.useCallback(
-    (conversationId: string) => {
-      void queryClient.prefetchQuery({
-        queryKey: ["generate:get", conversationId],
-        queryFn: () => generateGet(conversationId),
-        staleTime: 30_000,
-      });
-    },
-    [queryClient],
-  );
-
   const prefetchStory = React.useCallback(
     (storyName: string) => {
       void queryClient.prefetchQuery({
@@ -1079,13 +1052,6 @@ export function AppSidebar() {
     },
     [queryClient],
   );
-
-  React.useEffect(() => {
-    const unsub = onGenerateChanged((updated) => {
-      queryClient.setQueryData(["generate:list"], updated);
-    });
-    return unsub;
-  }, [queryClient]);
 
   React.useEffect(() => {
     const unsub = onSchedulesChanged((updated) => {
@@ -1164,29 +1130,6 @@ export function AppSidebar() {
     [schedulesQuery.data],
   );
 
-  const generations = React.useMemo(
-    () => generateQuery.data ?? [],
-    [generateQuery.data],
-  );
-
-  function handleNewGeneration() {
-    navigate({ to: "/generate" });
-  }
-
-  async function handleArchiveGeneration(conversationId: string) {
-    try {
-      await generateDelete(conversationId);
-    } catch (err) {
-      reportAppErrorFromUnknown("Failed to archive generation", err);
-      return;
-    }
-    queryClient.removeQueries({ queryKey: ["generate:get", conversationId] });
-    queryClient.invalidateQueries({ queryKey: ["generate:list"] });
-    if (activeSelection.generateConversationId === conversationId) {
-      navigate({ to: "/generate" });
-    }
-  }
-
   async function handleDeleteSchedule(id: string) {
     await schedulesDelete(id);
     queryClient.invalidateQueries({ queryKey: ["schedules:list"] });
@@ -1227,18 +1170,6 @@ export function AppSidebar() {
         })
         .catch((err) =>
           reportAppErrorFromUnknown("Failed to rename schedule", err),
-        );
-    } else if (dialog.kind === "generate-rename" && dialog.conversationId) {
-      const conversationId = dialog.conversationId;
-      void generateRename(conversationId, name)
-        .then(({ conversation }) => {
-          queryClient.setQueryData(["generate:get", conversationId], (prev) =>
-            prev ? { ...prev, title: conversation.title } : prev,
-          );
-          queryClient.invalidateQueries({ queryKey: ["generate:list"] });
-        })
-        .catch((err) =>
-          reportAppErrorFromUnknown("Failed to rename generation", err),
         );
     }
     setDialog((d) => ({ ...d, open: false }));
@@ -1327,17 +1258,11 @@ export function AppSidebar() {
   const dialogMeta = DIALOG_META[dialog.kind];
 
   const primaryCreateLabel =
-    tab === "scheduled"
-      ? "New schedule"
-      : tab === "generate"
-        ? "New generation"
-        : "New story";
+    tab === "scheduled" ? "New schedule" : "New story";
 
   function handlePrimaryCreate() {
     if (tab === "scheduled") {
       navigate({ to: "/scheduled/$id", params: { id: "new" } });
-    } else if (tab === "generate") {
-      void handleNewGeneration();
     } else {
       setCreateStoryOpen(true);
     }
@@ -1354,8 +1279,6 @@ export function AppSidebar() {
         e.preventDefault();
         if (tab === "scheduled") {
           navigate({ to: "/scheduled/$id", params: { id: "new" } });
-        } else if (tab === "generate") {
-          navigate({ to: "/generate" });
         } else {
           setCreateStoryOpen(true);
         }
@@ -1521,25 +1444,6 @@ export function AppSidebar() {
               }
               onDelete={handleDeleteRun}
             />
-          ) : tab === "generate" ? (
-            <GenerateTab
-              conversations={generations}
-              activeConversationId={activeSelection.generateConversationId}
-              onPrefetch={prefetchGeneration}
-              onOpen={(id) => {
-                prefetchGeneration(id);
-                navigate({ to: "/generate/$conversationId", params: { conversationId: id } });
-              }}
-              onRename={(conversation) =>
-                setDialog({
-                  open: true,
-                  kind: "generate-rename",
-                  initialName: conversation.title,
-                  conversationId: conversation.id,
-                })
-              }
-              onArchive={handleArchiveGeneration}
-            />
           ) : (
             <ScheduledTab
               schedules={schedules}
@@ -1580,6 +1484,10 @@ export function AppSidebar() {
           setCreateStoryOpen(false);
           navigate({ to: "/record" });
         }}
+        onGenerate={() => {
+          setCreateStoryOpen(false);
+          navigate({ to: "/generate" });
+        }}
         onCreated={(story) => {
           queryClient.setQueryData(["stories:get", story.name], story);
           queryClient.setQueryData<StorySummary[]>(["stories:list"], (current) =>
@@ -1602,7 +1510,6 @@ export function AppSidebar() {
         stories={stories}
         runs={recentRuns}
         schedules={schedules}
-        conversations={generations}
         onSelectStory={(storyName) => {
           const story = stories.find((s) => s.name === storyName);
           if (story) openStory(story);
@@ -1617,13 +1524,6 @@ export function AppSidebar() {
         onSelectSchedule={(scheduleId) =>
           navigate({ to: "/scheduled/$id", params: { id: scheduleId } })
         }
-        onSelectConversation={(conversationId) => {
-          prefetchGeneration(conversationId);
-          navigate({
-            to: "/generate/$conversationId",
-            params: { conversationId },
-          });
-        }}
       />
     </Sidebar>
   );
@@ -1846,100 +1746,6 @@ function ScheduledTab({
           onOpen={() => onOpen(schedule.id)}
           onRename={() => onRename(schedule)}
           onDelete={() => onDelete(schedule.id)}
-        />
-      )}
-    />
-  );
-}
-
-// ---------- one generate conversation row ----------
-function GenerateConversationRow({
-  conversation,
-  selected,
-  onPrefetch,
-  onOpen,
-  onRename,
-  onArchive,
-}: {
-  conversation: GenerateConversationSummary;
-  selected: boolean;
-  onPrefetch: () => void;
-  onOpen: () => void;
-  onRename: () => void;
-  onArchive: () => void;
-}) {
-  const complete = conversation.status === "complete";
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div className="group/row w-full" onMouseEnter={onPrefetch}>
-          <SidebarListItem
-            selected={selected}
-            onClick={onOpen}
-            className={cn(!selected && "hover:bg-surface-hover")}
-          >
-            <SidebarListItemContent>
-              <SidebarListItemTitle className={cn(complete && "text-tertiary")}>
-                {conversation.title}
-              </SidebarListItemTitle>
-            </SidebarListItemContent>
-            <RowAccessory
-              time={formatRelative(conversation.updatedAt)}
-              isRunning={conversation.generating}
-              archiveTitle="Remove generation"
-              confirmTitle={removeConfirmTitle(conversation.title)}
-              confirmDescription="This generation will be removed from the sidebar. This cannot be undone."
-              confirmLabel="Remove"
-              onConfirm={onArchive}
-            />
-          </SidebarListItem>
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onSelect={onRename}>Rename</ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-// ---------- Generate tab ----------
-function GenerateTab({
-  conversations,
-  activeConversationId,
-  onPrefetch,
-  onOpen,
-  onRename,
-  onArchive,
-}: {
-  conversations: GenerateConversationSummary[];
-  activeConversationId?: string;
-  onPrefetch: (id: string) => void;
-  onOpen: (id: string) => void;
-  onRename: (conversation: GenerateConversationSummary) => void;
-  onArchive: (id: string) => void;
-}) {
-  if (conversations.length === 0) {
-    return (
-      <div className="px-3 py-6 text-center">
-        <Text variant="small" color="tertiary">
-          No generations yet.
-        </Text>
-      </div>
-    );
-  }
-  return (
-    <ExpandableRows
-      persistKey="generate"
-      items={conversations}
-      renderItem={(conversation) => (
-        <GenerateConversationRow
-          key={conversation.id}
-          conversation={conversation}
-          selected={activeConversationId === conversation.id}
-          onPrefetch={() => onPrefetch(conversation.id)}
-          onOpen={() => onOpen(conversation.id)}
-          onRename={() => onRename(conversation)}
-          onArchive={() => onArchive(conversation.id)}
         />
       )}
     />

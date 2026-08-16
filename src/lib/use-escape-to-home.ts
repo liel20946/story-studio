@@ -16,7 +16,7 @@ export function useEscapeToHome() {
   const isSettings = pathname === "/settings";
 
   useEffect(() => {
-    if (isGenerateHome || isStoriesHome || isScheduledHome) return;
+    if (isStoriesHome || isScheduledHome) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (shouldIgnoreEscapeKey(event)) return;
@@ -30,8 +30,8 @@ export function useEscapeToHome() {
         navigate({ to: "/scheduled" });
         return;
       }
-      if (pathname.startsWith("/generate/")) {
-        navigate({ to: "/generate" });
+      if (isGenerateHome || pathname.startsWith("/generate/")) {
+        navigate({ to: "/stories" });
         return;
       }
       navigate({ to: "/" });
@@ -39,5 +39,13 @@ export function useEscapeToHome() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isGenerateHome, isStoriesHome, isScheduledHome, isSettings, navigate, pathname, router]);
+  }, [
+    isGenerateHome,
+    isStoriesHome,
+    isScheduledHome,
+    isSettings,
+    navigate,
+    pathname,
+    router,
+  ]);
 }
