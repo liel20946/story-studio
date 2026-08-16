@@ -189,6 +189,17 @@ function ModelMenu({
   );
 }
 
+function nearestEffortIndex(clientX: number, track: HTMLElement, count: number): number {
+  if (count <= 1) return 0;
+  const rect = track.getBoundingClientRect();
+  if (rect.width <= 0) return 0;
+  const inset = (EFFORT_SLIDER_INSET_PERCENT / 100) * rect.width;
+  const usable = rect.width - 2 * inset;
+  if (usable <= 0) return 0;
+  const ratio = (clientX - rect.left - inset) / usable;
+  return Math.max(0, Math.min(count - 1, Math.round(ratio * (count - 1))));
+}
+
 function EffortMenu({
   open,
   anchorRef,
@@ -204,14 +215,51 @@ function EffortMenu({
   onSelect: (effort: string) => void;
   onClose: () => void;
 }) {
+  const trackRef = React.useRef<HTMLDivElement>(null);
+  const draggingRef = React.useRef(false);
   const selectedIndex = Math.max(0, efforts.indexOf(value));
-  const [thumbIndex, setThumbIndex] = React.useState(selectedIndex);
+  // Local index only while dragging so the thumb follows the pointer before commit.
+  const [dragIndex, setDragIndex] = React.useState<number | null>(null);
 
   React.useEffect(() => {
-    setThumbIndex(selectedIndex);
-  }, [selectedIndex, value]);
+    if (!open) {
+      draggingRef.current = false;
+      setDragIndex(null);
+    }
+  }, [open]);
 
-  const thumbPosition = effortSliderPosition(thumbIndex, efforts.length);
+  const displayIndex = dragIndex ?? selectedIndex;
+  const displayEffort = efforts[displayIndex] ?? value;
+  const thumbPosition = effortSliderPosition(displayIndex, efforts.length);
+
+  const commitIndex = React.useCallback(
+    (index: number) => {
+      const effort = efforts[index];
+      if (!effort) return;
+      onSelect(effort);
+    },
+    [efforts, onSelect],
+  );
+
+  const indexFromClientX = React.useCallback(
+    (clientX: number) => {
+      const track = trackRef.current;
+      if (!track || efforts.length === 0) return selectedIndex;
+      return nearestEffortIndex(clientX, track, efforts.length);
+    },
+    [efforts.length, selectedIndex],
+  );
+
+  const endDrag = React.useCallback(
+    (clientX: number) => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      const index = indexFromClientX(clientX);
+      commitIndex(index);
+      setDragIndex(null);
+    },
+    [commitIndex, indexFromClientX],
+  );
 
   return (
     <MenuPortal
@@ -222,46 +270,96 @@ function EffortMenu({
     >
       <div className="generate-effort-menu-header">
         <span className="generate-effort-menu-title">Effort</span>
-        <span className="generate-effort-menu-current">{formatEffortLabel(value)}</span>
+        <span className="generate-effort-menu-current">
+          {formatEffortLabel(displayEffort)}
+        </span>
       </div>
       <div className="generate-effort-slider">
         <span className="generate-effort-slider-end">Faster</span>
         <div
-          className="generate-effort-slider-track"
+          ref={trackRef}
+          className={cn(
+            "generate-effort-slider-track",
+            dragIndex !== null && "generate-effort-slider-track--dragging",
+          )}
           role="slider"
-          aria-valuenow={selectedIndex}
+          tabIndex={0}
+          aria-valuemin={0}
+          aria-valuemax={Math.max(0, efforts.length - 1)}
+          aria-valuenow={displayIndex}
+          aria-valuetext={formatEffortLabel(displayEffort)}
+          aria-label="Reasoning effort"
           style={
             {
               "--effort-slider-inset": `${EFFORT_SLIDER_INSET_PERCENT}%`,
             } as React.CSSProperties
           }
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            draggingRef.current = true;
+            const index = indexFromClientX(event.clientX);
+            setDragIndex(index);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (!draggingRef.current) return;
+            setDragIndex(indexFromClientX(event.clientX));
+          }}
+          onPointerUp={(event) => {
+            if (!draggingRef.current) return;
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            } catch {
+              // already released
+            }
+            endDrag(event.clientX);
+          }}
+          onPointerCancel={(event) => {
+            endDrag(event.clientX);
+          }}
+          onKeyDown={(event) => {
+            if (efforts.length === 0) return;
+            let next = displayIndex;
+            if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+              next = Math.max(0, displayIndex - 1);
+            } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+              next = Math.min(efforts.length - 1, displayIndex + 1);
+            } else if (event.key === "Home") {
+              next = 0;
+            } else if (event.key === "End") {
+              next = efforts.length - 1;
+            } else {
+              return;
+            }
+            event.preventDefault();
+            commitIndex(next);
+          }}
         >
           <div className="generate-effort-slider-rail" aria-hidden />
+          {efforts.map((effort, index) => {
+            const position = effortSliderPosition(index, efforts.length);
+            const active = index === displayIndex;
+            return (
+              <span
+                key={effort}
+                className={cn(
+                  "generate-effort-slider-stop",
+                  active && "generate-effort-slider-stop--active",
+                )}
+                style={{ left: `${position}%` }}
+                aria-hidden
+              />
+            );
+          })}
           <div
             className="generate-effort-slider-thumb"
             style={{ left: `${thumbPosition}%` }}
             aria-hidden
           />
-          {efforts.map((effort, index) => {
-            const position = effortSliderPosition(index, efforts.length);
-            return (
-              <button
-                key={effort}
-                type="button"
-                className={cn(
-                  "generate-effort-slider-stop",
-                  effort === value && "generate-effort-slider-stop--active",
-                )}
-                style={{ left: `${position}%` }}
-                aria-label={formatEffortLabel(effort)}
-                aria-pressed={effort === value}
-                onClick={() => {
-                  setThumbIndex(index);
-                  onSelect(effort);
-                }}
-              />
-            );
-          })}
         </div>
         <span className="generate-effort-slider-end">Smarter</span>
       </div>
@@ -292,13 +390,19 @@ export function ChatModelPicker({
 
   const closeMenu = React.useCallback(() => setOpenMenu(null), []);
 
-  const handleModelSelect = (model: string) => {
-    onChange({ model, effort: value.effort });
-  };
+  const handleModelSelect = React.useCallback(
+    (model: string) => {
+      onChange({ model, effort: value.effort });
+    },
+    [onChange, value.effort],
+  );
 
-  const handleEffortSelect = (effort: string) => {
-    onChange({ model: value.model, effort });
-  };
+  const handleEffortSelect = React.useCallback(
+    (effort: string) => {
+      onChange({ model: value.model, effort });
+    },
+    [onChange, value.model],
+  );
 
   return (
     <div className="generate-model-controls no-drag">
