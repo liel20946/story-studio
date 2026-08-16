@@ -647,7 +647,7 @@ function CreateStoryDialog({
           <DialogTitle>{view === "choose" ? "New Story" : "Add Story Manually"}</DialogTitle>
           <DialogDescription>
             {view === "choose"
-              ? "Record browser actions, generate with AI, or start from an editable template."
+              ? "Record browser actions, start from an editable template, or generate with AI."
               : "Create a template story, then edit its steps, variables, and assertions."}
           </DialogDescription>
         </DialogHeader>
@@ -667,22 +667,22 @@ function CreateStoryDialog({
               <Button
                 variant="filled"
                 className="h-auto items-center justify-start gap-3 p-3 text-left"
-                onClick={onGenerate}
-              >
-                <span className="flex size-4 shrink-0 items-center justify-center">
-                  <BotIcon className="size-4" />
-                </span>
-                <span className="leading-4">Generate</span>
-              </Button>
-              <Button
-                variant="filled"
-                className="h-auto items-center justify-start gap-3 p-3 text-left"
                 onClick={() => setView("manual")}
               >
                 <span className="flex size-4 shrink-0 items-center justify-center">
                   <PencilLineIcon className="size-4" />
                 </span>
                 <span className="leading-4">Add manually</span>
+              </Button>
+              <Button
+                variant="filled"
+                className="h-auto items-center justify-start gap-3 p-3 text-left"
+                onClick={onGenerate}
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <BotIcon className="size-4" />
+                </span>
+                <span className="leading-4">Generate</span>
               </Button>
             </div>
           ) : (
