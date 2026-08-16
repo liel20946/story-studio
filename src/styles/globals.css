@@ -463,10 +463,28 @@ body {
    (Electron GPU compositor can glitch on blur; approximate vibrancy with alpha). */
 .liquid-glass,
 .liquid-glass-elevated,
-.bg-glass,
-.bg-popover {
+.bg-glass {
   background: var(--glass-bg);
   box-shadow: inset 0 0.5px 0 var(--glass-highlight);
+}
+
+/* Floating UI (dialogs, menus, tooltips, command palette) must stay opaque —
+   never inherit vibrancy/glass alpha or desktop wallpaper shows through.
+   Use background-color + !important so Tailwind utilities / glass rules cannot win. */
+.bg-popover,
+.dialog-surface,
+.toolbar-more-menu,
+.command-search-panel,
+.schedule-picker-popover,
+.theme-color-picker-popover,
+.generate-composer-attach-menu,
+.settings-select-menu,
+.color-theme-menu {
+  background-color: var(--color-surface-popover) !important;
+  background-image: none !important;
+  opacity: 1;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 .bg-surface-sidebar {
@@ -518,6 +536,7 @@ button:not(:disabled):active,
     --material-toolbar: var(--bg-elevated);
     --material-card: var(--bg-elevated);
     --glass-bg: var(--bg-elevated);
+    --color-surface-popover: var(--bg-elevated);
   }
 }
 
@@ -531,6 +550,9 @@ button:not(:disabled):active,
   --support-red-10: rgb(227 70 113 / 14%);
   --support-green-10: rgb(63 162 102 / 14%);
   --cursor-sidebar-tint: rgb(20 20 20 / 78%);
+  /* Popovers/dialogs stay fully opaque even when chrome uses glass alpha. */
+  --color-surface-popover: #181818;
+  --glass-bg-elevated: #181818;
 }
 
 [data-color-theme="cursor"].mac-window-chrome #root {
@@ -552,6 +574,11 @@ button:not(:disabled):active,
 
 [data-color-theme="cursor"]:not(.dark) .sidebar-chrome {
   background-color: rgb(243 243 243 / 72%);
+}
+
+[data-color-theme="cursor"]:not(.dark) {
+  --color-surface-popover: #ffffff;
+  --glass-bg-elevated: #ffffff;
 }
 
 [data-color-theme="cursor"]:not(.dark) .sidebar-chrome .bg-surface-sidebar {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Capture Open in provider on finished story RUN views (not story detail).
+ * Capture Open in provider on finished + live story RUN views (More menu).
  *   STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-open-in-finished.mjs
  */
 import { createRequire } from "node:module";
@@ -69,6 +69,14 @@ async function shot(app, name) {
   console.log("wrote", file);
 }
 
+async function openMoreMenu(page) {
+  await page.getByRole("button", { name: "More actions" }).click();
+  await wait(400);
+  await page.getByRole("menuitem", { name: /Open in Codex/i }).waitFor({
+    timeout: 10_000,
+  });
+}
+
 async function openHistoryRun(page, titlePart) {
   await page.getByRole("tab", { name: "Runs" }).click({ force: true });
   await wait(800);
@@ -79,7 +87,7 @@ async function openHistoryRun(page, titlePart) {
     .click({ force: true });
   await page.getByText("Actions").first().waitFor({ timeout: 20_000 });
   await wait(800);
-  await page.getByRole("button", { name: "Open in Codex" }).waitFor({ timeout: 10_000 });
+  await openMoreMenu(page);
 }
 
 async function main() {
@@ -91,6 +99,7 @@ async function main() {
     env: {
       ...process.env,
       STORY_STUDIO_MOCK_RUNS: "1",
+      STORY_STUDIO_MOCK_RUN_MS: "8000",
       ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
     },
     timeout: 120_000,
@@ -113,13 +122,26 @@ async function main() {
     await wait(600);
 
     await openHistoryRun(page, "Login Flow");
-    await shot(app, "01-run-passed-open-in-codex");
+    await shot(app, "open-in-01-finished-run-more-menu");
+    await page.keyboard.press("Escape");
+    await wait(300);
 
-    await openHistoryRun(page, "Checkout Flow");
-    await shot(app, "02-run-failed-open-in-codex");
-
-    await openHistoryRun(page, "Update Notifica");
-    await shot(app, "03-run-cancelled-open-in-codex");
+    // Start a live mock run and confirm Open in appears while Running.
+    await page.getByRole("tab", { name: "Stories" }).click({ force: true });
+    await wait(600);
+    await page
+      .locator(".group\\/row")
+      .filter({ hasText: "Login Flow" })
+      .first()
+      .click({ force: true });
+    await wait(800);
+    await page.getByRole("button", { name: /^Run$/i }).click({ force: true });
+    await page.getByRole("button", { name: "Cancel run" }).waitFor({
+      timeout: 15_000,
+    });
+    await wait(900);
+    await openMoreMenu(page);
+    await shot(app, "open-in-02-live-run-more-menu");
   } finally {
     await app.close().catch(() => {});
   }

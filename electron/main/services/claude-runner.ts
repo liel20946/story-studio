@@ -59,7 +59,7 @@ import {
 } from "./run-event-settle.js";
 import { buildClaudeSpawnEnv } from "./agent-spawn-env.js";
 import { classifyMcpTool } from "./mcp-tool-event.js";
-import { extractProviderSessionId } from "./provider-session.js";
+import { extractProviderSessionId, publishProviderSession } from "./provider-session.js";
 
 interface RunState {
   runId: string;
@@ -218,7 +218,10 @@ function handleClaudeLine(
 ): void {
   if (!state.providerSessionId) {
     const sessionId = extractProviderSessionId(parsed);
-    if (sessionId) state.providerSessionId = sessionId;
+    if (sessionId) {
+      state.providerSessionId = sessionId;
+      publishProviderSession(state.runId, state.agentProvider, sessionId);
+    }
   }
 
   const type = parsed["type"] as string | undefined;

@@ -11,6 +11,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 function getUserDataDir() {
   const home = os.homedir();
@@ -38,6 +41,32 @@ function writeJson(filePath, data) {
 function writeText(filePath, text) {
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, text, "utf8");
+}
+
+/** Small solid PNG for demo screenshot galleries. */
+function writeDemoPng(filePath, rgb) {
+  ensureDir(path.dirname(filePath));
+  const { PNG } = require("pngjs");
+  const width = 800;
+  const height = 500;
+  const png = new PNG({ width, height });
+  const [r, g, b] = rgb;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (width * y + x) << 2;
+      const shade = 16 + Math.floor((y / height) * 28);
+      png.data[i] = Math.min(255, r + shade);
+      png.data[i + 1] = Math.min(255, g + shade);
+      png.data[i + 2] = Math.min(255, b + shade);
+      png.data[i + 3] = 255;
+      if (x > 48 && x < width - 48 && y > 36 && y < 72) {
+        png.data[i] = 210;
+        png.data[i + 1] = 210;
+        png.data[i + 2] = 220;
+      }
+    }
+  }
+  fs.writeFileSync(filePath, PNG.sync.write(png));
 }
 
 function readJson(filePath, fallback) {
@@ -145,11 +174,18 @@ function makeRun({
   events,
   steps,
   variableOverrides,
+  demoScreenshots = false,
 }) {
   const runBase = path.join(runsDir, runId);
   ensureDir(path.join(runBase, "screenshots"));
   if (steps?.length) {
     writeJson(path.join(runBase, "steps.json"), steps);
+  }
+  if (demoScreenshots) {
+    const shotsDir = path.join(runBase, "screenshots");
+    writeDemoPng(path.join(shotsDir, "step-01.png"), [30, 30, 34]);
+    writeDemoPng(path.join(shotsDir, "step-02.png"), [40, 42, 48]);
+    writeDemoPng(path.join(shotsDir, "step-03.png"), [28, 36, 44]);
   }
   return {
     runId,
@@ -183,6 +219,7 @@ const runLoginPassed = makeRun({
     email: "test@example.com",
     password: "password123",
   },
+  demoScreenshots: true,
   startedAt: now - 420_000,
   finishedAt: now - 12_000,
   events: [

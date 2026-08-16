@@ -313,12 +313,11 @@ function isUndoShortcut(e: KeyboardEvent) {
 const storyEditInputClass =
   "min-w-0 w-full bg-transparent border-0 outline-none p-0 text-inherit font-inherit leading-inherit focus:ring-1 focus:ring-field/60 rounded-sm";
 
-// Shared body size for steps, assertions, global rules, and variable values.
+// Shared body size for steps, assertions, global rules, and variables.
 const storyBodyTextClass = "text-[12px] leading-[16px] text-secondary";
-// Variable names stay mono so they read as identifiers — slightly smaller than
-// steps/assertions so the rail densifies without competing with the left pane.
-const storyVarNameClass = "font-mono text-[11px] leading-[14px]";
-const storyVarValueClass = "text-[11px] leading-[14px]";
+// Variable keys/values share .detail-var-* with the run view.
+const storyVarNameClass = "detail-var-key";
+const storyVarValueClass = "detail-var-value";
 
 function focusInputAt(refs: React.RefObject<(HTMLInputElement | null)[]>, index: number) {
   requestAnimationFrame(() => {
@@ -431,7 +430,7 @@ function EditableVariables({
       {draft.variables.map((v, i) => (
         <div
           key={i}
-          className="flex items-center gap-1.5 py-0.5 min-w-0 rounded-control"
+          className="detail-var-row rounded-control"
         >
           <input
             ref={(el) => {
@@ -460,7 +459,7 @@ function EditableVariables({
             onBlur={onCommitCheckpoint}
             className={cn(
               storyEditInputClass,
-              "min-w-0 flex-1 truncate text-secondary",
+              "min-w-0 flex-1 truncate",
               storyVarValueClass,
             )}
           />
@@ -488,11 +487,10 @@ function ReadOnlyVariables({
         return (
           <div
             key={v.key}
-            className="group/var flex items-center gap-1.5 py-0.5 min-w-0"
+            className="detail-var-row group/var"
           >
             <span
               className={cn(
-                "max-w-[18rem] shrink-0 truncate",
                 storyVarNameClass,
                 nameColors[key] ?? "text-tertiary",
               )}
@@ -501,9 +499,8 @@ function ReadOnlyVariables({
             </span>
             <span
               className={cn(
-                "min-w-0 flex-1 truncate",
                 storyVarValueClass,
-                value ? "text-secondary" : "text-quaternary",
+                !value && "detail-var-value--empty",
               )}
             >
               {value ? (show ? value : "••••••") : "empty"}
@@ -535,9 +532,7 @@ function StoryLoadingShell({ title }: { title: string }) {
         <div className="detail-view-main story-sections">
           <div className="content-card">
             <div className="content-card-header">
-              <Text variant="small-strong" color="secondary">
-                Steps
-              </Text>
+              <span className="section-label">Steps</span>
             </div>
             <div className="content-card-body">
               <div className="story-loading-shell-lines" aria-hidden>
@@ -918,9 +913,7 @@ export function StoryView() {
             <div className="content-card">
               <div className="content-card-header">
                 <div className="flex min-w-0 items-center gap-2">
-                  <Text variant="small-strong" color="secondary">
-                    Steps
-                  </Text>
+                  <span className="section-label">Steps</span>
                   <Text variant="small" color="tertiary">
                     {(isEditingThisStory && draft ? draft.steps : story.steps).length}
                   </Text>
@@ -1009,7 +1002,7 @@ export function StoryView() {
                   {(isEditingThisStory && draft ? draft.assertions : story.assertions).map(
                     (assertion, i) =>
                       isEditingThisStory && draft ? (
-                        <div key={i} className="flex items-center gap-1.5 py-0.5 min-w-0">
+                        <div key={i} className="flex items-center gap-2 py-1 min-w-0">
                           <input
                             ref={(el) => {
                               assertionInputRefs.current[i] = el;

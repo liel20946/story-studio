@@ -11,7 +11,7 @@
 
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { onRunEvent, onRunResult, runsActive, runsGet } from "./ipc";
+import { onRunEvent, onRunResult, onRunProviderSession, runsActive, runsGet } from "./ipc";
 import { reportAppErrorFromUnknown } from "./app-error";
 import type { RunEvent, RunResult, ActiveRunSnapshot, AgentProvider } from "./contract-types";
 import {
@@ -182,6 +182,47 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
+    const unsubProviderSession = onRunProviderSession((payload) => {
+      const sessionId = payload.providerSessionId?.trim();
+      if (!payload.runId || !sessionId) return;
+      setRuns((prev) => {
+        const existing = prev[payload.runId];
+        if (!existing) {
+          return {
+            ...prev,
+            [payload.runId]: {
+              runId: payload.runId,
+              storyName: "",
+              storyTitle: "",
+              startedAt: Date.now(),
+              events: [],
+              result: null,
+              agentProvider: payload.agentProvider,
+              providerSessionId: sessionId,
+            },
+          };
+        }
+        if (existing.providerSessionId === sessionId) return prev;
+        return {
+          ...prev,
+          [payload.runId]: {
+            ...existing,
+            agentProvider: payload.agentProvider ?? existing.agentProvider,
+            providerSessionId: existing.providerSessionId || sessionId,
+            result: existing.result
+              ? {
+                  ...existing.result,
+                  providerSessionId:
+                    existing.result.providerSessionId || sessionId,
+                  agentProvider:
+                    existing.result.agentProvider ?? payload.agentProvider,
+                }
+              : existing.result,
+          },
+        };
+      });
+    });
+
     const unsubResult = onRunResult((res) => {
       void (async () => {
         let events: RunEvent[] = [];
@@ -251,6 +292,7 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       unsubEvent();
+      unsubProviderSession();
       unsubResult();
     };
   }, [queryClient]);

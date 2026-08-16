@@ -1580,15 +1580,16 @@
   height: 0.6875rem;
 }
 
-/* Section labels (Steps, Assertions, Variables, Actions) */
+/* Section labels — match Steps/Actions card titles (12 / 600 / secondary). */
 .section-label {
   display: block;
   padding: 0;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.5rem;
   font-size: 12px;
   font-weight: 600;
   line-height: 16px;
-  color: var(--color-text-tertiary);
+  letter-spacing: -0.01em;
+  color: var(--color-text-secondary);
 }
 
 /* Borderless Codex-style sections (story + run rails) */
@@ -1600,9 +1601,16 @@
   margin-top: 1.25rem;
 }
 
-/* Rail cards already space children via flex gap — avoid stacking margin on top. */
-.detail-rail .codex-section + .codex-section {
+/* Plain rails keep gap-only spacing (no stacked margin). */
+.detail-rail:not(.detail-rail--card) .codex-section + .codex-section {
   margin-top: 0;
+}
+
+/* Card rails: extra vertical space so Variables / Assertions / Screenshots
+   read as distinct blocks (no dividers). */
+.detail-rail--card > .codex-section + .codex-section,
+.detail-rail--card > .run-rail-meta + .codex-section {
+  margin-top: 1.25rem;
 }
 
 .story-global-rules-preview {
@@ -1647,11 +1655,55 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem 0.375rem;
+  padding: 0.875rem 0.875rem 0.5rem;
+}
+
+/* Steps/Actions titles use the same section-label style as the rail. */
+.content-card-header .section-label {
+  margin-bottom: 0;
 }
 
 .content-card-body {
   padding: 0 0.25rem 0.375rem;
+}
+
+/* Shared Variables rows — story + run rails stay identical. */
+.detail-var-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-block: 0.25rem;
+}
+
+.detail-var-key {
+  max-width: 18rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.detail-var-value {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.detail-var-value--empty {
+  color: var(--color-text-quaternary);
+}
+
+.detail-var-value:not(.detail-var-value--empty) {
+  color: var(--color-text-secondary);
 }
 
 .settings-group-body {
@@ -2849,6 +2901,10 @@
   padding: 0;
 }
 
+.detail-rail--card {
+  gap: 0;
+}
+
 @media (min-width: 1024px) {
   .detail-rail {
     width: 19rem;
@@ -2907,7 +2963,7 @@
   border: 1px solid var(--color-border-separator);
   border-radius: var(--radius-card);
   background: var(--glass-bg-elevated);
-  padding: 0.75rem;
+  padding: 0.875rem;
   box-shadow: 0 1px 3px rgb(0 0 0 / 4%);
   transition: box-shadow var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
@@ -2947,7 +3003,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0 0 0.25rem;
+  padding: 0;
   font-size: 11px;
   line-height: 14px;
 }
@@ -3277,13 +3333,33 @@
 
 .dialog-surface {
   border: 1px solid var(--color-border-separator);
+  background-color: var(--color-surface-popover) !important;
+  background-image: none !important;
   box-shadow: 0 16px 48px rgb(0 0 0 / 40%);
   outline: none;
+  opacity: 1;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 .dialog-surface:focus,
 .dialog-surface:focus-visible {
   outline: none;
+}
+
+/* Floating menus / pickers — same opaque surface as dialogs */
+.toolbar-more-menu,
+.command-search-panel,
+.schedule-picker-popover,
+.theme-color-picker-popover,
+.generate-composer-attach-menu,
+.settings-select-menu,
+.color-theme-menu {
+  background-color: var(--color-surface-popover) !important;
+  background-image: none !important;
+  opacity: 1;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 /* Toast — bottom-center pill, theme-aware, close on the right */
