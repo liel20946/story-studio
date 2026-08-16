@@ -1251,14 +1251,16 @@ export function AppSidebar() {
       }
     >
       <SidebarList className="pt-0 pb-1">
-        <div className="px-2 pt-3">
-          <SystemActions
-            scheduledActive={activeSelection.onScheduledRoute}
-            onScheduled={openScheduled}
-            onSearch={openCommandSearch}
-          />
-        </div>
-        <div key={tab} className="tab-panel-in pt-3">
+        {tab === "stories" ? (
+          <div className="px-2 pt-3">
+            <SystemActions
+              scheduledActive={activeSelection.onScheduledRoute}
+              onScheduled={openScheduled}
+              onSearch={openCommandSearch}
+            />
+          </div>
+        ) : null}
+        <div key={tab} className={cn("tab-panel-in", tab === "stories" ? "pt-3" : "pt-3")}>
           {tab === "stories" ? (
             <StoriesTab
               hasStories={hasStories}
