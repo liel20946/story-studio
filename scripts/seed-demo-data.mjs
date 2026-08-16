@@ -11,6 +11,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 function getUserDataDir() {
   const home = os.homedir();
@@ -40,22 +43,30 @@ function writeText(filePath, text) {
   fs.writeFileSync(filePath, text, "utf8");
 }
 
-/** Tiny solid PNG (64×40) for demo screenshot galleries. */
+/** Small solid PNG for demo screenshot galleries. */
 function writeDemoPng(filePath, rgb) {
   ensureDir(path.dirname(filePath));
+  const { PNG } = require("pngjs");
+  const width = 800;
+  const height = 500;
+  const png = new PNG({ width, height });
   const [r, g, b] = rgb;
-  // Minimal 1×1 PNG, then we just need a valid image file for the gallery.
-  // Prefer a real small canvas via raw uncompressed PNG IHDR+IDAT when possible;
-  // a hardcoded 2×2 PNG is enough for ScreenshotImage.
-  const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVSF+FAP5IDvcfRYWgAAAAAElFTkSuQmCC",
-    "base64",
-  );
-  // Tint isn't worth complexity — write distinct filenames for the carousel.
-  void r;
-  void g;
-  void b;
-  fs.writeFileSync(filePath, png);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (width * y + x) << 2;
+      const shade = 16 + Math.floor((y / height) * 28);
+      png.data[i] = Math.min(255, r + shade);
+      png.data[i + 1] = Math.min(255, g + shade);
+      png.data[i + 2] = Math.min(255, b + shade);
+      png.data[i + 3] = 255;
+      if (x > 48 && x < width - 48 && y > 36 && y < 72) {
+        png.data[i] = 210;
+        png.data[i + 1] = 210;
+        png.data[i + 2] = 220;
+      }
+    }
+  }
+  fs.writeFileSync(filePath, PNG.sync.write(png));
 }
 
 function readJson(filePath, fallback) {
