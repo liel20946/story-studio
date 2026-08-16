@@ -110,8 +110,8 @@ async function captureSuite(theme) {
   await wait(900);
   await shot(app, `${prefix}-03-bulk`);
 
-  // 4. History system action → history overview
-  await page.getByRole("button", { name: "History" }).click({ force: true });
+  // 4. History tab
+  await page.getByRole("tab", { name: "History" }).click({ force: true });
   await wait(900);
   await shot(app, `${prefix}-04-history`);
 
@@ -123,7 +123,9 @@ async function captureSuite(theme) {
     await shot(app, `${prefix}-05-history-detail`);
   }
 
-  // 6. Scheduled system action
+  // 6. Scheduled (Stories tab system action)
+  await page.getByRole("tab", { name: "Stories" }).click({ force: true });
+  await wait(400);
   await page.getByRole("button", { name: "Scheduled" }).click({ force: true });
   await wait(900);
   await shot(app, `${prefix}-06-scheduled`);

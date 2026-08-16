@@ -554,7 +554,7 @@ function AppearancePanel({
       <SettingsGroup>
         <SettingsRow
           label="Theme"
-          description="Light uses Claude cream chrome. Dark uses Claude Code almost-black."
+          description="Light uses Claude cream chrome with black controls. Dark uses Claude Code almost-black with white controls."
         >
           <ThemeSegment value={settings.theme} onChange={onThemeChange} />
         </SettingsRow>

@@ -34,7 +34,7 @@
   --font-mono: var(--font-family-mono);
 }
 
-/* Light — Claude cream canvas; warmer sidebar for clear separation */
+/* Light — Claude cream shell (#faf9f5) + soft sidebar (#f5f0e8); black accents */
 :root {
   --font-family-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Geist Variable", "Geist", system-ui, sans-serif;
   --font-family-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist Variable", "Geist", system-ui, sans-serif;
@@ -49,19 +49,18 @@
   --bg: #ffffff;
   --bg-secondary: #ffffff;
   --bg-elevated: #ffffff;
-  --fg: #1f1e1b;
-  /* Accents: light pink (primary) + light yellow (secondary) */
-  --theme-accent: #ffb4d0;
-  --theme-accent-alt: #ffe566;
+  --fg: #141413;
+  /* Professional: black buttons on light */
+  --theme-accent: #141413;
   --accent: var(--theme-accent);
-  --selection: #1f1e1b;
-  --red: #e11d48;
-  --orange: #f59e0b;
-  --yellow: #ffe566;
-  --green: #16a34a;
-  --blue: #2563eb;
-  --purple: #a855f7;
-  --magenta: #ec4899;
+  --selection: #141413;
+  --red: #c64545;
+  --orange: #d4a017;
+  --yellow: #d4a017;
+  --green: #5db872;
+  --blue: #3b82f6;
+  --purple: #8b5cf6;
+  --magenta: #db2777;
   --fg-5: rgb(from var(--fg) r g b / 5%);
   --fg-8: rgb(from var(--fg) r g b / 8%);
   --fg-12: rgb(from var(--fg) r g b / 12%);
@@ -69,40 +68,41 @@
   --fg-40: rgb(from var(--fg) r g b / 50%);
   --fg-55: rgb(from var(--fg) r g b / 65%);
   --support-blue-10: rgb(from var(--blue) r g b / 10%);
-  --support-green-10: rgb(from var(--green) r g b / 10%);
-  --support-orange-10: rgb(from var(--orange) r g b / 10%);
+  --support-green-10: rgb(from var(--green) r g b / 12%);
+  --support-orange-10: rgb(from var(--orange) r g b / 12%);
   --support-purple-10: rgb(from var(--purple) r g b / 10%);
-  --support-red-10: rgb(225 29 72 / 12%);
-  --support-yellow-10: rgb(from var(--yellow) r g b / 35%);
+  --support-red-10: rgb(198 69 69 / 12%);
+  --support-yellow-10: rgb(from var(--yellow) r g b / 14%);
   --color-text-primary: var(--fg);
   --color-text-secondary: #3d3d3a;
-  --color-text-tertiary: #73726c;
-  --color-text-quaternary: #9c9a92;
-  --color-text-link: #d4537e;
-  --color-surface-control: #efe9de;
-  --color-surface-control-subtle: #f5f0e8;
-  --color-surface-hover: #efe9de;
-  --color-surface-well: #f5f0e8;
-  --color-surface-sidebar: #ebe8df;
+  --color-text-tertiary: #6c6a64;
+  --color-text-quaternary: #8e8b82;
+  --color-text-link: #141413;
+  --color-surface-control: #ebe8df;
+  --color-surface-control-subtle: #f5f4ed;
+  --color-surface-hover: #ebe8df;
+  --color-surface-well: #f5f4ed;
+  /* Claude Code light sidebar — warm grey-cream, not peach */
+  --color-surface-sidebar: #f5f4ed;
   --color-surface-popover: #ffffff;
-  --color-border-separator: rgb(from var(--fg) r g b / 10%);
-  --color-border-field: rgb(from var(--fg) r g b / 16%);
+  --color-border-separator: #e8e6dc;
+  --color-border-field: #e8e6dc;
   --color-window-bg: #faf9f5;
-  --glass-bg: rgb(250 249 245 / 82%);
-  --glass-bg-elevated: rgb(255 255 255 / 90%);
+  --glass-bg: rgb(250 249 245 / 86%);
+  --glass-bg-elevated: rgb(255 255 255 / 92%);
   --glass-highlight: rgb(255 255 255 / 55%);
-  --glass-shadow: rgb(0 0 0 / 6%);
-  --material-sidebar: rgb(235 232 223 / 94%);
-  --material-toolbar: rgb(250 249 245 / 78%);
-  --material-card: rgb(255 255 255 / 94%);
-  --material-edge: rgb(255 255 255 / 65%);
-  --accent-contrast: #1f1e1b;
-  --accent-glow: rgb(from var(--accent) r g b / 28%);
+  --glass-shadow: rgb(0 0 0 / 5%);
+  --material-sidebar: rgb(245 244 237 / 96%);
+  --material-toolbar: rgb(250 249 245 / 80%);
+  --material-card: rgb(255 255 255 / 96%);
+  --material-edge: rgb(255 255 255 / 70%);
+  --accent-contrast: #faf9f5;
+  --accent-glow: rgb(from var(--accent) r g b / 10%);
   --radius-card: 12px;
   --radius-control: 8px;
   --radius-pill: 9999px;
   --radius-window: 16px;
-  --color-window-outline: rgb(0 0 0 / 8%);
+  --color-window-outline: rgb(20 20 19 / 8%);
   --spacing: 0.25rem;
 
   /* macOS traffic lights — tweak these to match native/Codex sizing */
@@ -125,49 +125,49 @@
   --detail-view-inset-x: 1.25rem;
 }
 
-/* Dark — Claude Code almost-black option */
+/* Dark — Claude Code almost-black; white accents */
 .dark {
   --bg: #0a0a0a;
-  --bg-secondary: #111111;
-  --bg-elevated: #161616;
-  --fg: #f5f5f5;
-  --theme-accent: #ffb4d0;
-  --theme-accent-alt: #ffe566;
+  --bg-secondary: #141416;
+  --bg-elevated: #181715;
+  --fg: #faf9f5;
+  /* Professional: white/cream buttons on dark */
+  --theme-accent: #faf9f5;
   --accent: var(--theme-accent);
-  --selection: #f5f5f5;
-  --red: #fb7185;
-  --orange: #fbbf24;
-  --yellow: #ffe566;
-  --green: #4ade80;
+  --selection: #faf9f5;
+  --red: #e07070;
+  --orange: #d4a017;
+  --yellow: #d4a017;
+  --green: #5db872;
   --blue: #60a5fa;
   --purple: #c084fc;
   --magenta: #f472b6;
   --color-text-primary: var(--fg);
-  --color-text-secondary: rgb(245 245 245 / 72%);
-  --color-text-tertiary: rgb(245 245 245 / 48%);
-  --color-text-quaternary: rgb(245 245 245 / 32%);
-  --color-text-link: #ffb4d0;
-  --color-surface-control: #1c1c1c;
-  --color-surface-control-subtle: #141414;
-  --color-surface-hover: #222222;
-  --color-surface-well: #111111;
+  --color-text-secondary: #a09d96;
+  --color-text-tertiary: rgb(250 249 245 / 48%);
+  --color-text-quaternary: rgb(250 249 245 / 32%);
+  --color-text-link: #faf9f5;
+  --color-surface-control: #1f1e1b;
+  --color-surface-control-subtle: #141416;
+  --color-surface-hover: #252320;
+  --color-surface-well: #141416;
   --color-surface-sidebar: #000000;
-  --color-surface-popover: #161616;
-  --color-border-separator: rgb(255 255 255 / 9%);
-  --color-border-field: rgb(255 255 255 / 14%);
+  --color-surface-popover: #181715;
+  --color-border-separator: rgb(250 249 245 / 10%);
+  --color-border-field: rgb(250 249 245 / 14%);
   --color-window-bg: #0a0a0a;
-  --glass-bg: rgb(10 10 10 / 88%);
-  --glass-bg-elevated: rgb(22 22 22 / 92%);
+  --glass-bg: rgb(10 10 10 / 90%);
+  --glass-bg-elevated: rgb(24 23 21 / 94%);
   --glass-highlight: rgb(255 255 255 / 5%);
   --glass-shadow: rgb(0 0 0 / 50%);
-  --material-sidebar: rgb(0 0 0 / 94%);
-  --material-toolbar: rgb(10 10 10 / 80%);
-  --material-card: rgb(22 22 22 / 96%);
+  --material-sidebar: rgb(0 0 0 / 96%);
+  --material-toolbar: rgb(10 10 10 / 82%);
+  --material-card: rgb(24 23 21 / 96%);
   --material-edge: rgb(255 255 255 / 6%);
-  --accent-contrast: #1a1014;
-  --accent-glow: rgb(from var(--accent) r g b / 22%);
-  --support-red-10: rgb(251 113 133 / 14%);
-  --support-yellow-10: rgb(from var(--yellow) r g b / 18%);
+  --accent-contrast: #141413;
+  --accent-glow: rgb(from var(--accent) r g b / 12%);
+  --support-red-10: rgb(224 112 112 / 14%);
+  --support-yellow-10: rgb(from var(--yellow) r g b / 14%);
   --color-window-outline: rgb(255 255 255 / 6%);
 }
 

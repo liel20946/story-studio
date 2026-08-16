@@ -102,11 +102,17 @@ async function captureSuite(theme) {
   await wait(900);
   await shot(app, `${prefix}-03-bulk`);
 
+  await page.getByRole("tab", { name: "Stories" }).click({ force: true });
+  await wait(400);
+  await page.getByRole("button", { name: "Scheduled" }).click({ force: true });
+  await wait(900);
+  await shot(app, `${prefix}-04-scheduled`);
+
   await page.keyboard.press("Control+Comma");
   await wait(900);
   await page.getByRole("button", { name: "Appearance", exact: true }).click({ force: true });
   await wait(700);
-  await shot(app, `${prefix}-04-appearance`);
+  await shot(app, `${prefix}-05-appearance`);
 
   await app.close();
 }

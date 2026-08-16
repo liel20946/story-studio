@@ -497,7 +497,7 @@
   grid-template-columns: var(--segment-size) var(--segment-size);
   padding: var(--segment-pad);
   overflow: visible;
-  background: color-mix(in srgb, var(--theme-accent-alt) 22%, var(--color-surface-control));
+  background: var(--color-surface-control);
 }
 
 .library-tabs-row .segment-control--library.segment-control--three {
@@ -512,7 +512,7 @@
   border-radius: calc(var(--radius-pill) - 1px);
   transform: translateX(0);
   box-shadow: none;
-  background: var(--theme-accent);
+  background: var(--accent);
 }
 
 .library-tabs-row
