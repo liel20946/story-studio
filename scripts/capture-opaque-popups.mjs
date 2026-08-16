@@ -105,31 +105,39 @@ async function main() {
 
   try {
     const page = await app.firstWindow();
+    page.setDefaultTimeout(25_000);
     await page.waitForLoadState("domcontentloaded");
-    await wait(2500);
+    await wait(3000);
+
+    await app.evaluate(({ BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows()[0];
+      if (!w) return;
+      w.setMinimumSize(1200, 800);
+      w.setSize(1440, 900);
+      w.center();
+      w.show();
+    });
+    await wait(500);
 
     // --- New Story ---
-    await page.getByRole("button", { name: /^New story$/i }).first().click();
+    await page.getByRole("button", { name: /^New story$/i }).click({ force: true });
     await page.getByRole("heading", { name: "New Story" }).waitFor();
     await wait(400);
     console.log("new-story styles", await readSurfaceStyles(page, ".dialog-surface"));
     await shot(app, "opaque-dialog-01-new-story");
     await page.keyboard.press("Escape");
-    await wait(300);
+    await wait(400);
 
     // --- New Section ---
-    const newSection = page.getByRole("button", { name: /^New section$/i }).first();
-    await newSection.click();
+    await page.getByRole("main").getByRole("button", { name: /^New section$/i }).click({ force: true });
     await page.getByRole("heading", { name: "New Section" }).waitFor();
     await wait(400);
     console.log("new-section styles", await readSurfaceStyles(page, ".dialog-surface"));
     await shot(app, "opaque-dialog-02-new-section");
     await page.keyboard.press("Escape");
-    await wait(300);
+    await wait(400);
 
     // --- Command search ---
-    await page.keyboard.press("Meta+k");
-    await wait(200);
     await page.keyboard.press("Control+k");
     await wait(500);
     const cmd = page.locator(".command-search-panel");
@@ -143,17 +151,19 @@ async function main() {
     }
 
     // --- More menu on a finished run ---
-    const runItem = page.locator(".sidebar-item").filter({ hasText: /Checkout|Login|Failed|Passed/i }).first();
-    if (await runItem.isVisible().catch(() => false)) {
-      await runItem.click();
-      await wait(800);
-      const more = page.getByRole("button", { name: /^More$/i }).first();
+    const failedRun = page.getByText("Checkout Flow", { exact: true }).first();
+    if (await failedRun.isVisible().catch(() => false)) {
+      await failedRun.click({ force: true });
+      await wait(1000);
+      const more = page.getByRole("button", { name: "More actions" });
       if (await more.isVisible().catch(() => false)) {
-        await more.click();
+        await more.click({ force: true });
         await wait(400);
         console.log("more-menu styles", await readSurfaceStyles(page, ".toolbar-more-menu"));
         await shot(app, "opaque-dialog-03-more-menu");
         await page.keyboard.press("Escape");
+      } else {
+        console.log("More actions button not visible, skipping");
       }
     }
   } finally {
