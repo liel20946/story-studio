@@ -1142,7 +1142,12 @@ export function SettingsView() {
     <ScrollArea
       className="h-full min-h-0"
       toolbar={
-        <Toolbar titlebar surface="main" seamless>
+        <Toolbar
+          titlebar
+          surface="main"
+          seamless
+          className="settings-main-toolbar"
+        >
           <ToolbarRow inset="main" className="main-titlebar-row" />
         </Toolbar>
       }

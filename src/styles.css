@@ -90,7 +90,7 @@
   letter-spacing: 0.02em;
 }
 
-/* Soft seam — scroll-edge feel instead of a hard divider */
+/* Sidebar seam — full-height solid divider (no fade) */
 .sidebar-chrome::after {
   content: "";
   position: absolute;
@@ -98,14 +98,7 @@
   right: 0;
   z-index: 1;
   width: 1px;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    var(--color-border-separator) 12%,
-    var(--color-border-separator) 88%,
-    transparent 100%
-  );
-  opacity: 0.85;
+  background: var(--color-border-separator);
   pointer-events: none;
 }
 
@@ -1850,6 +1843,11 @@
   line-height: 1.25;
   letter-spacing: -0.02em;
   color: var(--color-text-primary);
+}
+
+/* Settings main pane — no top hairline (app views keep material-toolbar divider) */
+.settings-main-toolbar.material-toolbar {
+  box-shadow: none;
 }
 
 .settings-panel {
