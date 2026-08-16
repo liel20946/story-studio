@@ -445,15 +445,6 @@ export function registerRunsHandlers(): void {
       throw new Error("No provider conversation is available for this run yet.");
     }
 
-    // Codex Desktop cannot take over a thread while our `codex exec` child
-    // still holds the writer / ~/.codex locks — that surfaces as flicker and
-    // "Conversation not found". Claude is fine; only block for Codex.
-    if (provider === "codex" && active) {
-      throw new Error(
-        "This Codex conversation is still owned by the running story. Wait for the run to finish, then try Open in Codex again.",
-      );
-    }
-
     await openProviderSession(provider, sessionId.trim(), getRunOutputDir(runId));
     return { ok: true as const };
   });

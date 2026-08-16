@@ -38,7 +38,9 @@ export function SettingsSidebar() {
       toolbar={
         <Toolbar className="border-b-0 bg-surface-sidebar">
           <MacTitlebarRow />
-          <ToolbarRow className="h-auto min-h-0 px-1.5 pt-3 pb-2">
+          {/* Match app sidebar actions row (pt-3 pb-0) so "Story Studio"
+              lands at the same height as the Stories section label. */}
+          <ToolbarRow className="sidebar-actions-row h-auto min-h-0 px-1.5 pt-3 pb-0">
             <ul className="flex w-full flex-col">
               <SidebarListItem onClick={handleBack}>
                 <SidebarListItemContent>
@@ -53,9 +55,10 @@ export function SettingsSidebar() {
         </Toolbar>
       }
     >
-      <SidebarList className="pt-2">
-        <div>
-          <div className="flex w-full items-center gap-2 px-2 pt-2 pb-0.5">
+      <SidebarList className="pt-0 pb-1">
+        {/* pt-4 matches the stories tab panel inset above the Stories label. */}
+        <div className="pt-4">
+          <div className="flex w-full items-center gap-2 px-2 pt-0 pb-0.5">
             <SidebarListGroupTitle className="mb-0 ml-0">
               Story Studio
             </SidebarListGroupTitle>

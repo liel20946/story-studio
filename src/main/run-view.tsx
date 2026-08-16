@@ -769,17 +769,13 @@ function LiveRunView({ runId }: { runId: string }) {
     savedRunQuery.data?.providerSessionId;
   const openProvider =
     agentProvider ?? savedRunQuery.data?.agentProvider;
-  // Codex Desktop cannot attach while our exec child still owns the thread.
-  // Claude is fine mid-run; only gate Codex until the run finishes.
-  const openSessionId =
-    openProvider === "codex" && !isFinished ? undefined : providerSessionId;
 
   const storyName = run?.storyName || run?.result?.storyName;
   const viewStoryAction = useViewStoryAction(storyName);
   const openInProvider = useOpenInProvider({
     runId,
     agentProvider: openProvider,
-    providerSessionId: openSessionId,
+    providerSessionId,
   });
   const moreItems: ToolbarMoreItem[] = [
     ...(viewStoryAction ? [viewStoryAction] : []),
