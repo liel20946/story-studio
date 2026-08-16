@@ -17,6 +17,7 @@ import {
   ToolbarContent,
   ToolbarTitle,
   ToolbarActions,
+  ToolbarMoreMenu,
   Button,
   Text,
   EmptyState,
@@ -857,38 +858,35 @@ export function StoryView() {
                 </>
               ) : (
                 <>
-                  <Button
-                    variant="glass"
-                    size="titlebar"
-                    radius="full"
-                    onClick={handleEdit}
-                  >
-                    <PencilIcon className="size-4" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="glass"
-                    size="titlebar"
-                    radius="full"
-                    onClick={handleRecordAgain}
-                  >
-                    <CircleDotIcon className="size-4" />
-                    Record again
-                  </Button>
-                  <Button
-                    variant="glass"
-                    size="titlebar"
-                    radius="full"
-                    onClick={handleDuplicate}
-                    disabled={isDuplicating}
-                  >
-                    {isDuplicating ? (
-                      <Loader2Icon className="size-4 animate-spin" />
-                    ) : (
-                      <CopyIcon className="size-4" />
-                    )}
-                    Duplicate
-                  </Button>
+                  <ToolbarMoreMenu
+                    items={[
+                      {
+                        id: "edit",
+                        label: "Edit",
+                        icon: <PencilIcon />,
+                        onSelect: handleEdit,
+                      },
+                      {
+                        id: "record-again",
+                        label: "Record again",
+                        icon: <CircleDotIcon />,
+                        onSelect: handleRecordAgain,
+                      },
+                      {
+                        id: "duplicate",
+                        label: "Duplicate",
+                        icon: isDuplicating ? (
+                          <Loader2Icon className="animate-spin" />
+                        ) : (
+                          <CopyIcon />
+                        ),
+                        disabled: isDuplicating,
+                        onSelect: () => {
+                          void handleDuplicate();
+                        },
+                      },
+                    ]}
+                  />
                   <Button
                     variant={activeRun ? "filled" : "accent"}
                     size="titlebar"

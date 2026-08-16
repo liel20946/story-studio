@@ -30,6 +30,7 @@ export {
   EmptyState,
   Status,
 } from "./layout";
+export { ToolbarMoreMenu, type ToolbarMoreItem } from "./toolbar-more-menu";
 export {
   Dialog,
   DialogContent,
