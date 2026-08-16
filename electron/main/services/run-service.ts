@@ -128,12 +128,18 @@ export function buildScreenshotUrl(_runId: string, screenshotPath: string | unde
 /** Return a map of storyName -> lastRun for use in stories-service. */
 export function buildLastRunMap(
   results: RunResult[],
-): Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }> {
-  const map = new Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>();
+): Map<string, import("./contract-types.js").StoryLastRun> {
+  const map = new Map<string, import("./contract-types.js").StoryLastRun>();
   // results are newest-first; we want the newest per story
   for (const r of results) {
     if (!map.has(r.storyName)) {
-      map.set(r.storyName, { status: r.status, finishedAt: r.finishedAt });
+      map.set(r.storyName, {
+        status: r.status,
+        finishedAt: r.finishedAt,
+        runId: r.runId,
+        agentProvider: r.agentProvider,
+        providerSessionId: r.providerSessionId,
+      });
     }
   }
   return map;

@@ -23,7 +23,6 @@ import {
   ChevronRightIcon,
   BookOpenIcon,
   RotateCcwIcon,
-  ExternalLinkIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -43,7 +42,6 @@ import {
   runStart,
   runsLiveScreenshots,
   runsLiveTimeline,
-  runsOpenInProvider,
 } from "../lib/ipc";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
@@ -65,6 +63,7 @@ import {
 import { useRunScreenshotIndex } from "../lib/use-run-screenshot-index";
 import { ScreenshotImage, ScreenshotLightbox } from "../components/screenshot-image";
 import { RailAssertionLine } from "../components/rail-assertion-line";
+import { OpenInProviderButton } from "../components/open-in-provider-button";
 
 // ---------- jump back to the story detail from a run ----------
 function ViewStoryButton({ storyName }: { storyName?: string }) {
@@ -81,53 +80,6 @@ function ViewStoryButton({ storyName }: { storyName?: string }) {
     >
       <BookOpenIcon className="size-4" />
       View story
-    </Button>
-  );
-}
-
-function OpenInProviderButton({
-  runId,
-  agentProvider,
-  providerSessionId,
-}: {
-  runId: string;
-  agentProvider?: AgentProvider;
-  providerSessionId?: string;
-}) {
-  const [isOpening, setIsOpening] = React.useState(false);
-
-  if (!agentProvider || !providerSessionId) return null;
-
-  const label =
-    agentProvider === "claude-code" ? "Open in Claude" : "Open in Codex";
-
-  async function handleOpen() {
-    if (isOpening) return;
-    setIsOpening(true);
-    try {
-      await runsOpenInProvider(runId);
-    } catch (err) {
-      reportAppErrorFromUnknown(`Failed to ${label.toLowerCase()}`, err);
-    } finally {
-      setIsOpening(false);
-    }
-  }
-
-  return (
-    <Button
-      variant="filled"
-      size="titlebar"
-      radius="full"
-      onClick={handleOpen}
-      disabled={isOpening}
-      aria-label={label}
-    >
-      {isOpening ? (
-        <Loader2Icon className="size-4 animate-spin" />
-      ) : (
-        <ExternalLinkIcon className="size-4" />
-      )}
-      {label}
     </Button>
   );
 }

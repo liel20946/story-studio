@@ -34,6 +34,7 @@ import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type { StoryDetail, StorySummary } from "../lib/contract-types";
 import { InlineCode, stripCode } from "../components/inline-code";
 import { RailAssertionLine } from "../components/rail-assertion-line";
+import { OpenInProviderButton } from "../components/open-in-provider-button";
 import { useActiveRunForStory, useRegisterRun } from "../lib/run-store";
 import { buildVarColors } from "../lib/story-var-colors";
 
@@ -889,6 +890,13 @@ export function StoryView() {
                     )}
                     Duplicate
                   </Button>
+                  {!activeRun && story.lastRun?.runId ? (
+                    <OpenInProviderButton
+                      runId={story.lastRun.runId}
+                      agentProvider={story.lastRun.agentProvider}
+                      providerSessionId={story.lastRun.providerSessionId}
+                    />
+                  ) : null}
                   <Button
                     variant={activeRun ? "filled" : "accent"}
                     size="titlebar"
