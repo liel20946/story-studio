@@ -163,13 +163,14 @@ function makeRun({
   events,
   steps,
   variableOverrides,
+  demoScreenshots = false,
 }) {
   const runBase = path.join(runsDir, runId);
   ensureDir(path.join(runBase, "screenshots"));
   if (steps?.length) {
     writeJson(path.join(runBase, "steps.json"), steps);
   }
-  if (withDemoScreenshots) {
+  if (demoScreenshots) {
     const shotsDir = path.join(runBase, "screenshots");
     writeDemoPng(path.join(shotsDir, "step-01.png"), [30, 30, 34]);
     writeDemoPng(path.join(shotsDir, "step-02.png"), [40, 42, 48]);
@@ -207,6 +208,7 @@ const runLoginPassed = makeRun({
     email: "test@example.com",
     password: "password123",
   },
+  demoScreenshots: true,
   startedAt: now - 420_000,
   finishedAt: now - 12_000,
   events: [
