@@ -234,12 +234,28 @@ export function formatBulkContextForPrompt(
       : "";
 
   return `## Attached context
-The user attached these paths for you to use when inventing variable values (e.g. HTML snippets, fixtures, sample payloads). Prefer real content from these files over invented placeholders.
+The user attached these paths so you can put their REAL file contents into variable values.
+
+Critical:
+- Copy the file text itself into the relevant variable (e.g. paste/HTML/body/content/payload).
+- Do NOT put only a filename or path in the variable.
+- Do NOT invent substitute HTML/JSON when an attached file already has the content.
+- If several files are attached and the user wants one run per file, make one run per file and use that file's full content.
+
+Example — user attaches \`welcome.html\` containing:
+\`\`\`html
+<html><body><h1>Welcome</h1><p>Hello Alice</p></body></html>
+\`\`\`
+and asks for a run that pastes that HTML into \`html_body\`. Correct variables entry:
+\`\`\`json
+{ "label": "welcome", "variables": { "html_body": "<html><body><h1>Welcome</h1><p>Hello Alice</p></body></html>" } }
+\`\`\`
+Wrong: \`{ "html_body": "welcome.html" }\` or invented markup.
 
 ### Paths
 ${attachmentLines}
 ${copiedNote}
 
-### File contents
+### File contents (use these literally)
 ${fileBlocks.join("\n\n") || "(no readable text files found in attachments)"}`;
 }
