@@ -113,7 +113,9 @@ export function useChatModelSelection(capabilities: AgentCapabilities | null) {
     (next: AgentModelOverride) => {
       const resolved = findMatchingSelection(provider, capabilities, next);
       writeStoredOverride(resolved);
-      setSelection(resolved);
+      setSelection((prev) =>
+        optionKey(resolved) === optionKey(prev) ? prev : resolved,
+      );
     },
     [provider, capabilities],
   );

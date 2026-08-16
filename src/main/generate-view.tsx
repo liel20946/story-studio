@@ -359,7 +359,7 @@ function GenerateChatView({ conversationId }: { conversationId: string }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6">
         <Text color="secondary">Conversation not found.</Text>
-        <Button variant="secondary" size="small" onClick={() => navigate({ to: "/generate" })}>
+        <Button variant="secondary" size="small" onClick={() => navigate({ to: "/stories" })}>
           Back
         </Button>
       </div>
