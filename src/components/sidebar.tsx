@@ -908,6 +908,16 @@ export function AppSidebar() {
     }
   }
 
+  function openHistory() {
+    setTab("stories");
+    navigate({ to: "/history" });
+  }
+
+  function openScheduled() {
+    setTab("stories");
+    navigate({ to: "/scheduled" });
+  }
+
   // One unified dialog state for section create/rename and story rename.
   const [dialog, setDialog] = React.useState<{
     open: boolean;
@@ -1195,8 +1205,8 @@ export function AppSidebar() {
         <div className="px-2 pt-3">
           <SystemActions
             active={systemActive}
-            onHistory={() => navigate({ to: "/history" })}
-            onScheduled={() => navigate({ to: "/scheduled" })}
+            onHistory={openHistory}
+            onScheduled={openScheduled}
             onSearch={openCommandSearch}
           />
         </div>
