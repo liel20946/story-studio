@@ -23,6 +23,7 @@ import {
   ChevronRightIcon,
   BookOpenIcon,
   RotateCcwIcon,
+  ExternalLinkIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -32,6 +33,8 @@ import {
   ToolbarContent,
   ToolbarTitle,
   ToolbarActions,
+  ToolbarMoreMenu,
+  type ToolbarMoreItem,
   Button,
   Badge,
   Text,
@@ -63,25 +66,20 @@ import {
 import { useRunScreenshotIndex } from "../lib/use-run-screenshot-index";
 import { ScreenshotImage, ScreenshotLightbox } from "../components/screenshot-image";
 import { RailAssertionLine } from "../components/rail-assertion-line";
-import { OpenInProviderButton } from "../components/open-in-provider-button";
+import { useOpenInProvider } from "../components/open-in-provider-button";
 
 // ---------- jump back to the story detail from a run ----------
-function ViewStoryButton({ storyName }: { storyName?: string }) {
+function useViewStoryAction(storyName?: string): ToolbarMoreItem | null {
   const navigate = useNavigate();
   if (!storyName) return null;
-  return (
-    <Button
-      variant="filled"
-      size="titlebar"
-      radius="full"
-      onClick={() =>
-        navigate({ to: "/story/$name", params: { name: storyName } })
-      }
-    >
-      <BookOpenIcon className="size-4" />
-      View story
-    </Button>
-  );
+  return {
+    id: "view-story",
+    label: "View story",
+    icon: <BookOpenIcon />,
+    onSelect: () => {
+      navigate({ to: "/story/$name", params: { name: storyName } });
+    },
+  };
 }
 
 // ---------- retry a finished run with the same variables ----------
@@ -774,6 +772,34 @@ function LiveRunView({ runId }: { runId: string }) {
   const openProvider =
     agentProvider ?? savedRunQuery.data?.agentProvider;
 
+  const storyName = run?.storyName || run?.result?.storyName;
+  const viewStoryAction = useViewStoryAction(storyName);
+  const openInProvider = useOpenInProvider({
+    runId,
+    agentProvider: openProvider,
+    providerSessionId,
+  });
+  const moreItems: ToolbarMoreItem[] = [
+    ...(viewStoryAction ? [viewStoryAction] : []),
+    ...(openInProvider.available
+      ? [
+          {
+            id: "open-in-provider",
+            label: openInProvider.label,
+            icon: openInProvider.isOpening ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <ExternalLinkIcon />
+            ),
+            disabled: openInProvider.isOpening,
+            onSelect: () => {
+              void openInProvider.open();
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <ScrollArea
       toolbar={
@@ -785,14 +811,7 @@ function LiveRunView({ runId }: { runId: string }) {
               </ToolbarTitle>
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
-              <ViewStoryButton
-                storyName={run?.storyName || run?.result?.storyName}
-              />
-              <OpenInProviderButton
-                runId={runId}
-                agentProvider={openProvider}
-                providerSessionId={providerSessionId}
-              />
+              <ToolbarMoreMenu items={moreItems} />
               {!isFinished && (
                 <Button
                   variant="glass"
@@ -807,7 +826,7 @@ function LiveRunView({ runId }: { runId: string }) {
               )}
               {isFinished && (
                 <RetryRunButton
-                  storyName={run?.storyName || result?.storyName}
+                  storyName={storyName}
                   storyTitle={run?.storyTitle || result?.storyTitle}
                   variableOverrides={result?.variableOverrides}
                 />
@@ -903,6 +922,32 @@ function HistoricalRunView({
     runId,
     screenshotPaths.length,
   );
+  const viewStoryAction = useViewStoryAction(record.storyName);
+  const openInProvider = useOpenInProvider({
+    runId,
+    agentProvider: record.agentProvider,
+    providerSessionId: record.providerSessionId,
+  });
+  const moreItems: ToolbarMoreItem[] = [
+    ...(viewStoryAction ? [viewStoryAction] : []),
+    ...(openInProvider.available
+      ? [
+          {
+            id: "open-in-provider",
+            label: openInProvider.label,
+            icon: openInProvider.isOpening ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <ExternalLinkIcon />
+            ),
+            disabled: openInProvider.isOpening,
+            onSelect: () => {
+              void openInProvider.open();
+            },
+          },
+        ]
+      : []),
+  ];
 
   return (
     <ScrollArea
@@ -913,12 +958,7 @@ function HistoricalRunView({
               <ToolbarTitle>{record.storyTitle}</ToolbarTitle>
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
-              <ViewStoryButton storyName={record.storyName} />
-              <OpenInProviderButton
-                runId={runId}
-                agentProvider={record.agentProvider}
-                providerSessionId={record.providerSessionId}
-              />
+              <ToolbarMoreMenu items={moreItems} />
               <RetryRunButton
                 storyName={record.storyName}
                 storyTitle={record.storyTitle}

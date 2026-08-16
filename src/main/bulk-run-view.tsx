@@ -21,6 +21,7 @@ import {
   ToolbarContent,
   ToolbarTitle,
   ToolbarActions,
+  ToolbarMoreMenu,
   Button,
   Badge,
   Text,
@@ -895,6 +896,22 @@ export function BulkRunView() {
                 </ToolbarTitle>
               </ToolbarContent>
               <ToolbarActions className="detail-view-toolbar-actions">
+                {(bulkRunning || canResume) && (
+                  <ToolbarMoreMenu
+                    items={[
+                      {
+                        id: "run-more",
+                        label: "Run more",
+                        icon: <ChevronLeftIcon />,
+                        disabled: bulkRunning || bulkDraining,
+                        onSelect: () => {
+                          setSession(null);
+                          setSelected(new Set());
+                        },
+                      },
+                    ]}
+                  />
+                )}
                 {bulkRunning && (
                   <Button
                     variant="glass"
@@ -928,18 +945,20 @@ export function BulkRunView() {
                     Resume
                   </Button>
                 )}
-                <Button
-                  variant="glass"
-                  size="titlebar"
-                  disabled={bulkRunning || bulkDraining}
-                  onClick={() => {
-                    setSession(null);
-                    setSelected(new Set());
-                  }}
-                >
-                  <ChevronLeftIcon className="size-4" />
-                  Run more
-                </Button>
+                {!bulkRunning && !canResume && (
+                  <Button
+                    variant="glass"
+                    size="titlebar"
+                    disabled={bulkDraining}
+                    onClick={() => {
+                      setSession(null);
+                      setSelected(new Set());
+                    }}
+                  >
+                    <ChevronLeftIcon className="size-4" />
+                    Run more
+                  </Button>
+                )}
               </ToolbarActions>
             </ToolbarRow>
           </Toolbar>
@@ -965,9 +984,15 @@ export function BulkRunView() {
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
               {total > 0 && (
-                <Button variant="glass" size="titlebar" radius="full" onClick={toggleAll}>
-                  {allSelected ? "Deselect all" : "Select all"}
-                </Button>
+                <ToolbarMoreMenu
+                  items={[
+                    {
+                      id: "toggle-all",
+                      label: allSelected ? "Deselect all" : "Select all",
+                      onSelect: toggleAll,
+                    },
+                  ]}
+                />
               )}
               <Button
                 variant="accent"
