@@ -103,49 +103,34 @@ async function captureSuite(theme) {
   await shot(app, `${prefix}-01-home`);
 
   // Stories tab
-  const storiesTab = page.locator('.segment-control button[aria-label="Stories"]').first();
-  if (await storiesTab.count()) {
-    await storiesTab.click({ force: true });
-    await wait(600);
-  }
+  await page.getByRole("tab", { name: "Stories" }).click({ force: true });
+  await wait(600);
   await shot(app, `${prefix}-02-stories`);
 
-  // Open first story if present
-  const storyItem = page.locator(".sidebar-scroll button").first();
-  if (await storyItem.count()) {
-    await storyItem.click({ force: true });
-    await wait(900);
-    await shot(app, `${prefix}-03-story-detail`);
-  }
+  // Open a story by name
+  const loginStory = page.getByRole("button", { name: /Login Flow/i }).first();
+  await loginStory.click({ force: true });
+  await wait(1000);
+  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 }).catch(() => null);
+  await shot(app, `${prefix}-03-story-detail`);
 
-  // Runs tab
-  const runsTab = page.locator('.segment-control button[aria-label="Runs"]').first();
-  if (await runsTab.count()) {
-    await runsTab.click({ force: true });
-    await wait(600);
-    const runItem = page.locator(".sidebar-scroll button").first();
-    if (await runItem.count()) {
-      await runItem.click({ force: true });
-      await wait(900);
-      await shot(app, `${prefix}-04-run-detail`);
-    }
-  }
+  // Runs tab + first run
+  await page.getByRole("tab", { name: "Runs" }).click({ force: true });
+  await wait(700);
+  const loginRun = page.getByRole("button", { name: /Login Flow/i }).first();
+  await loginRun.click({ force: true });
+  await wait(1000);
+  await shot(app, `${prefix}-04-run-detail`);
 
   // Generate
-  const generateTab = page.locator('.segment-control button[aria-label="Generate"]').first();
-  if (await generateTab.count()) {
-    await generateTab.click({ force: true });
-    await wait(800);
-    await shot(app, `${prefix}-05-generate`);
-  }
+  await page.getByRole("tab", { name: "Generate" }).click({ force: true });
+  await wait(800);
+  await shot(app, `${prefix}-05-generate`);
 
   // Scheduled
-  const scheduledTab = page.locator('.segment-control button[aria-label="Scheduled"]').first();
-  if (await scheduledTab.count()) {
-    await scheduledTab.click({ force: true });
-    await wait(800);
-    await shot(app, `${prefix}-06-scheduled`);
-  }
+  await page.getByRole("tab", { name: "Scheduled" }).click({ force: true });
+  await wait(800);
+  await shot(app, `${prefix}-06-scheduled`);
 
   await openSettings(page, "Appearance");
   await shot(app, `${prefix}-07-settings-appearance`);

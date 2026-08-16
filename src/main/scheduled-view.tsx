@@ -300,7 +300,7 @@ export function ScheduledOverviewView() {
       <div className="home-view">
         <div className="home-content">
           <div className="home-prompt">
-            <h1 className="home-prompt-title">What stories should we schedule ?</h1>
+            <h1 className="home-prompt-title">What stories should we schedule?</h1>
             <p className="home-prompt-sub">
               {ranCount} ran · {upcomingCount} upcoming
             </p>
