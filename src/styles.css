@@ -109,12 +109,10 @@
   pointer-events: none;
 }
 
-/* Main pane — elevated content plane */
+/* Main pane — full height, square edges (no radius — avoids sidebar seam triangle) */
 .main-pane {
   background: var(--bg);
   overflow: hidden;
-  border-radius: 10px 0 0 10px;
-  box-shadow: -0.5px 0 0 var(--color-border-separator);
 }
 
 /* Sidebar selection — soft fill, immediate feedback */
