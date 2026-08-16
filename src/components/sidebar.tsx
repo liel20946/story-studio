@@ -756,7 +756,7 @@ function SystemActions({
   );
 }
 
-// Stories | History | Bulk — icon-only segment + Plus dropdown.
+// Stories | History | Bulk — icon-only segment; Plus only on Stories.
 function LibraryTabs({
   value,
   onChange,
@@ -775,6 +775,7 @@ function LibraryTabs({
   ];
   const activeIndex =
     value === "stories" ? 0 : value === "history" ? 1 : 2;
+  const showPlus = value === "stories";
 
   return (
     <div className="library-tabs-row">
@@ -804,41 +805,43 @@ function LibraryTabs({
         })}
       </div>
 
-      <DropdownMenu.Root modal={false}>
-        <DropdownMenu.Trigger asChild>
-          <Button
-            variant="transparent"
-            size="titlebar"
-            iconOnly
-            className="library-plus-trigger"
-            aria-label="New"
-          >
-            <PlusIcon className="size-3.5" />
-          </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            className="library-plus-menu z-50 min-w-[10.5rem] rounded-control border border-separator bg-popover p-1 shadow-lg"
-            align="end"
-            sideOffset={6}
-          >
-            <DropdownMenu.Item
-              className="flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-small text-primary outline-none data-[highlighted]:bg-surface-hover"
-              onSelect={onNewStory}
+      {showPlus ? (
+        <DropdownMenu.Root modal={false}>
+          <DropdownMenu.Trigger asChild>
+            <Button
+              variant="transparent"
+              size="titlebar"
+              iconOnly
+              className="library-plus-trigger"
+              aria-label="New"
             >
-              <CircleDotIcon className="size-3.5 text-secondary" />
-              New story
-            </DropdownMenu.Item>
-            <DropdownMenu.Item
-              className="flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-small text-primary outline-none data-[highlighted]:bg-surface-hover"
-              onSelect={onNewSection}
+              <PlusIcon className="size-3.5" />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              className="library-plus-menu z-50 min-w-[10.5rem] rounded-control border border-separator bg-popover p-1 shadow-lg"
+              align="end"
+              sideOffset={6}
             >
-              <FolderPlusIcon className="size-3.5 text-secondary" />
-              New section
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+              <DropdownMenu.Item
+                className="flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-small text-primary outline-none data-[highlighted]:bg-surface-hover"
+                onSelect={onNewStory}
+              >
+                <CircleDotIcon className="size-3.5 text-secondary" />
+                New story
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                className="flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-small text-primary outline-none data-[highlighted]:bg-surface-hover"
+                onSelect={onNewSection}
+              >
+                <FolderPlusIcon className="size-3.5 text-secondary" />
+                New section
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      ) : null}
     </div>
   );
 }
@@ -1260,7 +1263,7 @@ export function AppSidebar() {
             />
           </div>
         ) : null}
-        <div key={tab} className={cn("tab-panel-in", tab === "stories" ? "pt-3" : "pt-3")}>
+        <div key={tab} className="tab-panel-in pt-3">
           {tab === "stories" ? (
             <StoriesTab
               hasStories={hasStories}
