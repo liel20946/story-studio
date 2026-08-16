@@ -164,6 +164,7 @@ function makeRun({
     steps,
     agentProvider: "codex",
     agentModel: "gpt-5.4",
+    providerSessionId: `demo-session-${runId}`,
     ...(variableOverrides ? { variableOverrides } : {}),
   };
 }

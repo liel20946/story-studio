@@ -60,6 +60,7 @@ import {
   settleRunningEvents,
 } from "./run-event-settle.js";
 import { classifyMcpTool } from "./mcp-tool-event.js";
+import { extractProviderSessionId } from "./provider-session.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -87,6 +88,7 @@ interface RunState {
   startedAt: number;
   agentProvider: "codex";
   agentModel: string;
+  providerSessionId?: string;
   events: RunEvent[];
   // Child process — kept for cancellation.
   process: ChildProcess | null;
@@ -113,6 +115,7 @@ export function listActiveCodexRuns(): ActiveRunSnapshot[] {
     startedAt: state.startedAt,
     agentProvider: state.agentProvider,
     agentModel: state.agentModel,
+    providerSessionId: state.providerSessionId,
     events: state.events.filter((e) => !isBenignCodexStderrEvent(e)),
     variableOverrides: state.variableOverrides,
     queued: state.queued,
@@ -384,6 +387,7 @@ export async function startRun(
       error: "Cancelled by user",
       agentProvider: state.agentProvider,
       agentModel: state.agentModel,
+      providerSessionId: state.providerSessionId,
     };
     return finalizeRun(cancelledResult, events);
   }
@@ -427,6 +431,7 @@ export async function startRun(
         error: chromeExt.message,
         agentProvider: state.agentProvider,
         agentModel: state.agentModel,
+        providerSessionId: state.providerSessionId,
       };
       return finalizeRun(failResult, events);
     }
@@ -476,6 +481,7 @@ export async function startRun(
       error: message,
       agentProvider: state.agentProvider,
       agentModel: state.agentModel,
+      providerSessionId: state.providerSessionId,
     };
     return finalizeRun(failResult, events);
   }
@@ -530,6 +536,7 @@ export async function startRun(
       error: "Cancelled by user",
       agentProvider: state.agentProvider,
       agentModel: state.agentModel,
+      providerSessionId: state.providerSessionId,
     };
     return finalizeRun(cancelledResult, events);
   }
@@ -618,6 +625,7 @@ export async function startRun(
         screenshotPath,
         state.agentProvider,
         state.agentModel,
+        state.providerSessionId,
       );
       finalizeRun(result, events).then(resolve);
     });
@@ -708,6 +716,7 @@ export async function startRun(
             error,
             agentProvider: state.agentProvider,
             agentModel: state.agentModel,
+            providerSessionId: state.providerSessionId,
           };
 
           return finalizeRun(result, events).then(resolve);
@@ -722,6 +731,7 @@ export async function startRun(
             screenshotPath,
             state.agentProvider,
             state.agentModel,
+            state.providerSessionId,
           );
           return finalizeRun(result, events).then(resolve);
         });
@@ -745,6 +755,11 @@ function handleCodexLine(
 ): void {
   const runId = state.runId;
   const type = parsed["type"] as string | undefined;
+
+  if (!state.providerSessionId) {
+    const sessionId = extractProviderSessionId(parsed);
+    if (sessionId) state.providerSessionId = sessionId;
+  }
 
   if (type === "turn.completed") {
     const usage = parsed["usage"] as Record<string, number> | undefined;
@@ -863,6 +878,7 @@ function buildErrorResult(
   screenshotPath: string,
   agentProvider: "codex" = "codex",
   agentModel?: string,
+  providerSessionId?: string,
 ): RunResult {
   return {
     runId,
@@ -878,6 +894,7 @@ function buildErrorResult(
     error,
     agentProvider,
     agentModel,
+    providerSessionId,
   };
 }
 

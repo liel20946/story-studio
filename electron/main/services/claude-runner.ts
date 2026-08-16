@@ -59,6 +59,7 @@ import {
 } from "./run-event-settle.js";
 import { buildClaudeSpawnEnv } from "./agent-spawn-env.js";
 import { classifyMcpTool } from "./mcp-tool-event.js";
+import { extractProviderSessionId } from "./provider-session.js";
 
 interface RunState {
   runId: string;
@@ -67,6 +68,7 @@ interface RunState {
   startedAt: number;
   agentProvider: "claude-code";
   agentModel: string;
+  providerSessionId?: string;
   events: RunEvent[];
   process: ChildProcess | null;
   cancelled: boolean;
@@ -86,6 +88,7 @@ export function listActiveClaudeRuns(): ActiveRunSnapshot[] {
     startedAt: state.startedAt,
     agentProvider: state.agentProvider,
     agentModel: state.agentModel,
+    providerSessionId: state.providerSessionId,
     events: [...state.events],
     variableOverrides: state.variableOverrides,
     queued: state.queued,
@@ -136,6 +139,7 @@ function buildErrorResult(
   screenshotPath: string,
   agentProvider: "claude-code" = "claude-code",
   agentModel?: string,
+  providerSessionId?: string,
 ): RunResult {
   return {
     runId,
@@ -151,6 +155,7 @@ function buildErrorResult(
     error,
     agentProvider,
     agentModel,
+    providerSessionId,
   };
 }
 
@@ -211,6 +216,11 @@ function handleClaudeLine(
   onTokenUsage: (tu: { inputTokens: number; outputTokens: number }) => void,
   onAgentMessage: (msg: string) => void,
 ): void {
+  if (!state.providerSessionId) {
+    const sessionId = extractProviderSessionId(parsed);
+    if (sessionId) state.providerSessionId = sessionId;
+  }
+
   const type = parsed["type"] as string | undefined;
 
   if (type === "result") {
@@ -383,6 +393,7 @@ export async function startClaudeRun(
       error: "Cancelled by user",
       agentProvider: state.agentProvider,
       agentModel: state.agentModel,
+      providerSessionId: state.providerSessionId,
     };
     return finalizeRun(cancelledResult, events);
   }
@@ -435,6 +446,7 @@ export async function startClaudeRun(
       error: msg,
       agentProvider: state.agentProvider,
       agentModel: state.agentModel,
+      providerSessionId: state.providerSessionId,
     };
     return finalizeRun(failResult, events);
   }
@@ -471,6 +483,7 @@ export async function startClaudeRun(
         error: msg,
         agentProvider: state.agentProvider,
         agentModel: state.agentModel,
+        providerSessionId: state.providerSessionId,
       },
       events,
     );
@@ -532,6 +545,7 @@ export async function startClaudeRun(
       error: "Cancelled by user",
       agentProvider: state.agentProvider,
       agentModel: state.agentModel,
+      providerSessionId: state.providerSessionId,
     };
     return finalizeRun(cancelledResult, events);
   }
@@ -621,6 +635,7 @@ export async function startClaudeRun(
         screenshotPath,
         state.agentProvider,
         state.agentModel,
+        state.providerSessionId,
       );
       finalizeRun(result, events).then(resolve);
     });
@@ -704,6 +719,7 @@ export async function startClaudeRun(
         error: cancelled ? "Cancelled by user" : exitError,
         agentProvider: state.agentProvider,
         agentModel: state.agentModel,
+        providerSessionId: state.providerSessionId,
       };
 
       finalizeRun(result, events).then(resolve);

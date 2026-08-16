@@ -256,6 +256,9 @@ export const runsActive = (): Promise<import("./contract-types").ActiveRunSnapsh
 export const runsGet = (runId: string): Promise<RunRecord> =>
   ipcInvoke("runs:get", { runId });
 
+export const runsOpenInProvider = (runId: string): Promise<{ ok: true }> =>
+  ipcInvoke("runs:openInProvider", { runId });
+
 export const runsDelete = (runId: string): Promise<{ ok: true }> =>
   ipcInvoke("runs:delete", { runId });
 
