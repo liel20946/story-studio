@@ -715,7 +715,7 @@ function SystemActions({
   );
 }
 
-// Stories | Bulk library tabs with a single Plus dropdown (New story / New section).
+// Stories | Bulk library tabs — icon-only segment + Plus dropdown.
 function LibraryTabs({
   value,
   onChange,
@@ -736,15 +736,10 @@ function LibraryTabs({
   return (
     <div className="library-tabs-row">
       <div
-        className="segment-control segment-control--labeled segment-control--library"
+        className="segment-control segment-control--library"
         role="tablist"
         aria-label="Library"
         data-active-index={activeIndex}
-        style={
-          {
-            "--segment-active-index": String(activeIndex),
-          } as React.CSSProperties
-        }
       >
         <span className="segment-control-thumb" aria-hidden />
         {options.map((opt) => {
@@ -761,7 +756,6 @@ function LibraryTabs({
               onClick={() => onChange(opt.value)}
             >
               <Icon className="size-3.5" />
-              <span>{opt.label}</span>
             </button>
           );
         })}

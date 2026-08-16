@@ -34,7 +34,7 @@
   --font-mono: var(--font-family-mono);
 }
 
-/* Apple-inspired craft — system type, material layers, coral accent */
+/* Light — clean white chrome (current look) with coral accent */
 :root {
   --font-family-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Geist Variable", "Geist", system-ui, sans-serif;
   --font-family-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist Variable", "Geist", system-ui, sans-serif;
@@ -46,11 +46,11 @@
   --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --press-scale: 0.97;
 
-  --bg: #f2f2f7;
+  --bg: #ffffff;
   --bg-secondary: #ffffff;
   --bg-elevated: #ffffff;
-  --fg: #1d1d1f;
-  --theme-accent: #ef4444;
+  --fg: #030303;
+  --theme-accent: #ff6363;
   --accent: var(--theme-accent);
   --selection: #0a0a0a;
   --red: #dc3b3b;
@@ -73,24 +73,24 @@
   --support-red-10: rgb(239 68 68 / 12%);
   --support-yellow-10: rgb(from var(--yellow) r g b / 12%);
   --color-text-primary: var(--fg);
-  --color-text-secondary: var(--fg-55);
-  --color-text-tertiary: var(--fg-40);
-  --color-text-quaternary: var(--fg-20);
+  --color-text-secondary: #161a20;
+  --color-text-tertiary: rgb(from var(--fg) r g b / 50%);
+  --color-text-quaternary: rgb(from var(--fg) r g b / 32%);
   --color-text-link: var(--accent);
-  --color-surface-control: var(--fg-8);
-  --color-surface-control-subtle: var(--fg-5);
-  --color-surface-hover: var(--fg-8);
-  --color-surface-well: var(--fg-5);
-  --color-surface-sidebar: rgb(242 242 247 / 92%);
-  --color-surface-popover: var(--bg-elevated);
-  --color-border-separator: var(--fg-12);
-  --color-border-field: var(--fg-20);
-  --color-window-bg: var(--bg);
+  --color-surface-control: #f0f0f0;
+  --color-surface-control-subtle: #f6f6f6;
+  --color-surface-hover: #f0f0f0;
+  --color-surface-well: #f6f6f6;
+  --color-surface-sidebar: #f2f2f2;
+  --color-surface-popover: #ffffff;
+  --color-border-separator: rgb(from var(--fg) r g b / 10%);
+  --color-border-field: rgb(from var(--fg) r g b / 18%);
+  --color-window-bg: #f2f2f2;
   --glass-bg: rgb(255 255 255 / 78%);
   --glass-bg-elevated: rgb(255 255 255 / 88%);
   --glass-highlight: rgb(255 255 255 / 55%);
   --glass-shadow: rgb(0 0 0 / 6%);
-  --material-sidebar: rgb(242 242 247 / 88%);
+  --material-sidebar: rgb(242 242 242 / 92%);
   --material-toolbar: rgb(255 255 255 / 72%);
   --material-card: rgb(255 255 255 / 92%);
   --material-edge: rgb(255 255 255 / 65%);
@@ -123,44 +123,47 @@
   --detail-view-inset-x: 1.25rem;
 }
 
+/* Dark — Claude Code desktop warm charcoal + coral accent (not pure black) */
 .dark {
-  --bg: #000000;
-  --bg-secondary: #1c1c1e;
-  --bg-elevated: #2c2c2e;
-  --fg: #f5f5f7;
-  --theme-accent: #ef4444;
-  --selection: #f5f5f7;
-  --red: #ef4444;
-  --orange: #fb923c;
-  --yellow: #facc15;
-  --green: #4ade80;
-  --blue: #60a5fa;
-  --purple: #c084fc;
-  --magenta: #f472b6;
-  --color-text-secondary: #a1a1a6;
-  --color-text-tertiary: #8e8e93;
-  --color-text-quaternary: #636366;
-  --color-surface-control: #2c2c2e;
-  --color-surface-control-subtle: #1c1c1e;
-  --color-surface-hover: #3a3a3c;
-  --color-surface-well: #1c1c1e;
-  --color-surface-sidebar: rgb(28 28 30 / 88%);
-  --color-surface-popover: #2c2c2e;
-  --color-border-separator: #38383a;
-  --color-border-field: #48484a;
-  --color-window-bg: #000000;
-  --glass-bg: rgb(28 28 30 / 82%);
-  --glass-bg-elevated: rgb(44 44 46 / 88%);
-  --glass-highlight: rgb(255 255 255 / 8%);
-  --glass-shadow: rgb(0 0 0 / 35%);
-  --material-sidebar: rgb(28 28 30 / 82%);
-  --material-toolbar: rgb(28 28 30 / 72%);
-  --material-card: rgb(28 28 30 / 94%);
-  --material-edge: rgb(255 255 255 / 10%);
-  --accent-contrast: #ffffff;
+  --bg: #1c1512;
+  --bg-secondary: #241e1a;
+  --bg-elevated: #2a2320;
+  --fg: #f2ebe3;
+  --theme-accent: #d97757;
+  --accent: var(--theme-accent);
+  --selection: #f2ebe3;
+  --red: #e87070;
+  --orange: #e09a5a;
+  --yellow: #e0c060;
+  --green: #7ec98a;
+  --blue: #7aa2d4;
+  --purple: #b794d4;
+  --magenta: #d48aa8;
+  --color-text-primary: var(--fg);
+  --color-text-secondary: rgb(242 235 227 / 72%);
+  --color-text-tertiary: rgb(242 235 227 / 48%);
+  --color-text-quaternary: rgb(242 235 227 / 32%);
+  --color-surface-control: #322b27;
+  --color-surface-control-subtle: #241e1a;
+  --color-surface-hover: #352e2a;
+  --color-surface-well: #241e1a;
+  --color-surface-sidebar: #181310;
+  --color-surface-popover: #2a2320;
+  --color-border-separator: rgb(242 235 227 / 10%);
+  --color-border-field: rgb(242 235 227 / 16%);
+  --color-window-bg: #1c1512;
+  --glass-bg: rgb(36 30 26 / 86%);
+  --glass-bg-elevated: rgb(42 35 32 / 90%);
+  --glass-highlight: rgb(255 255 255 / 6%);
+  --glass-shadow: rgb(0 0 0 / 40%);
+  --material-sidebar: rgb(24 19 16 / 92%);
+  --material-toolbar: rgb(36 30 26 / 78%);
+  --material-card: rgb(42 35 32 / 94%);
+  --material-edge: rgb(255 255 255 / 8%);
+  --accent-contrast: #1c1512;
   --accent-glow: rgb(from var(--accent) r g b / 22%);
-  --support-red-10: rgb(239 68 68 / 14%);
-  --color-window-outline: rgb(255 255 255 / 8%);
+  --support-red-10: rgb(232 112 112 / 14%);
+  --color-window-outline: rgb(255 255 255 / 6%);
 }
 
 html,

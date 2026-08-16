@@ -1,20 +1,40 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRightIcon, HistoryIcon } from "lucide-react";
-import { Badge, Button } from "@/components/ui";
+import {
+  CheckIcon,
+  XIcon,
+  ClockIcon,
+  HistoryIcon,
+  ImageIcon,
+  ChevronRightIcon,
+} from "lucide-react";
+import {
+  Badge,
+  Button,
+  ScrollArea,
+  Toolbar,
+  ToolbarRow,
+  ToolbarContent,
+  ToolbarTitle,
+  EmptyState,
+} from "@/components/ui";
+import { ScreenshotImage } from "@/components/screenshot-image";
 import { runsList } from "../lib/ipc";
 import { useAllRuns } from "../lib/run-store";
+import { cn } from "@/lib/utils";
 import type { RunResult, RunStatus } from "../lib/contract-types";
 
 function statusBadgeColor(
   status: RunStatus,
-): "green" | "red" | "neutral" {
+): "green" | "red" | "neutral" | "yellow" | "blue" {
   switch (status) {
     case "passed":
       return "green";
     case "cancelled":
       return "neutral";
+    case "blocked":
+      return "yellow";
     default:
       return "red";
   }
@@ -47,7 +67,145 @@ function formatRelative(epochMs: number): string {
   return `${days}d ago`;
 }
 
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const secs = Math.round(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const rem = secs % 60;
+  if (mins < 60) return rem > 0 ? `${mins}m ${rem}s` : `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
+}
+
+function heroScreenshotPath(run: RunResult): string | undefined {
+  if (run.screenshotPath) return run.screenshotPath;
+  if (run.screenshotPaths?.length) return run.screenshotPaths[run.screenshotPaths.length - 1];
+  return undefined;
+}
+
 type HistoryRow = RunResult & { isRunning?: boolean; isQueued?: boolean };
+
+function HistoryRunCard({
+  run,
+  onOpen,
+}: {
+  run: HistoryRow;
+  onOpen: () => void;
+}) {
+  const live = !!(run.isRunning || run.isQueued);
+  const shot = heroScreenshotPath(run);
+  const assertions = run.assertions ?? [];
+  const passedCount = assertions.filter((a) => a.passed).length;
+  const failedCount = assertions.filter((a) => !a.passed).length;
+  const duration =
+    !live && run.finishedAt > run.startedAt
+      ? formatDuration(run.finishedAt - run.startedAt)
+      : "";
+  const when = formatRelative(live ? run.startedAt : run.finishedAt);
+  const previewAssertions = assertions.slice(0, 3);
+
+  return (
+    <button type="button" className="history-run-card" onClick={onOpen}>
+      <div className="history-run-card-shot">
+        {shot ? (
+          <ScreenshotImage
+            path={shot}
+            alt=""
+            className="history-run-card-shot-img"
+            fit="cover"
+          />
+        ) : (
+          <div className="history-run-card-shot-empty">
+            <ImageIcon className="size-5 text-quaternary" />
+          </div>
+        )}
+      </div>
+
+      <div className="history-run-card-body">
+        <div className="history-run-card-top">
+          <span className="history-run-card-title">{run.storyTitle}</span>
+          {run.isQueued ? (
+            <Badge color="yellow" size="xs">
+              Queued
+            </Badge>
+          ) : run.isRunning ? (
+            <Badge color="blue" size="xs">
+              Running
+            </Badge>
+          ) : (
+            <Badge color={statusBadgeColor(run.status)} size="xs">
+              {statusBadgeLabel(run.status)}
+            </Badge>
+          )}
+        </div>
+
+        {(run.summary || previewAssertions.length > 0) && (
+          <div className="history-run-card-mid">
+            {run.summary ? (
+              <p className="history-run-card-summary">{run.summary}</p>
+            ) : null}
+            {previewAssertions.length > 0 ? (
+              <ul className="history-run-card-assertions">
+                {previewAssertions.map((a, i) => (
+                  <li
+                    key={`${i}-${a.text.slice(0, 24)}`}
+                    className={cn(
+                      "history-run-card-assertion",
+                      a.passed
+                        ? "history-run-card-assertion--pass"
+                        : "history-run-card-assertion--fail",
+                    )}
+                  >
+                    {a.passed ? (
+                      <CheckIcon className="size-3 shrink-0" />
+                    ) : (
+                      <XIcon className="size-3 shrink-0" />
+                    )}
+                    <span>{a.text}</span>
+                  </li>
+                ))}
+                {assertions.length > previewAssertions.length ? (
+                  <li className="history-run-card-assertion history-run-card-assertion--more">
+                    +{assertions.length - previewAssertions.length} more
+                  </li>
+                ) : null}
+              </ul>
+            ) : null}
+          </div>
+        )}
+
+        <div className="history-run-card-meta">
+          {assertions.length > 0 ? (
+            <span className="history-run-card-meta-item">
+              <CheckIcon className="size-3 text-support-green" />
+              {passedCount}
+              {failedCount > 0 ? (
+                <>
+                  <XIcon className="ml-1.5 size-3 text-support-red" />
+                  {failedCount}
+                </>
+              ) : null}
+            </span>
+          ) : null}
+          {duration ? (
+            <span className="history-run-card-meta-item">
+              <ClockIcon className="size-3" />
+              {duration}
+            </span>
+          ) : null}
+          {when ? (
+            <span className="history-run-card-meta-item history-run-card-meta-item--muted">
+              {when}
+            </span>
+          ) : null}
+          <ChevronRightIcon className="history-run-card-chevron size-3.5" />
+        </div>
+      </div>
+    </button>
+  );
+}
 
 export function HistoryOverviewView() {
   const navigate = useNavigate();
@@ -90,85 +248,66 @@ export function HistoryOverviewView() {
   }, [runsQuery.data, allRuns]);
 
   const liveCount = rows.filter((r) => r.isRunning || r.isQueued).length;
-  const passedCount = rows.filter((r) => !r.isRunning && !r.isQueued && r.status === "passed").length;
+  const passedCount = rows.filter(
+    (r) => !r.isRunning && !r.isQueued && r.status === "passed",
+  ).length;
 
   return (
-    <div className="home-shell">
-      <div className="home-view">
-        <div className="home-content">
-          <div className="home-prompt">
-            <h1 className="home-prompt-title">Run history</h1>
-            <p className="home-prompt-sub">
+    <div className="flex h-full min-h-0 flex-col">
+      <Toolbar>
+        <ToolbarRow>
+          <ToolbarContent>
+            <ToolbarTitle>History</ToolbarTitle>
+          </ToolbarContent>
+        </ToolbarRow>
+      </Toolbar>
+
+      <ScrollArea className="min-h-0 flex-1">
+        {rows.length === 0 ? (
+          <EmptyState
+            title="No runs yet"
+            description="Run a story to see it here with screenshots and assertion results."
+            placement="center"
+            actions={
+              <Button
+                variant="accent"
+                size="medium"
+                radius="full"
+                onClick={() => navigate({ to: "/stories" })}
+              >
+                <HistoryIcon className="size-4" />
+                Run a story
+              </Button>
+            }
+          />
+        ) : (
+          <div className="history-run-list">
+            <p className="history-run-list-sub">
               {rows.length} {rows.length === 1 ? "run" : "runs"}
               {liveCount > 0 ? ` · ${liveCount} live` : ""}
               {passedCount > 0 ? ` · ${passedCount} passed` : ""}
             </p>
-            {rows.length === 0 ? (
-              <div className="home-actions">
-                <Button
-                  variant="accent"
-                  size="medium"
-                  radius="full"
-                  onClick={() => navigate({ to: "/stories" })}
-                >
-                  <HistoryIcon className="size-4" />
-                  Run a story
-                </Button>
-              </div>
-            ) : null}
-          </div>
-
-          {rows.length > 0 ? (
-            <div className="home-recent-section">
-              <p className="section-label mb-2">All runs</p>
-              <div className="home-recent-list">
-                {rows.map((run) => (
-                  <button
-                    key={run.runId}
-                    type="button"
-                    className="home-link-row w-full"
-                    onClick={() =>
-                      navigate(
-                        run.isRunning || run.isQueued
-                          ? { to: "/run/$runId", params: { runId: run.runId } }
-                          : {
-                              to: "/history/$runId",
-                              params: { runId: run.runId },
-                            },
-                      )
-                    }
-                  >
-                    <span className="home-link-row-title">{run.storyTitle}</span>
-                    <span className="home-link-row-status">
-                      {run.isQueued ? (
-                        <Badge color="yellow" size="xs">
-                          Queued
-                        </Badge>
-                      ) : run.isRunning ? (
-                        <Badge color="blue" size="xs">
-                          Running
-                        </Badge>
-                      ) : (
-                        <Badge color={statusBadgeColor(run.status)} size="xs">
-                          {statusBadgeLabel(run.status)}
-                        </Badge>
-                      )}
-                    </span>
-                    <span className="home-link-row-meta">
-                      {formatRelative(
-                        run.isRunning || run.isQueued
-                          ? run.startedAt
-                          : run.finishedAt,
-                      )}
-                    </span>
-                    <ChevronRightIcon className="size-3 shrink-0 text-quaternary" />
-                  </button>
-                ))}
-              </div>
+            <div className="history-run-list-items">
+              {rows.map((run) => (
+                <HistoryRunCard
+                  key={run.runId}
+                  run={run}
+                  onOpen={() =>
+                    navigate(
+                      run.isRunning || run.isQueued
+                        ? { to: "/run/$runId", params: { runId: run.runId } }
+                        : {
+                            to: "/history/$runId",
+                            params: { runId: run.runId },
+                          },
+                    )
+                  }
+                />
+              ))}
             </div>
-          ) : null}
-        </div>
-      </div>
+          </div>
+        )}
+      </ScrollArea>
     </div>
   );
 }

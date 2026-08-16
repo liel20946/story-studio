@@ -41,7 +41,6 @@ import { SettingsSelect } from "../components/settings-select";
 import type {
   AgentProvider,
   ThemePreference,
-  ColorThemeId,
   CodexModel,
   CodexEffort,
   ClaudeModel,
@@ -54,21 +53,7 @@ import {
   effortSegmentClass,
   segmentClassForCount,
 } from "../lib/agent-config";
-import { applyAppearance, activeColorThemeForMode, resolveTheme } from "../lib/theme";
-import { ColorThemePicker } from "../components/color-theme-picker";
-import {
-  applyImportedColorTheme,
-  appearancePatchForMode,
-  exportColorThemeConfig,
-  parseImportedColorTheme,
-  resolveEffectiveContrast,
-  resolveEffectivePalette,
-} from "../lib/color-theme-config";
-import type { ColorThemePalette } from "../lib/color-themes";
-import {
-  ThemeColorField,
-  ThemeContrastField,
-} from "../components/theme-color-field";
+import { applyAppearance } from "../lib/theme";
 import { normalizeAppSettings } from "../lib/app-settings";
 import { reportAppError, reportAppErrorFromUnknown } from "@/lib/app-error";
 import { useSettingsSection } from "@/lib/use-settings-section";
@@ -559,84 +544,20 @@ function AppearancePanel({
   settings,
   onThemeChange,
   onPointerCursorsChange,
-  onColorThemeChange,
-  onPaletteChange,
-  onContrastChange,
-  onCopyTheme,
-  onImportTheme,
 }: {
   settings: AppSettings;
   onThemeChange: (theme: ThemePreference) => void;
   onPointerCursorsChange: (enabled: boolean) => void;
-  onColorThemeChange: (colorTheme: ColorThemeId) => void;
-  onPaletteChange: (key: keyof ColorThemePalette, color: string) => void;
-  onContrastChange: (contrast: number) => void;
-  onCopyTheme: () => void;
-  onImportTheme: () => void;
 }) {
-  const resolvedMode = resolveTheme(settings.theme);
-  const colorTheme = activeColorThemeForMode(resolvedMode, settings);
-  const palette = resolveEffectivePalette(settings, resolvedMode);
-  const contrast = resolveEffectiveContrast(settings, resolvedMode);
-  const modeLabel = resolvedMode === "light" ? "Light theme" : "Dark theme";
-
   return (
     <div className="settings-panel">
       <SettingsGroup>
         <SettingsRow
           label="Theme"
-          description="Match your system appearance or choose light or dark."
+          description="Light uses the white chrome. Dark uses Claude Code warm colors."
         >
           <ThemeSegment value={settings.theme} onChange={onThemeChange} />
         </SettingsRow>
-        <div className="color-theme-section">
-          <div className="color-theme-section-header">
-            <div className="color-theme-section-title">{modeLabel}</div>
-            <div className="color-theme-section-actions">
-              <button
-                type="button"
-                className="color-theme-action"
-                onClick={onImportTheme}
-              >
-                Import
-              </button>
-              <button
-                type="button"
-                className="color-theme-action"
-                onClick={onCopyTheme}
-              >
-                Copy
-              </button>
-              <ColorThemePicker
-                value={colorTheme}
-                mode={resolvedMode}
-                onChange={onColorThemeChange}
-              />
-            </div>
-          </div>
-          <div className="color-theme-customization">
-            <ThemeColorField
-              label="Accent"
-              value={palette.accent}
-              onChange={(color) => onPaletteChange("accent", color)}
-            />
-            <ThemeColorField
-              label="Background"
-              value={palette.surface}
-              onChange={(color) => onPaletteChange("surface", color)}
-            />
-            <ThemeColorField
-              label="Text"
-              value={palette.ink}
-              onChange={(color) => onPaletteChange("ink", color)}
-            />
-            <ThemeContrastField
-              value={contrast}
-              accent={palette.accent}
-              onChange={onContrastChange}
-            />
-          </div>
-        </div>
         <SettingsRow
           label="Use pointer cursors"
           description="Change the cursor to a pointer when hovering over interactive elements."
@@ -979,124 +900,6 @@ export function SettingsView() {
     }
   };
 
-  const handleColorThemeChange = async (colorTheme: ColorThemeId) => {
-    const resolvedMode = resolveTheme(resolvedSettings.theme);
-    const currentColorTheme = activeColorThemeForMode(resolvedMode, resolvedSettings);
-    if (colorTheme === currentColorTheme) return;
-
-    const patch =
-      resolvedMode === "light"
-        ? { colorThemeLight: colorTheme, colorThemePaletteLight: null }
-        : { colorThemeDark: colorTheme, colorThemePaletteDark: null };
-    const nextSettings = normalizeAppSettings({
-      ...resolvedSettings,
-      ...patch,
-    });
-
-    commitAppSettings(nextSettings);
-    applyAppearance(resolvedSettings.theme, nextSettings);
-    try {
-      commitAppSettings(await settingsSet(patch));
-    } catch (error) {
-      void refreshAppSettings();
-      reportAppErrorFromUnknown("Failed to set color theme", error);
-    }
-  };
-
-  const handlePaletteChange = async (
-    key: keyof ColorThemePalette,
-    color: string,
-  ) => {
-    const mode = resolveTheme(resolvedSettings.theme);
-    const current = resolveEffectivePalette(resolvedSettings, mode);
-    if (current[key] === color) return;
-
-    const palette = { ...current, [key]: color };
-    const patch = appearancePatchForMode(mode, { palette });
-    const nextSettings = normalizeAppSettings({
-      ...resolvedSettings,
-      ...patch,
-    });
-
-    commitAppSettings(nextSettings);
-    applyAppearance(resolvedSettings.theme, nextSettings);
-    try {
-      commitAppSettings(await settingsSet(patch));
-    } catch (error) {
-      void refreshAppSettings();
-      reportAppErrorFromUnknown("Failed to save color", error);
-    }
-  };
-
-  const handleContrastChange = async (contrast: number) => {
-    const mode = resolveTheme(resolvedSettings.theme);
-    const current = resolveEffectiveContrast(resolvedSettings, mode);
-    if (contrast === current) return;
-
-    const patch = appearancePatchForMode(mode, { contrast });
-    const nextSettings = normalizeAppSettings({
-      ...resolvedSettings,
-      ...patch,
-    });
-
-    commitAppSettings(nextSettings);
-    applyAppearance(resolvedSettings.theme, nextSettings);
-    try {
-      commitAppSettings(await settingsSet(patch));
-    } catch (error) {
-      void refreshAppSettings();
-      reportAppErrorFromUnknown("Failed to save contrast", error);
-    }
-  };
-
-  const handleCopyTheme = async () => {
-    const mode = resolveTheme(resolvedSettings.theme);
-    try {
-      await navigator.clipboard.writeText(
-        exportColorThemeConfig(resolvedSettings, mode),
-      );
-      toast.success("Theme copied to clipboard.");
-    } catch (error) {
-      reportAppErrorFromUnknown("Failed to copy theme", error);
-    }
-  };
-
-  const handleImportTheme = async () => {
-    try {
-      const raw = await navigator.clipboard.readText();
-      const imported = parseImportedColorTheme(raw);
-      if (!imported) {
-        reportAppError("Clipboard does not contain a valid Codex theme.");
-        return;
-      }
-
-      const nextSettings = applyImportedColorTheme(resolvedSettings, imported);
-      const patch = appearancePatchForMode(imported.variant, {
-        preset:
-          imported.variant === "light"
-            ? nextSettings.colorThemeLight
-            : nextSettings.colorThemeDark,
-        palette:
-          imported.variant === "light"
-            ? nextSettings.colorThemePaletteLight
-            : nextSettings.colorThemePaletteDark,
-        contrast:
-          imported.variant === "light"
-            ? nextSettings.colorThemeContrastLight
-            : nextSettings.colorThemeContrastDark,
-      });
-
-      commitAppSettings(nextSettings);
-      applyAppearance(resolvedSettings.theme, nextSettings);
-      commitAppSettings(await settingsSet(patch));
-      toast.success(
-        `Imported ${imported.variant === "light" ? "light" : "dark"} theme.`,
-      );
-    } catch (error) {
-      reportAppErrorFromUnknown("Failed to import theme", error);
-    }
-  };
-
   const handleSaveStartingUrl = async () => {
     const next = startingUrl.trim();
     if (next === (appSettings?.startingUrl ?? "")) return;
@@ -1163,11 +966,6 @@ export function SettingsView() {
               settings={resolvedSettings}
               onThemeChange={handleThemeChange}
               onPointerCursorsChange={handlePointerCursorsChange}
-              onColorThemeChange={handleColorThemeChange}
-              onPaletteChange={handlePaletteChange}
-              onContrastChange={handleContrastChange}
-              onCopyTheme={handleCopyTheme}
-              onImportTheme={handleImportTheme}
             />
           ) : null}
 
