@@ -41,6 +41,7 @@ export function listRecoveredRuns(): ActiveRunSnapshot[] {
     startedAt: meta.startedAt,
     agentProvider: meta.agentProvider,
     agentModel: meta.agentModel,
+    providerSessionId: meta.providerSessionId,
     events,
     variableOverrides: meta.variableOverrides,
   }));
@@ -69,9 +70,16 @@ async function finalizeRecoveredRun(
   events.length = 0;
   events.push(...withSteps);
   const enriched = await enrichRunResult(
-    meta.variableOverrides && Object.keys(meta.variableOverrides).length > 0
-      ? { ...result, variableOverrides: meta.variableOverrides }
-      : result,
+    (() => {
+      let next = result;
+      if (meta.variableOverrides && Object.keys(meta.variableOverrides).length > 0) {
+        next = { ...next, variableOverrides: meta.variableOverrides };
+      }
+      if (!next.providerSessionId?.trim() && meta.providerSessionId?.trim()) {
+        next = { ...next, providerSessionId: meta.providerSessionId.trim() };
+      }
+      return next;
+    })(),
   );
   const record: RunRecord = { ...enriched, events };
   await saveRun(record);
@@ -105,6 +113,7 @@ export async function cancelRecoveredRun(runId: string): Promise<boolean> {
     finishedAt: Date.now(),
     agentProvider: meta.agentProvider,
     agentModel: meta.agentModel,
+    providerSessionId: meta.providerSessionId,
   };
 
   await finalizeRecoveredRun(meta, events, result);
@@ -187,6 +196,7 @@ async function watchRecoveredRun(meta: RunMeta): Promise<void> {
         error: "Agent process ended when the app closed",
         agentProvider: meta.agentProvider,
         agentModel: meta.agentModel,
+        providerSessionId: meta.providerSessionId,
       };
       await finalizeRecoveredRun(meta, events, interrupted);
       return;
@@ -231,6 +241,7 @@ async function tryFinalizeRecoveredRun(
         error: "Agent process ended while the run was in progress",
         agentProvider: meta.agentProvider,
         agentModel: meta.agentModel,
+        providerSessionId: meta.providerSessionId,
       };
       await finalizeRecoveredRun(meta, events, interrupted);
       console.log("[run:recovery] agent exited — finalized interrupted run", {
@@ -266,6 +277,7 @@ async function tryFinalizeRecoveredRun(
     finishedAt: Date.now(),
     agentProvider: meta.agentProvider,
     agentModel: meta.agentModel,
+    providerSessionId: meta.providerSessionId,
   };
 
   await finalizeRecoveredRun(meta, events, result);

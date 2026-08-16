@@ -73,6 +73,7 @@ export async function startMockRun(
     agentProvider: provider,
     agentModel,
     variableOverrides,
+    providerSessionId: `mock-session-${runId}`,
   });
 
   const state: MockRunState = {
