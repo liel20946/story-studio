@@ -3277,13 +3277,33 @@
 
 .dialog-surface {
   border: 1px solid var(--color-border-separator);
+  background-color: var(--color-surface-popover) !important;
+  background-image: none !important;
   box-shadow: 0 16px 48px rgb(0 0 0 / 40%);
   outline: none;
+  opacity: 1;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 .dialog-surface:focus,
 .dialog-surface:focus-visible {
   outline: none;
+}
+
+/* Floating menus / pickers — same opaque surface as dialogs */
+.toolbar-more-menu,
+.command-search-panel,
+.schedule-picker-popover,
+.theme-color-picker-popover,
+.generate-composer-attach-menu,
+.settings-select-menu,
+.color-theme-menu {
+  background-color: var(--color-surface-popover) !important;
+  background-image: none !important;
+  opacity: 1;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 /* Toast — bottom-center pill, theme-aware, close on the right */
