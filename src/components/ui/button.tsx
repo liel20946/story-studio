@@ -4,18 +4,18 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1.5 font-medium transition-colors duration-100 outline-none disabled:pointer-events-none shrink-0",
+  "inline-flex items-center justify-center gap-1.5 font-medium outline-none disabled:pointer-events-none shrink-0 transition-[color,background-color,opacity,transform,border-color] duration-100 ease-out active:scale-[0.97]",
   {
     variants: {
       variant: {
         filled:
-          "bg-control text-primary hover:bg-surface-hover border border-separator disabled:bg-control disabled:text-tertiary disabled:border-separator",
+          "bg-control text-primary hover:bg-surface-hover border border-separator disabled:bg-control disabled:text-tertiary disabled:border-separator disabled:active:scale-100",
         glass:
-          "bg-control text-primary hover:bg-surface-hover border border-separator disabled:bg-control disabled:text-tertiary disabled:border-separator",
+          "bg-control text-primary hover:bg-surface-hover border border-separator disabled:bg-control disabled:text-tertiary disabled:border-separator disabled:active:scale-100",
         transparent:
-          "bg-transparent text-secondary hover:bg-surface-hover hover:text-primary disabled:text-tertiary",
+          "bg-transparent text-secondary hover:bg-surface-hover hover:text-primary disabled:text-tertiary disabled:active:scale-100",
         accent:
-          "bg-accent hover:opacity-90 border border-transparent disabled:opacity-100",
+          "bg-accent hover:opacity-90 border border-transparent disabled:opacity-100 disabled:active:scale-100",
       },
       size: {
         titlebar: "h-6 px-2 gap-1 text-small",

@@ -207,7 +207,7 @@ export function SidebarListItem({
         type="button"
         onClick={onClick}
         className={cn(
-          "grid min-h-6 w-full grid-cols-[minmax(0,1fr)_auto_2.75rem] items-center gap-x-1.5 rounded-control px-2 py-0.5 text-left text-[12px] leading-4 text-primary transition-colors duration-100",
+          "grid min-h-7 w-full grid-cols-[minmax(0,1fr)_auto_2.75rem] items-center gap-x-1.5 rounded-control px-2 py-0.5 text-left text-[13px] leading-[18px] tracking-[-0.008em] text-primary transition-[background-color,transform,color] duration-100 ease-out active:scale-[0.99]",
           selected && "sidebar-item-selected",
           !selected && "hover:bg-surface-hover",
           className,
@@ -224,7 +224,7 @@ export function SidebarListItemContent({ children }: { children: React.ReactNode
 }
 
 export function SidebarListItemTitle({ children }: { children: React.ReactNode }) {
-  return <span className="truncate text-[12px] leading-4 text-primary">{children}</span>;
+  return <span className="truncate text-[13px] leading-[18px] tracking-[-0.008em] text-primary">{children}</span>;
 }
 
 export function Toolbar({
@@ -237,7 +237,7 @@ export function Toolbar({
 }: React.HTMLAttributes<HTMLDivElement> & {
   titlebar?: boolean;
   surface?: "sidebar" | "main";
-  /** Omit the bottom border for a flush Codex-style header. */
+  /** Omit the bottom border for a flush header. */
   seamless?: boolean;
 }) {
   return (
@@ -245,8 +245,8 @@ export function Toolbar({
       data-toolbar
       className={cn(
         "drag-region",
-        !seamless && "border-b border-separator",
-        surface === "sidebar" ? "bg-surface-sidebar" : "bg-main-surface",
+        !seamless && surface === "sidebar" && "border-b border-separator",
+        surface === "sidebar" ? "bg-surface-sidebar" : "material-toolbar bg-main-surface",
         titlebar && "titlebar-toolbar",
         className,
       )}
