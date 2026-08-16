@@ -34,16 +34,22 @@
   --font-mono: var(--font-family-mono);
 }
 
-/* Codex-inspired — true dark, flat surfaces, coral accent */
+/* Apple-inspired craft — system type, material layers, coral accent */
 :root {
-  --font-family-display: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  --font-family-body: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  --font-family-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", monospace;
+  --font-family-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Geist Variable", "Geist", system-ui, sans-serif;
+  --font-family-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist Variable", "Geist", system-ui, sans-serif;
+  --font-family-mono: ui-monospace, "SF Mono", "Geist Mono Variable", "Geist Mono", Menlo, monospace;
 
-  --bg: #f5f5f5;
+  /* Apple-like critically damped motion (no overshoot by default) */
+  --motion-response: 0.35s;
+  --motion-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --press-scale: 0.97;
+
+  --bg: #f2f2f7;
   --bg-secondary: #ffffff;
   --bg-elevated: #ffffff;
-  --fg: #0a0a0a;
+  --fg: #1d1d1f;
   --theme-accent: #ef4444;
   --accent: var(--theme-accent);
   --selection: #0a0a0a;
@@ -75,18 +81,22 @@
   --color-surface-control-subtle: var(--fg-5);
   --color-surface-hover: var(--fg-8);
   --color-surface-well: var(--fg-5);
-  --color-surface-sidebar: #ebebeb;
+  --color-surface-sidebar: rgb(242 242 247 / 92%);
   --color-surface-popover: var(--bg-elevated);
   --color-border-separator: var(--fg-12);
   --color-border-field: var(--fg-20);
   --color-window-bg: var(--bg);
-  --glass-bg: var(--bg-secondary);
-  --glass-bg-elevated: var(--bg-elevated);
-  --glass-highlight: transparent;
-  --glass-shadow: transparent;
+  --glass-bg: rgb(255 255 255 / 78%);
+  --glass-bg-elevated: rgb(255 255 255 / 88%);
+  --glass-highlight: rgb(255 255 255 / 55%);
+  --glass-shadow: rgb(0 0 0 / 6%);
+  --material-sidebar: rgb(242 242 247 / 88%);
+  --material-toolbar: rgb(255 255 255 / 72%);
+  --material-card: rgb(255 255 255 / 92%);
+  --material-edge: rgb(255 255 255 / 65%);
   --accent-contrast: #ffffff;
   --accent-glow: rgb(from var(--accent) r g b / 18%);
-  --radius-card: 16px;
+  --radius-card: 12px;
   --radius-control: 8px;
   --radius-pill: 9999px;
   --radius-window: 16px;
@@ -115,11 +125,11 @@
 
 .dark {
   --bg: #000000;
-  --bg-secondary: #111111;
-  --bg-elevated: #171717;
-  --fg: #ededed;
+  --bg-secondary: #1c1c1e;
+  --bg-elevated: #2c2c2e;
+  --fg: #f5f5f7;
   --theme-accent: #ef4444;
-  --selection: #ededed;
+  --selection: #f5f5f7;
   --red: #ef4444;
   --orange: #fb923c;
   --yellow: #facc15;
@@ -127,20 +137,26 @@
   --blue: #60a5fa;
   --purple: #c084fc;
   --magenta: #f472b6;
-  --color-text-secondary: #b3b3b3;
-  --color-text-tertiary: #8a8a8a;
-  --color-text-quaternary: #636363;
-  --color-surface-control: #1a1a1a;
-  --color-surface-control-subtle: #141414;
-  --color-surface-hover: #1a1a1a;
-  --color-surface-well: #141414;
-  --color-surface-sidebar: #0c0c0c;
-  --color-surface-popover: #171717;
-  --color-border-separator: #262626;
-  --color-border-field: #333333;
-  --color-window-bg: #0a0a0a;
-  --glass-bg: #111111;
-  --glass-bg-elevated: #171717;
+  --color-text-secondary: #a1a1a6;
+  --color-text-tertiary: #8e8e93;
+  --color-text-quaternary: #636366;
+  --color-surface-control: #2c2c2e;
+  --color-surface-control-subtle: #1c1c1e;
+  --color-surface-hover: #3a3a3c;
+  --color-surface-well: #1c1c1e;
+  --color-surface-sidebar: rgb(28 28 30 / 88%);
+  --color-surface-popover: #2c2c2e;
+  --color-border-separator: #38383a;
+  --color-border-field: #48484a;
+  --color-window-bg: #000000;
+  --glass-bg: rgb(28 28 30 / 82%);
+  --glass-bg-elevated: rgb(44 44 46 / 88%);
+  --glass-highlight: rgb(255 255 255 / 8%);
+  --glass-shadow: rgb(0 0 0 / 35%);
+  --material-sidebar: rgb(28 28 30 / 82%);
+  --material-toolbar: rgb(28 28 30 / 72%);
+  --material-card: rgb(28 28 30 / 94%);
+  --material-edge: rgb(255 255 255 / 10%);
   --accent-contrast: #ffffff;
   --accent-glow: rgb(from var(--accent) r g b / 22%);
   --support-red-10: rgb(239 68 68 / 14%);
@@ -182,9 +198,11 @@ body {
   background: var(--color-window-bg);
   color: var(--color-text-primary);
   font-family: var(--font-family-body);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3846;
+  letter-spacing: -0.008em;
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
@@ -441,16 +459,66 @@ body {
   color: #fff;
 }
 
-/* Flat surfaces — no backdrop-filter (Codex-style, avoids GPU compositor bugs) */
+/* Material surfaces — translucent layers without backdrop-filter
+   (Electron GPU compositor can glitch on blur; approximate vibrancy with alpha). */
 .liquid-glass,
 .liquid-glass-elevated,
 .bg-glass,
 .bg-popover {
   background: var(--glass-bg);
+  box-shadow: inset 0 0.5px 0 var(--glass-highlight);
 }
 
 .bg-surface-sidebar {
-  background-color: var(--color-surface-sidebar);
+  background-color: var(--material-sidebar);
+}
+
+.material-toolbar {
+  background: var(--material-toolbar);
+  box-shadow: inset 0 -0.5px 0 var(--color-border-separator);
+}
+
+.material-card {
+  background: var(--material-card);
+  box-shadow:
+    inset 0 0.5px 0 var(--material-edge),
+    0 1px 2px var(--glass-shadow);
+}
+
+/* Instant press feedback — Apple: respond on pointer-down */
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active,
+.accent-cta:not(:disabled):active {
+  transform: scale(var(--press-scale));
+  transition: transform 100ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  .accent-cta:not(:disabled):active {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .liquid-glass,
+  .liquid-glass-elevated,
+  .bg-glass,
+  .bg-popover,
+  .bg-surface-sidebar,
+  .material-toolbar,
+  .material-card {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+  }
+
+  :root {
+    --material-sidebar: var(--color-surface-sidebar);
+    --material-toolbar: var(--bg-elevated);
+    --material-card: var(--bg-elevated);
+    --glass-bg: var(--bg-elevated);
+  }
 }
 
 /* Cursor Dark Anysphere — chrome #141414, sidebar vibrancy-hard overlay. */
@@ -493,6 +561,8 @@ body {
 [data-color-theme="cursor"] .main-pane {
   background: var(--bg);
   border: none;
+  border-radius: 10px 0 0 10px;
+  box-shadow: -0.5px 0 0 var(--color-border-separator);
 }
 
 [data-color-theme="cursor"].dark .sidebar-item-selected {
@@ -628,7 +698,8 @@ button.bg-accent:disabled {
 .font-display {
   font-family: var(--font-family-display);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
 }
 
 .font-body { font-family: var(--font-family-body); }

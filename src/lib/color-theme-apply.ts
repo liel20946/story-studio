@@ -25,6 +25,12 @@ const COLOR_THEME_PROPS = [
   "--color-window-bg",
   "--glass-bg",
   "--glass-bg-elevated",
+  "--glass-highlight",
+  "--glass-shadow",
+  "--material-sidebar",
+  "--material-toolbar",
+  "--material-card",
+  "--material-edge",
   "--accent-glow",
 ] as const;
 
@@ -136,8 +142,14 @@ function deriveCursorThemeVariables(
       "--color-border-separator": "rgb(228 228 228 / 7%)",
       "--color-border-field": "rgb(228 228 228 / 15%)",
       "--color-window-bg": "transparent",
-      "--glass-bg": "#141414",
-      "--glass-bg-elevated": "#181818",
+      "--glass-bg": "rgb(20 20 20 / 82%)",
+      "--glass-bg-elevated": "rgb(28 28 28 / 88%)",
+      "--glass-highlight": "rgb(255 255 255 / 8%)",
+      "--glass-shadow": "rgb(0 0 0 / 35%)",
+      "--material-sidebar": "rgb(20 20 20 / 78%)",
+      "--material-toolbar": "rgb(20 20 20 / 72%)",
+      "--material-card": "rgb(28 28 28 / 94%)",
+      "--material-edge": "rgb(255 255 255 / 8%)",
       "--accent-glow": "rgb(129 161 193 / 22%)",
       "--accent-contrast": "#191c22",
     };
@@ -164,8 +176,14 @@ function deriveCursorThemeVariables(
     "--color-border-separator": "rgb(0 0 0 / 8%)",
     "--color-border-field": "rgb(0 0 0 / 12%)",
     "--color-window-bg": "transparent",
-    "--glass-bg": "rgb(255 255 255 / 55%)",
-    "--glass-bg-elevated": "rgb(255 255 255 / 85%)",
+    "--glass-bg": "rgb(255 255 255 / 72%)",
+    "--glass-bg-elevated": "rgb(255 255 255 / 88%)",
+    "--glass-highlight": "rgb(255 255 255 / 55%)",
+    "--glass-shadow": "rgb(0 0 0 / 6%)",
+    "--material-sidebar": "rgb(243 243 243 / 72%)",
+    "--material-toolbar": "rgb(255 255 255 / 72%)",
+    "--material-card": "rgb(255 255 255 / 92%)",
+    "--material-edge": "rgb(255 255 255 / 65%)",
     "--accent-glow": `rgb(from ${accent} r g b / 18%)`,
   };
 }
@@ -221,6 +239,12 @@ function deriveThemeVariables(
       "--color-window-bg": windowBg,
       "--glass-bg": bgSecondary,
       "--glass-bg-elevated": bgElevated,
+      "--glass-highlight": "rgb(255 255 255 / 8%)",
+      "--glass-shadow": "rgb(0 0 0 / 35%)",
+      "--material-sidebar": sidebarSurface,
+      "--material-toolbar": bgSecondary,
+      "--material-card": bgElevated,
+      "--material-edge": "rgb(255 255 255 / 8%)",
       "--accent-glow": `rgb(from ${accent} r g b / 22%)`,
     };
   }
@@ -275,6 +299,12 @@ function deriveThemeVariables(
     "--color-window-bg": windowBg,
     "--glass-bg": bgSecondary,
     "--glass-bg-elevated": bgElevated,
+    "--glass-highlight": "rgb(255 255 255 / 55%)",
+    "--glass-shadow": "rgb(0 0 0 / 6%)",
+    "--material-sidebar": sidebarSurface,
+    "--material-toolbar": bgElevated,
+    "--material-card": bgElevated,
+    "--material-edge": "rgb(255 255 255 / 65%)",
     "--accent-glow": `rgb(from ${accent} r g b / 18%)`,
   };
 }
