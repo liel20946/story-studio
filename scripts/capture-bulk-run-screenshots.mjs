@@ -110,14 +110,14 @@ async function main() {
   await page
     .getByRole("button", { name: /Configure variable runs for Login Flow/i })
     .click({ force: true });
-  await page.getByText("Variable runs — Login Flow").waitFor();
+  await page.getByText(/Variable runs[:\s].*Login Flow/i).waitFor();
   await wait(400);
   await shot(app, "03-variables-chat-modal");
 
   const composer = page.locator(".generate-composer textarea").first();
   await composer.fill("Run as admin and guest with 2 different emails");
   await wait(200);
-  await page.getByRole("button", { name: /^Generate$/i }).click({ force: true });
+  await page.getByRole("button", { name: /^Generate$|^Send$/i }).click({ force: true });
   await page.getByRole("button", { name: /^Save for bulk$/i }).waitFor({ timeout: 15_000 });
   await wait(400);
   await shot(app, "04-variables-review");
@@ -139,7 +139,7 @@ async function main() {
 
   await page.getByText("Passed").first().waitFor({ timeout: 15_000 });
   await wait(500);
-  await page.getByRole("button", { name: /^Stop$/i }).click({ force: true });
+  await page.getByRole("button", { name: /Stop all/i }).click({ force: true });
   await page.getByRole("button", { name: /^Resume$/i }).waitFor();
   await wait(500);
   await shot(app, "08-bulk-run-stopped-by-user");

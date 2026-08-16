@@ -6,6 +6,11 @@ import type { AppSettings, BulkVariableRun, StoryDetail } from "./contract-types
 import { getStory } from "./stories-service.js";
 import { buildLastRunMap, listRuns } from "./run-service.js";
 import { buildBulkVariablesPrompt } from "./bulk-variables-skill.js";
+import {
+  copyContextFilesToOutput,
+  formatBulkContextForPrompt,
+  loadBulkVariableContext,
+} from "./bulk-variables-context.js";
 import { invokeGenerateAgent, cancelGenerateInvocation } from "./agent-generate-runner.js";
 import { resolveAgentBinary } from "./agent-provider.js";
 import { getAgentRunConfig } from "./agent-config.js";
@@ -13,6 +18,10 @@ import { mockRunsEnabled } from "./mock-runner.js";
 
 export interface BulkVariablesGenerateResult {
   runs: BulkVariableRun[];
+}
+
+export interface GenerateBulkVariableRunsOptions {
+  contextPaths?: string[];
 }
 
 function parseRunsFromAgentMessage(raw: string): BulkVariableRun[] {
@@ -49,7 +58,11 @@ function varyEmailLike(value: string, index: number): string {
   return `${local}+${index + 1}${domain}`;
 }
 
-function mockRunsForStory(story: StoryDetail, description: string): BulkVariableRun[] {
+function mockRunsForStory(
+  story: StoryDetail,
+  description: string,
+  contextPaths: string[] = [],
+): BulkVariableRun[] {
   const storyVars =
     story.variables.length > 0
       ? story.variables
@@ -58,9 +71,24 @@ function mockRunsForStory(story: StoryDetail, description: string): BulkVariable
           { key: "password", value: "", secret: true },
         ];
   const countMatch = description.match(/\b(\d+)\b/);
-  const count = Math.min(4, Math.max(2, countMatch ? Number(countMatch[1]) : 2));
-  const labels = ["Admin", "Guest", "Editor", "Viewer"];
+  const attachmentNames = contextPaths
+    .map((p) => path.basename(p))
+    .filter(Boolean)
+    .slice(0, 4);
+  const count = Math.min(
+    4,
+    Math.max(
+      2,
+      countMatch ? Number(countMatch[1]) : attachmentNames.length > 0 ? attachmentNames.length : 2,
+    ),
+  );
+  const labels =
+    attachmentNames.length > 0
+      ? attachmentNames.map((name) => name.replace(/\.[^.]+$/, "") || name)
+      : ["Admin", "Guest", "Editor", "Viewer"];
   const wantsEmailVariation = /email|user|login|account/i.test(description);
+  const wantsHtml =
+    /html|paste|snippet|content/i.test(description) || attachmentNames.some((n) => /\.html?$/i.test(n));
   const runs: BulkVariableRun[] = [];
   for (let i = 0; i < count; i++) {
     const variables: Record<string, string> = {};
@@ -72,6 +100,12 @@ function mockRunsForStory(story: StoryDetail, description: string): BulkVariable
       }
       if (wantsEmailVariation && base.includes("@")) {
         variables[variable.key] = varyEmailLike(base, i);
+      } else if (
+        wantsHtml &&
+        /html|content|body|snippet|payload/i.test(variable.key) &&
+        attachmentNames[i]
+      ) {
+        variables[variable.key] = `<!-- from ${attachmentNames[i]} -->`;
       } else {
         variables[variable.key] = base;
       }
@@ -91,9 +125,15 @@ export async function generateBulkVariableRuns(
   settings: AppSettings,
   invocationId: string,
   onProgress?: (message: string) => void,
+  options?: GenerateBulkVariableRunsOptions,
 ): Promise<BulkVariablesGenerateResult> {
   const trimmed = description.trim();
   if (!trimmed) throw new Error("Description cannot be empty");
+
+  const contextPaths = (options?.contextPaths ?? [])
+    .filter((p): p is string => typeof p === "string")
+    .map((p) => p.trim())
+    .filter(Boolean);
 
   const runs = await listRuns();
   const lastRunMap = buildLastRunMap(runs);
@@ -102,11 +142,19 @@ export async function generateBulkVariableRuns(
   if (mockRunsEnabled()) {
     onProgress?.("Generating variable sets…");
     await new Promise((r) => setTimeout(r, 600));
-    return { runs: mockRunsForStory(story, trimmed) };
+    return { runs: mockRunsForStory(story, trimmed, contextPaths) };
   }
 
   const outputDir = path.join(os.tmpdir(), "story-studio-bulk-vars", invocationId);
   await fs.mkdir(outputDir, { recursive: true });
+
+  const { attachments, files } = await loadBulkVariableContext(contextPaths);
+  const copiedRelativePaths = await copyContextFilesToOutput(files, outputDir);
+  const attachedContextSection = formatBulkContextForPrompt(
+    attachments,
+    files,
+    copiedRelativePaths,
+  );
 
   const agentBinary = await resolveAgentBinary(
     settings.agentProvider,
@@ -118,7 +166,7 @@ export async function generateBulkVariableRuns(
   const { message } = await invokeGenerateAgent({
     conversationId: invocationId,
     invocationId,
-    prompt: buildBulkVariablesPrompt(story, trimmed),
+    prompt: buildBulkVariablesPrompt(story, trimmed, attachedContextSection),
     outputDir,
     provider: settings.agentProvider,
     agentBinary,

@@ -1,5 +1,13 @@
 import * as React from "react";
-import { Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import {
+  FileIcon,
+  FolderIcon,
+  Loader2Icon,
+  PlusIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,10 +24,76 @@ import {
 } from "@/components/ui";
 import { SkillComposer } from "@/components/generate/skill-composer";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
-import { bulkCancelGenerateVariables, bulkGenerateVariables } from "@/lib/ipc";
+import {
+  bulkCancelGenerateVariables,
+  bulkGenerateVariables,
+  bulkPickContextPaths,
+} from "@/lib/ipc";
 import type { BulkVariableRun, StoryDetail } from "@/lib/contract-types";
 
 type Phase = "chat" | "generating" | "review";
+
+type Attachment = {
+  path: string;
+  kind: "file" | "folder";
+};
+
+function basename(filePath: string): string {
+  const parts = filePath.replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || filePath;
+}
+
+function AttachPlusMenu({
+  disabled,
+  busy,
+  onAttach,
+}: {
+  disabled?: boolean;
+  busy?: boolean;
+  onAttach: (mode: "files" | "folder") => void;
+}) {
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          className="generate-composer-attach-btn"
+          disabled={disabled || busy}
+          aria-label="Attach files or folder"
+        >
+          {busy ? (
+            <Loader2Icon className="generate-composer-attach-btn-icon animate-spin" />
+          ) : (
+            <PlusIcon className="generate-composer-attach-btn-icon" absoluteStrokeWidth />
+          )}
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="generate-composer-attach-menu"
+          side="top"
+          align="start"
+          sideOffset={6}
+        >
+          <DropdownMenu.Item
+            className="generate-composer-attach-menu-item"
+            onSelect={() => onAttach("files")}
+          >
+            <FileIcon className="generate-composer-attach-menu-item-icon" />
+            Attach files
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className="generate-composer-attach-menu-item"
+            onSelect={() => onAttach("folder")}
+          >
+            <FolderIcon className="generate-composer-attach-menu-item-icon" />
+            Attach folder
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
 
 export function BulkVariablesModal({
   open,
@@ -38,6 +112,8 @@ export function BulkVariablesModal({
   const [prompt, setPrompt] = React.useState("");
   const [runs, setRuns] = React.useState<BulkVariableRun[]>([]);
   const [statusText, setStatusText] = React.useState("");
+  const [attachedPaths, setAttachedPaths] = React.useState<Attachment[]>([]);
+  const [pickingAttachments, setPickingAttachments] = React.useState(false);
   const invocationRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -46,6 +122,8 @@ export function BulkVariablesModal({
     setPrompt("");
     setRuns(initialRuns ?? []);
     setStatusText("");
+    setAttachedPaths([]);
+    setPickingAttachments(false);
     invocationRef.current = null;
   }, [open, story?.name, initialRuns]);
 
@@ -64,6 +142,30 @@ export function BulkVariablesModal({
     onOpenChange(nextOpen);
   }
 
+  async function handleAttach(mode: "files" | "folder") {
+    if (pickingAttachments || phase === "generating") return;
+    setPickingAttachments(true);
+    try {
+      const result = await bulkPickContextPaths(mode);
+      if (result.canceled) return;
+      setAttachedPaths((prev) => {
+        const byPath = new Map(prev.map((a) => [a.path, a]));
+        for (const p of result.paths) {
+          byPath.set(p, { path: p, kind: mode === "folder" ? "folder" : "file" });
+        }
+        return [...byPath.values()];
+      });
+    } catch (err) {
+      reportAppErrorFromUnknown("Failed to attach files", err);
+    } finally {
+      setPickingAttachments(false);
+    }
+  }
+
+  function removeAttachment(path: string) {
+    setAttachedPaths((prev) => prev.filter((a) => a.path !== path));
+  }
+
   async function handleGenerate() {
     if (!story || !prompt.trim() || phase === "generating") return;
     const invocationId = crypto.randomUUID();
@@ -75,6 +177,7 @@ export function BulkVariablesModal({
         story.name,
         prompt.trim(),
         invocationId,
+        attachedPaths.map((a) => a.path),
       );
       if (invocationRef.current !== invocationId) return;
       setRuns(result.runs);
@@ -148,7 +251,8 @@ export function BulkVariablesModal({
         <DialogHeader>
           <DialogTitle>Variable runs: {story.title}</DialogTitle>
           <DialogDescription>
-            Describe how to vary this story across runs.
+            Describe how to vary this story across runs. Attach files or folders
+            when the agent should use their contents.
           </DialogDescription>
         </DialogHeader>
 
@@ -177,6 +281,34 @@ export function BulkVariablesModal({
                   )}
                 </div>
               </div>
+
+              {attachedPaths.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {attachedPaths.map((attachment) => {
+                    const Icon = attachment.kind === "folder" ? FolderIcon : FileIcon;
+                    const name = basename(attachment.path);
+                    return (
+                      <span
+                        key={attachment.path}
+                        className="inline-flex max-w-full items-center gap-1 rounded-control border border-separator bg-control px-2 py-1 text-[11px] text-secondary"
+                        title={attachment.path}
+                      >
+                        <Icon className="size-3.5 shrink-0" />
+                        <span className="truncate">{name}</span>
+                        <button
+                          type="button"
+                          className="ml-0.5 rounded-sm p-0.5 text-tertiary hover:bg-surface hover:text-primary"
+                          aria-label={`Remove ${name}`}
+                          onClick={() => removeAttachment(attachment.path)}
+                        >
+                          <XIcon className="size-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+
               <SkillComposer
                 layout="inline"
                 value={prompt}
@@ -184,7 +316,13 @@ export function BulkVariablesModal({
                 onSubmit={() => void handleGenerate()}
                 showSkill
                 skillLabel="bulk-variables"
-                placeholder='e.g. "Run as admin and guest with different emails"'
+                placeholder='e.g. "One run per attached HTML file for the paste body"'
+                leading={
+                  <AttachPlusMenu
+                    busy={pickingAttachments}
+                    onAttach={(mode) => void handleAttach(mode)}
+                  />
+                }
               />
             </div>
           )}

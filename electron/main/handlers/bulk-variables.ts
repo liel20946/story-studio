@@ -1,12 +1,94 @@
+import * as os from "os";
+import * as fs from "fs/promises";
 import { randomUUID } from "crypto";
-import { ipcMain } from "../electron-api.js";
+import { ipcMain, dialog } from "../electron-api.js";
 import {
   cancelBulkVariablesGenerate,
   generateBulkVariableRuns,
 } from "../services/bulk-variables-service.js";
+import { mockRunsEnabled } from "../services/mock-runner.js";
 import { getSettingsValue } from "./settings.js";
 
+function mockAttachmentPathsFromEnv(): string[] {
+  const raw = process.env.STORY_STUDIO_MOCK_ATTACHMENTS?.trim();
+  if (!raw) return [];
+  return raw
+    .split(/[:;]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+async function pickContextPaths(mode: "files" | "folder"): Promise<{
+  paths: string[];
+  canceled: boolean;
+}> {
+  if (mockRunsEnabled()) {
+    const mockPaths = mockAttachmentPathsFromEnv();
+    if (mockPaths.length > 0) {
+      const filtered: string[] = [];
+      for (const p of mockPaths) {
+        try {
+          const st = await fs.stat(p);
+          if (mode === "folder" ? st.isDirectory() : st.isFile()) {
+            filtered.push(p);
+          }
+        } catch {
+          // skip missing mock paths
+        }
+      }
+      if (filtered.length > 0) {
+        return { paths: filtered, canceled: false };
+      }
+    }
+  }
+
+  const result = await dialog.showOpenDialog({
+    title: mode === "folder" ? "Attach folder" : "Attach files",
+    defaultPath: os.homedir(),
+    buttonLabel: "Attach",
+    properties:
+      mode === "folder"
+        ? ["openDirectory"]
+        : ["openFile", "multiSelections"],
+    filters:
+      mode === "folder"
+        ? undefined
+        : [
+            {
+              name: "Text & web",
+              extensions: [
+                "html",
+                "htm",
+                "txt",
+                "md",
+                "json",
+                "csv",
+                "xml",
+                "yaml",
+                "yml",
+              ],
+            },
+            { name: "All files", extensions: ["*"] },
+          ],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { paths: [], canceled: true };
+  }
+  return { paths: result.filePaths, canceled: false };
+}
+
 export function registerBulkVariablesHandlers(): void {
+  ipcMain.handle("bulk:pickContextPaths", async (_event, params: unknown) => {
+    const mode =
+      typeof params === "object" &&
+      params !== null &&
+      ((params as Record<string, unknown>)["mode"] === "folder" ||
+        (params as Record<string, unknown>)["mode"] === "files")
+        ? ((params as { mode: "files" | "folder" }).mode)
+        : "files";
+    return pickContextPaths(mode);
+  });
+
   ipcMain.handle("bulk:generateVariables", async (_event, params: unknown) => {
     if (
       typeof params !== "object" ||
@@ -16,11 +98,15 @@ export function registerBulkVariablesHandlers(): void {
     ) {
       throw new Error("bulk:generateVariables requires { storyName: string; description: string }");
     }
-    const { storyName, description, invocationId } = params as {
+    const { storyName, description, invocationId, contextPaths } = params as {
       storyName: string;
       description: string;
       invocationId?: string;
+      contextPaths?: unknown;
     };
+    const paths = Array.isArray(contextPaths)
+      ? contextPaths.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+      : [];
     const settings = getSettingsValue();
     const id = invocationId?.trim() || randomUUID();
     const result = await generateBulkVariableRuns(
@@ -28,6 +114,8 @@ export function registerBulkVariablesHandlers(): void {
       description,
       settings,
       id,
+      undefined,
+      { contextPaths: paths },
     );
     return { invocationId: id, ...result };
   });

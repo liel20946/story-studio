@@ -901,13 +901,15 @@ export function BulkRunView() {
                     size="titlebar"
                     disabled={isStopping}
                     onClick={() => void handleStop()}
+                    aria-label="Stop all bulk runs"
+                    title="Cancel the current run and skip every remaining run in this bulk"
                   >
                     {isStopping ? (
                       <Loader2Icon className="size-4 animate-spin" />
                     ) : (
                       <SquareIcon className="size-4" />
                     )}
-                    Stop
+                    Stop all
                   </Button>
                 )}
                 {canResume && (
