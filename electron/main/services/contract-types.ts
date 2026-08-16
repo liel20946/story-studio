@@ -7,23 +7,12 @@
 // ---------- Stories ----------
 export type BowserStoryMode = "recorded" | "generated" | "manual";
 
-export type RunStatus = "passed" | "failed" | "cancelled" | "error" | "blocked";
-export type AgentProvider = "codex" | "claude-code";
-
-export type StoryLastRun = {
-  status: RunStatus;
-  finishedAt: number;
-  runId?: string;
-  agentProvider?: AgentProvider;
-  providerSessionId?: string;
-};
-
 export interface StorySummary {
   name: string; // composite: site-slug--story-id
   title: string;
   baseUrl?: string;
   createdAt: number;
-  lastRun?: StoryLastRun | null;
+  lastRun?: { status: RunStatus; finishedAt: number } | null;
   siteSlug?: string;
   storyId?: string;
   mode?: BowserStoryMode;
@@ -47,6 +36,9 @@ export interface StoryDetail extends StorySummary {
 }
 
 // ---------- Runs ----------
+export type RunStatus = "passed" | "failed" | "cancelled" | "error" | "blocked";
+export type AgentProvider = "codex" | "claude-code";
+
 export interface RunStep {
   index: number;
   text: string;

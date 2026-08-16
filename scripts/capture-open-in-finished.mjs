@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Capture Open in provider on finished story + history run views.
+ * Capture Open in provider on finished story RUN views (not story detail).
  *   STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-open-in-finished.mjs
  */
 import { createRequire } from "node:module";
@@ -69,6 +69,19 @@ async function shot(app, name) {
   console.log("wrote", file);
 }
 
+async function openHistoryRun(page, titlePart) {
+  await page.getByRole("tab", { name: "Runs" }).click({ force: true });
+  await wait(800);
+  await page
+    .locator(".group\\/row")
+    .filter({ hasText: titlePart })
+    .first()
+    .click({ force: true });
+  await page.getByText("Actions").first().waitFor({ timeout: 20_000 });
+  await wait(800);
+  await page.getByRole("button", { name: "Open in Codex" }).waitFor({ timeout: 10_000 });
+}
+
 async function main() {
   ensureCursorThemeSettings();
 
@@ -99,36 +112,14 @@ async function main() {
     });
     await wait(600);
 
-    // Finished story detail (not running) — Open in Codex
-    await page.getByRole("tab", { name: "Stories" }).click({ force: true });
-    await wait(600);
-    await page.getByText("Login Flow", { exact: true }).first().click({ force: true });
-    await wait(1000);
-    await page.getByRole("button", { name: "Open in Codex" }).waitFor({ timeout: 10_000 });
-    await shot(app, "01-story-open-in-codex-finished");
+    await openHistoryRun(page, "Login Flow");
+    await shot(app, "01-run-passed-open-in-codex");
 
-    // Finished history run (failed) — Open in Codex
-    await page.getByRole("tab", { name: "Runs" }).click({ force: true });
-    await wait(800);
-    await page
-      .locator(".group\\/row")
-      .filter({ hasText: "Checkout Flow" })
-      .first()
-      .click({ force: true });
-    await page.getByText("Actions").first().waitFor({ timeout: 20_000 });
-    await wait(800);
-    await page.getByRole("button", { name: "Open in Codex" }).waitFor({ timeout: 10_000 });
-    await shot(app, "02-history-failed-open-in-codex");
+    await openHistoryRun(page, "Checkout Flow");
+    await shot(app, "02-run-failed-open-in-codex");
 
-    // Finished history run (cancelled)
-    await page
-      .locator(".group\\/row")
-      .filter({ hasText: "Update Notifica" })
-      .first()
-      .click({ force: true });
-    await wait(1000);
-    await page.getByRole("button", { name: "Open in Codex" }).waitFor({ timeout: 10_000 });
-    await shot(app, "03-history-cancelled-open-in-codex");
+    await openHistoryRun(page, "Update Notifica");
+    await shot(app, "03-run-cancelled-open-in-codex");
   } finally {
     await app.close().catch(() => {});
   }

@@ -113,7 +113,7 @@ async function collectStoriesByCanonicalSiteSlug(): Promise<Map<string, BowserSt
 function summariesFromSite(
   siteSlug: string,
   stories: BowserStoryEntry[],
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): StorySummary[] {
   return stories.map((story) => {
     const name = compositeStoryName(siteSlug, story.id);
@@ -188,14 +188,14 @@ export async function previewImportStories(filePaths: string[]): Promise<ImportP
 }
 
 export async function getExportPreview(): Promise<ExportPreview> {
-  const lastRunMap = new Map<string, import("./contract-types.js").StoryLastRun>();
+  const lastRunMap = new Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>();
   const stories = await listStories(lastRunMap);
   const bySite = await collectStoriesByCanonicalSiteSlug();
   return { storyCount: stories.length, fileCount: bySite.size };
 }
 
 export async function listStories(
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): Promise<StorySummary[]> {
   const results = await listBowserSummaries(lastRunMap);
   console.log("[stories] listed", results.length, "bowser stories");
@@ -204,7 +204,7 @@ export async function listStories(
 
 export async function getStory(
   name: string,
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): Promise<StoryDetail> {
   return getBowserStory(name, lastRunMap);
 }
@@ -294,7 +294,7 @@ export async function deleteStory(name: string): Promise<void> {
 
 async function importStoriesOverwrite(
   filePaths: string[],
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): Promise<StorySummary[]> {
   const siteReplacements = new Map<string, BowserStoryEntry[]>();
   for (const srcPath of filePaths) {
@@ -325,7 +325,7 @@ async function importStoriesOverwrite(
 
 async function importStoriesAdd(
   filePaths: string[],
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): Promise<StorySummary[]> {
   const results: StorySummary[] = [];
   for (const srcPath of filePaths) {
@@ -361,7 +361,7 @@ async function importStoriesAdd(
 
 export async function importStories(
   filePaths: string[],
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
   mode: ImportMode = "overwrite",
 ): Promise<StorySummary[]> {
   if (mode === "add") {
@@ -494,7 +494,7 @@ export async function appendApprovedStory(
 let watcher: fsSync.FSWatcher | null = null;
 
 export function watchStories(
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): void {
   if (watcher) {
     try {

@@ -633,7 +633,7 @@ export async function deleteStoryFromSite(siteSlug: string, storyId: string): Pr
 }
 
 export async function listBowserSummaries(
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): Promise<StorySummary[]> {
   const storiesDir = getStoriesDir();
   let entries: string[];
@@ -676,7 +676,7 @@ export async function listBowserSummaries(
 
 export async function getBowserStory(
   name: string,
-  lastRunMap: Map<string, import("./contract-types.js").StoryLastRun>,
+  lastRunMap: Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>,
 ): Promise<StoryDetail> {
   const parsed = parseCompositeName(name);
   if (!parsed) {

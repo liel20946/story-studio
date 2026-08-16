@@ -759,6 +759,20 @@ function LiveRunView({ runId }: { runId: string }) {
 
   const agentProvider = result?.agentProvider ?? run?.agentProvider;
   const agentModel = result?.agentModel ?? run?.agentModel;
+  // Prefer in-memory session id; fall back to the saved record so finished
+  // runs still show Open in provider after navigation / reload.
+  const savedRunQuery = useQuery({
+    queryKey: ["runs:get", runId],
+    queryFn: () => runsGet(runId),
+    enabled: isFinished,
+    staleTime: 30_000,
+  });
+  const providerSessionId =
+    result?.providerSessionId ??
+    run?.providerSessionId ??
+    savedRunQuery.data?.providerSessionId;
+  const openProvider =
+    agentProvider ?? savedRunQuery.data?.agentProvider;
 
   return (
     <ScrollArea
@@ -776,10 +790,8 @@ function LiveRunView({ runId }: { runId: string }) {
               />
               <OpenInProviderButton
                 runId={runId}
-                agentProvider={agentProvider}
-                providerSessionId={
-                  result?.providerSessionId ?? run?.providerSessionId
-                }
+                agentProvider={openProvider}
+                providerSessionId={providerSessionId}
               />
               {!isFinished && (
                 <Button

@@ -25,23 +25,12 @@ export interface ExportPreview {
   fileCount: number;
 }
 
-export type RunStatus = "passed" | "failed" | "cancelled" | "error" | "blocked";
-export type AgentProvider = "codex" | "claude-code";
-
-export type StoryLastRun = {
-  status: RunStatus;
-  finishedAt: number;
-  runId?: string;
-  agentProvider?: AgentProvider;
-  providerSessionId?: string;
-};
-
 export interface StorySummary {
   name: string;
   title: string;
   baseUrl?: string;
   createdAt: number;
-  lastRun?: StoryLastRun | null;
+  lastRun?: { status: RunStatus; finishedAt: number } | null;
   siteSlug?: string;
   storyId?: string;
   mode?: BowserStoryMode;
@@ -63,6 +52,9 @@ export interface StoryDetail extends StorySummary {
   globalRules: string;
   raw: string;
 }
+
+export type RunStatus = "passed" | "failed" | "cancelled" | "error" | "blocked";
+export type AgentProvider = "codex" | "claude-code";
 
 export interface RunStep {
   index: number;

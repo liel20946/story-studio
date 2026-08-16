@@ -228,7 +228,6 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
         });
         queryClient.invalidateQueries({ queryKey: ["runs:list"] });
         queryClient.invalidateQueries({ queryKey: ["stories:list"] });
-        queryClient.invalidateQueries({ queryKey: ["stories:get"] });
       })();
     });
 
