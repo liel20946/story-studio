@@ -313,12 +313,12 @@ function isUndoShortcut(e: KeyboardEvent) {
 const storyEditInputClass =
   "min-w-0 w-full bg-transparent border-0 outline-none p-0 text-inherit font-inherit leading-inherit focus:ring-1 focus:ring-field/60 rounded-sm";
 
-// Shared body size for steps, assertions, global rules, and variable values.
+// Shared body size for steps, assertions, global rules, and variables.
 const storyBodyTextClass = "text-[12px] leading-[16px] text-secondary";
-// Variable names stay mono so they read as identifiers — slightly smaller than
-// steps/assertions so the rail densifies without competing with the left pane.
-const storyVarNameClass = "font-mono text-[11px] leading-[14px]";
-const storyVarValueClass = "text-[11px] leading-[14px]";
+// Variable keys use the same size as steps/assertions (not mono) so the rail
+// reads as one consistent type system; weight comes from VAR_NAME_CLASS.
+const storyVarNameClass = "text-[12px] leading-[16px]";
+const storyVarValueClass = "text-[12px] leading-[16px]";
 
 function focusInputAt(refs: React.RefObject<(HTMLInputElement | null)[]>, index: number) {
   requestAnimationFrame(() => {
@@ -431,7 +431,7 @@ function EditableVariables({
       {draft.variables.map((v, i) => (
         <div
           key={i}
-          className="flex items-center gap-1.5 py-0.5 min-w-0 rounded-control"
+          className="flex items-center gap-2 py-1 min-w-0 rounded-control"
         >
           <input
             ref={(el) => {
@@ -488,7 +488,7 @@ function ReadOnlyVariables({
         return (
           <div
             key={v.key}
-            className="group/var flex items-center gap-1.5 py-0.5 min-w-0"
+            className="group/var flex items-center gap-2 py-1 min-w-0"
           >
             <span
               className={cn(
@@ -1009,7 +1009,7 @@ export function StoryView() {
                   {(isEditingThisStory && draft ? draft.assertions : story.assertions).map(
                     (assertion, i) =>
                       isEditingThisStory && draft ? (
-                        <div key={i} className="flex items-center gap-1.5 py-0.5 min-w-0">
+                        <div key={i} className="flex items-center gap-2 py-1 min-w-0">
                           <input
                             ref={(el) => {
                               assertionInputRefs.current[i] = el;

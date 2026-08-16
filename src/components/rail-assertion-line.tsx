@@ -11,7 +11,7 @@ export function RailAssertionLine({
   passed?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-1.5 py-0.5 min-w-0">
+    <div className="flex items-center gap-2 py-1 min-w-0">
       <div className="min-w-0 flex-1 truncate text-[12px] leading-[16px] text-secondary [&_code]:text-[12px]">
         <InlineCode text={text} colorMap={colorMap} />
       </div>

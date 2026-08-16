@@ -509,14 +509,14 @@ function RunVariablesSection({
           return (
             <div
               key={key}
-              className="flex items-center gap-1.5 py-0.5 min-w-0"
+              className="flex items-center gap-2 py-1 min-w-0"
             >
-              <span className="max-w-[18rem] shrink-0 truncate font-mono text-[11px] leading-[14px] text-primary">
+              <span className="max-w-[18rem] shrink-0 truncate text-[12px] leading-[16px] font-medium text-primary">
                 {key}
               </span>
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate text-[11px] leading-[14px]",
+                  "min-w-0 flex-1 truncate text-[12px] leading-[16px]",
                   value ? "text-secondary" : "text-quaternary",
                 )}
               >
