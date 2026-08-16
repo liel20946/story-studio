@@ -101,17 +101,18 @@ async function main() {
 
   // --- Story view typography ---
   await page.getByText("Login Flow", { exact: true }).first().click({ force: true });
-  await page.getByRole("button", { name: /^Edit$/i }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
   await wait(800);
   await shot(app, "01-story-view-typography");
 
   // Edit then Cancel (toolbar should return cleanly without Edit hover flash)
-  await page.getByRole("button", { name: /^Edit$/i }).click({ force: true });
+  await page.getByRole("button", { name: "More actions" }).click({ force: true });
+  await page.getByRole("menuitem", { name: /^Edit$/i }).click({ force: true });
   await page.getByRole("button", { name: /^Cancel$/i }).waitFor();
   await wait(400);
   await shot(app, "02-story-view-editing");
   await page.getByRole("button", { name: /^Cancel$/i }).click({ force: true });
-  await page.getByRole("button", { name: /^Edit$/i }).waitFor();
+  await page.getByRole("button", { name: "More actions" }).waitFor();
   await wait(400);
   await shot(app, "03-story-view-after-cancel");
 

@@ -77,14 +77,19 @@ async function main() {
 
   // Open Login Flow story from the sidebar.
   await page.getByText("Login Flow", { exact: true }).first().click({ force: true });
-  await page.getByRole("button", { name: "Duplicate story" }).waitFor({ timeout: 15_000 });
-  await wait(800);
+  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
+  await wait(400);
+  await page.getByRole("button", { name: "More actions" }).click({ force: true });
+  await page.getByRole("menuitem", { name: /^Duplicate$/i }).waitFor({ timeout: 5_000 });
+  await wait(300);
   await shot(app, "01-story-view-duplicate-button");
 
-  // Hover the duplicate button so the tooltip is visible.
-  await page.getByRole("button", { name: "Duplicate story" }).hover();
+  // Hover the duplicate menu item.
+  await page.getByRole("menuitem", { name: /^Duplicate$/i }).hover();
   await wait(400);
   await shot(app, "02-story-view-duplicate-tooltip");
+  await page.keyboard.press("Escape");
+  await wait(200);
 
   // Switch sidebar to Runs and open the first finished run.
   await page.getByRole("tab", { name: "Runs" }).click({ force: true });

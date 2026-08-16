@@ -162,10 +162,10 @@ async function main() {
   // --- Duplicate story auto-select ---
   await page.getByText("Login Flow", { exact: true }).first().click({ force: true });
   await wait(1000);
-  const dupBtn = page.getByRole("button", { name: "Duplicate story" });
-  await dupBtn.waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
   await shot(app, "05-story-before-duplicate");
-  await dupBtn.click({ force: true });
+  await page.getByRole("button", { name: "More actions" }).click({ force: true });
+  await page.getByRole("menuitem", { name: /^Duplicate$/i }).click({ force: true });
   await wait(1500);
   await shot(app, "06-story-after-duplicate-selected");
 

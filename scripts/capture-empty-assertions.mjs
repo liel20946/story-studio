@@ -103,12 +103,13 @@ async function main() {
   await page.getByRole("tab", { name: "Stories" }).click({ force: true });
   await wait(500);
   await page.getByText("Empty Assertions Demo").first().click({ force: true });
-  await page.getByRole("button", { name: /^Edit$/i }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
   await wait(500);
 
   await shot(app, "01-story-with-default-assertions");
 
-  await page.getByRole("button", { name: /^Edit$/i }).click({ force: true });
+  await page.getByRole("button", { name: "More actions" }).click({ force: true });
+  await page.getByRole("menuitem", { name: /^Edit$/i }).click({ force: true });
   await page.getByRole("button", { name: /^Save$/i }).waitFor();
   await wait(400);
 
@@ -129,7 +130,7 @@ async function main() {
   await shot(app, "02-story-edit-cleared-assertions");
 
   await page.getByRole("button", { name: /^Save$/i }).click({ force: true });
-  await page.getByRole("button", { name: /^Edit$/i }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
   await wait(800);
 
   // Assertions section should be gone in read-only view when empty.
@@ -144,7 +145,8 @@ async function main() {
   await shot(app, "03-story-saved-without-assertions");
 
   // Re-open edit and confirm defaults did not return.
-  await page.getByRole("button", { name: /^Edit$/i }).click({ force: true });
+  await page.getByRole("button", { name: "More actions" }).click({ force: true });
+  await page.getByRole("menuitem", { name: /^Edit$/i }).click({ force: true });
   await page.getByRole("button", { name: /^Save$/i }).waitFor();
   await wait(400);
   const afterInputs = page.getByRole("textbox", { name: /^Assertion / });
