@@ -588,8 +588,6 @@ button:not(:disabled):active,
 [data-color-theme="cursor"] .main-pane {
   background: var(--bg);
   border: none;
-  border-radius: 10px 0 0 10px;
-  box-shadow: -0.5px 0 0 var(--color-border-separator);
 }
 
 [data-color-theme="cursor"].dark .sidebar-item-selected {
