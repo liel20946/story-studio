@@ -18,6 +18,7 @@ import type {
   GenerateConversationSummary,
   GenerateConversationDetail,
   AgentModelOverride,
+  AgentProvider,
   ImportMode,
   ImportPreview,
   ExportPreview,
@@ -359,6 +360,24 @@ export function onRunEvent(
 ): () => void {
   return window.electronAPI.on("run:event", (payload: unknown) =>
     cb(payload as import("./contract-types").RunEvent),
+  );
+}
+
+export function onRunProviderSession(
+  cb: (payload: {
+    runId: string;
+    agentProvider: AgentProvider;
+    providerSessionId: string;
+  }) => void,
+): () => void {
+  return window.electronAPI.on("run:providerSession", (payload: unknown) =>
+    cb(
+      payload as {
+        runId: string;
+        agentProvider: AgentProvider;
+        providerSessionId: string;
+      },
+    ),
   );
 }
 

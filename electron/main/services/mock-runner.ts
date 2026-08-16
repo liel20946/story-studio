@@ -8,6 +8,7 @@ import {
 import { buildScreenshotUrl, saveRun } from "./run-service.js";
 import { ensureRunOutputDir, getHeroScreenshotPath } from "./run-artifacts.js";
 import { writeRunMeta, deleteRunMeta, withRunVariables } from "./run-meta.js";
+import { publishProviderSession } from "./provider-session.js";
 import type {
   ActiveRunSnapshot,
   AgentProvider,
@@ -33,6 +34,7 @@ interface MockRunState {
   startedAt: number;
   agentProvider: AgentProvider;
   agentModel: string;
+  providerSessionId: string;
   events: RunEvent[];
   cancelled: boolean;
   queued: boolean;
@@ -80,6 +82,7 @@ export async function startMockRun(
     startedAt,
     agentProvider: provider,
     agentModel,
+    providerSessionId: `mock-session-${runId}`,
     events: [],
     cancelled: false,
     queued: true,
@@ -89,6 +92,7 @@ export async function startMockRun(
     variableOverrides,
   };
   _mocks.set(runId, state);
+  publishProviderSession(runId, provider, state.providerSessionId);
 
   const push = (partial: Omit<RunEvent, "runId" | "seq" | "ts">) => {
     const evt: RunEvent = {
@@ -193,7 +197,7 @@ async function finishMockRun(runId: string): Promise<void> {
     error: status === "failed" ? summary : undefined,
     agentProvider: state.agentProvider,
     agentModel: state.agentModel,
-    providerSessionId: `mock-session-${runId}`,
+    providerSessionId: state.providerSessionId,
   };
 
   const withVars = await withRunVariables(result);
@@ -237,7 +241,7 @@ export function listActiveMockRuns(): ActiveRunSnapshot[] {
     events: s.events,
     agentProvider: s.agentProvider,
     agentModel: s.agentModel,
-    providerSessionId: `mock-session-${s.runId}`,
+    providerSessionId: s.providerSessionId,
     variableOverrides: s.variableOverrides,
     queued: s.queued,
   }));

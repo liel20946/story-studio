@@ -60,7 +60,7 @@ import {
   settleRunningEvents,
 } from "./run-event-settle.js";
 import { classifyMcpTool } from "./mcp-tool-event.js";
-import { extractProviderSessionId } from "./provider-session.js";
+import { extractProviderSessionId, publishProviderSession } from "./provider-session.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -758,7 +758,10 @@ function handleCodexLine(
 
   if (!state.providerSessionId) {
     const sessionId = extractProviderSessionId(parsed);
-    if (sessionId) state.providerSessionId = sessionId;
+    if (sessionId) {
+      state.providerSessionId = sessionId;
+      publishProviderSession(runId, state.agentProvider, sessionId);
+    }
   }
 
   if (type === "turn.completed") {
