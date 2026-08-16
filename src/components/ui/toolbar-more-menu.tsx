@@ -18,10 +18,8 @@ export type ToolbarMoreItem = {
  */
 export function ToolbarMoreMenu({
   items,
-  label = "More",
 }: {
   items: ToolbarMoreItem[];
-  label?: string;
 }) {
   const visible = items.filter(Boolean);
   if (visible.length === 0) return null;
@@ -33,10 +31,10 @@ export function ToolbarMoreMenu({
           variant="glass"
           size="titlebar"
           radius="full"
+          iconOnly
           aria-label="More actions"
         >
           <EllipsisIcon className="size-4" />
-          {label}
         </Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
