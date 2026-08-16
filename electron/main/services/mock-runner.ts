@@ -193,6 +193,7 @@ async function finishMockRun(runId: string): Promise<void> {
     error: status === "failed" ? summary : undefined,
     agentProvider: state.agentProvider,
     agentModel: state.agentModel,
+    providerSessionId: `mock-session-${runId}`,
   };
 
   const withVars = await withRunVariables(result);
@@ -236,6 +237,7 @@ export function listActiveMockRuns(): ActiveRunSnapshot[] {
     events: s.events,
     agentProvider: s.agentProvider,
     agentModel: s.agentModel,
+    providerSessionId: `mock-session-${s.runId}`,
     variableOverrides: s.variableOverrides,
     queued: s.queued,
   }));

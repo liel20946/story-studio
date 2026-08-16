@@ -24,6 +24,7 @@ import {
   buildClaudeSpawnEnv,
 } from "./agent-spawn-env.js";
 import { killDetachedAgentProcess } from "./agent-process-kill.js";
+import { extractProviderSessionId } from "./provider-session.js";
 
 const GENERATE_TIMEOUT_MS = 8 * 60_000;
 const REVISION_TIMEOUT_MS = 2 * 60_000;
@@ -84,18 +85,8 @@ export function parseCodexSessionIdFromStdout(stdout: string): string | null {
     if (!trimmed) continue;
     try {
       const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-      const type = parsed["type"] as string | undefined;
-      if (type === "session.configured" || type === "session_configured") {
-        const id =
-          (parsed["session_id"] as string | undefined) ??
-          (parsed["sessionId"] as string | undefined);
-        if (id?.trim()) return id.trim();
-      }
-      if (type === "session_meta") {
-        const payload = parsed["payload"] as Record<string, unknown> | undefined;
-        const id = payload?.["id"] as string | undefined;
-        if (id?.trim()) return id.trim();
-      }
+      const id = extractProviderSessionId(parsed);
+      if (id) return id;
     } catch {
       // ignore non-JSON lines
     }

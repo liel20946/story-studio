@@ -115,6 +115,8 @@ export interface RunResult {
   error?: string;
   agentProvider?: AgentProvider;
   agentModel?: string;
+  /** Codex thread id / Claude conversation id for opening in the provider app. */
+  providerSessionId?: string;
   /** Effective variable values used for this run (for retry). */
   variableOverrides?: Record<string, string>;
 }
@@ -132,6 +134,8 @@ export interface ActiveRunSnapshot {
   events: RunEvent[];
   agentProvider?: AgentProvider;
   agentModel?: string;
+  /** Codex thread id / Claude conversation id when known. */
+  providerSessionId?: string;
   /** Effective variable values used for this run. */
   variableOverrides?: Record<string, string>;
   /** True while waiting for the single-run concurrency slot. */

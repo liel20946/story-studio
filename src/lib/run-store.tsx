@@ -32,6 +32,8 @@ export interface ActiveRunState {
   result: RunResult | null; // null while running
   agentProvider?: AgentProvider;
   agentModel?: string;
+  /** Codex thread id / Claude conversation id when known. */
+  providerSessionId?: string;
   /** Effective variable values used for this run. */
   variableOverrides?: Record<string, string>;
   /** Waiting for the single-run concurrency slot. */
@@ -92,6 +94,8 @@ function applySnapshot(
       startedAt: snapshot.startedAt || existing?.startedAt || Date.now(),
       agentProvider: snapshot.agentProvider ?? existing?.agentProvider,
       agentModel: snapshot.agentModel ?? existing?.agentModel,
+      providerSessionId:
+        snapshot.providerSessionId ?? existing?.providerSessionId,
       variableOverrides:
         snapshot.variableOverrides ?? existing?.variableOverrides,
       events: filterTimelineEvents(mergedEvents),
@@ -213,6 +217,8 @@ export function RunStoreProvider({ children }: { children: React.ReactNode }) {
               storyTitle: base.storyTitle || res.storyTitle,
               agentProvider: res.agentProvider ?? base.agentProvider,
               agentModel: res.agentModel ?? base.agentModel,
+              providerSessionId:
+                res.providerSessionId ?? base.providerSessionId,
               variableOverrides:
                 res.variableOverrides ?? base.variableOverrides,
               events: mergedEvents,

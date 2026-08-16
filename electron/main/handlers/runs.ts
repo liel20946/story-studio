@@ -17,10 +17,11 @@ import { getRunsDir } from "../services/paths.js";
 import { getSettingsValue } from "./settings.js";
 import { getAgentRunConfig } from "../services/agent-config.js";
 import { readRunMeta } from "../services/run-meta.js";
-import { collectLiveScreenshotPaths } from "../services/run-artifacts.js";
+import { collectLiveScreenshotPaths, getRunOutputDir } from "../services/run-artifacts.js";
 import { buildLiveTimeline } from "../services/run-timeline.js";
 import { mockRunsEnabled } from "../services/mock-runner.js";
-import type { BulkRunOptions } from "../services/contract-types.js";
+import { openProviderSession } from "../services/provider-session.js";
+import type { AgentProvider, BulkRunOptions } from "../services/contract-types.js";
 
 // Playwright MCP screenshots are saved as JPEG by default even when the
 // requested filename ends in ".png" (quality-compressed unless `raw: true`
@@ -411,6 +412,41 @@ export function registerRunsHandlers(): void {
     }
     const { runId } = params as { runId: string };
     return getRun(runId);
+  });
+
+  ipcMain.handle("runs:openInProvider", async (_event, params: unknown) => {
+    if (
+      typeof params !== "object" ||
+      params === null ||
+      typeof (params as Record<string, unknown>)["runId"] !== "string"
+    ) {
+      throw new Error("runs:openInProvider requires { runId: string }");
+    }
+    const { runId } = params as { runId: string };
+
+    let provider: AgentProvider | undefined;
+    let sessionId: string | undefined;
+
+    const active = listActiveRuns().find((r) => r.runId === runId);
+    if (active?.providerSessionId && active.agentProvider) {
+      provider = active.agentProvider;
+      sessionId = active.providerSessionId;
+    } else {
+      try {
+        const record = await getRun(runId);
+        provider = record.agentProvider;
+        sessionId = record.providerSessionId;
+      } catch {
+        // fall through
+      }
+    }
+
+    if (!provider || !sessionId?.trim()) {
+      throw new Error("No provider conversation is available for this run yet.");
+    }
+
+    await openProviderSession(provider, sessionId.trim(), getRunOutputDir(runId));
+    return { ok: true as const };
   });
 
   ipcMain.handle("runs:delete", async (_event, params: unknown) => {
