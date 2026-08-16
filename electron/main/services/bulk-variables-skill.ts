@@ -2,7 +2,11 @@ import type { StoryDetail } from "./contract-types.js";
 
 export const BULK_VARIABLES_SKILL = "bulk-variables";
 
-export function buildBulkVariablesPrompt(story: StoryDetail, userDescription: string): string {
+export function buildBulkVariablesPrompt(
+  story: StoryDetail,
+  userDescription: string,
+  attachedContextSection = "",
+): string {
   const variableLines =
     story.variables.length > 0
       ? story.variables
@@ -18,6 +22,10 @@ export function buildBulkVariablesPrompt(story: StoryDetail, userDescription: st
     .map((line, i) => `${i + 1}. ${line}`)
     .join("\n");
 
+  const contextBlock = attachedContextSection.trim()
+    ? `\n${attachedContextSection.trim()}\n`
+    : "";
+
   return `You are the "${BULK_VARIABLES_SKILL}" skill for Story Studio bulk runs.
 
 Given a browser test story and a natural-language description, produce multiple variable sets so the same story can run several times with different data.
@@ -31,7 +39,7 @@ ${variableLines}
 
 ### Workflow preview
 ${workflowPreview || "(no steps)"}
-
+${contextBlock}
 ## User request
 ${userDescription.trim()}
 
@@ -47,6 +55,7 @@ Respond with ONLY valid JSON (no markdown fences, no commentary) in this shape:
 - Start from the story's current default values above. Only change a value when the user asked for that variation.
 - Secret values (password/token/secret) must be copied exactly from the story defaults — never invent or mask them.
 - Usernames, emails, and other credentials must come from the story defaults unless the user explicitly asked to vary them (e.g. different emails). When varying emails, derive from the story's real address (e.g. insert +tag before @).
+- When attached files/folders are provided, use their real contents for variables that need payloads (HTML, JSON, text snippets, etc.). Prefer one attached file (or a clear slice) per run when the user asks to vary by file.
 - Generate as many runs as the user asked for (default 2 if unspecified).
 - Labels must be short and distinct (e.g. "Admin", "Guest", "US region").
 - Do not invent placeholder data like "user1@example.com" or "password123" when story defaults exist.`;

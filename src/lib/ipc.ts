@@ -200,14 +200,28 @@ export const runBulkStart = (
   stopCondition: string;
 }> => ipcInvoke("run:bulkStart", { storyNames, options });
 
+export const bulkPickContextPaths = (
+  mode: "files" | "folder" = "files",
+): Promise<{
+  paths: string[];
+  canceled: boolean;
+}> => ipcInvoke("bulk:pickContextPaths", { mode });
+
 export const bulkGenerateVariables = (
   storyName: string,
   description: string,
   invocationId?: string,
+  contextPaths?: string[],
 ): Promise<{
   invocationId: string;
   runs: import("./contract-types").BulkVariableRun[];
-}> => ipcInvoke("bulk:generateVariables", { storyName, description, invocationId });
+}> =>
+  ipcInvoke("bulk:generateVariables", {
+    storyName,
+    description,
+    invocationId,
+    contextPaths,
+  });
 
 export const bulkCancelGenerateVariables = (
   invocationId: string,

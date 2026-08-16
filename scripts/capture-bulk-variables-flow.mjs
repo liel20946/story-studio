@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Capture the bulk variable-runs UX flow screenshots only.
- * STORY_STUDIO_MOCK_RUNS=1 node scripts/capture-bulk-variables-flow.mjs
+ * Capture bulk variable-runs UX including file/folder attachments + Stop all.
+ * STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-bulk-variables-flow.mjs
  */
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -15,9 +15,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const outDir = path.join(
   process.env.CURSOR_ARTIFACTS_DIR || "/opt/cursor/artifacts",
-  "bulk-variable-runs",
+  "screenshots",
 );
 fs.mkdirSync(outDir, { recursive: true });
+
+const fixturesDir = path.join(outDir, "bulk-var-fixtures");
+fs.mkdirSync(fixturesDir, { recursive: true });
+const htmlA = path.join(fixturesDir, "welcome.html");
+const htmlB = path.join(fixturesDir, "promo.html");
+fs.writeFileSync(
+  htmlA,
+  "<html><body><h1>Welcome email</h1><p>Hello from fixture A</p></body></html>\n",
+);
+fs.writeFileSync(
+  htmlB,
+  "<html><body><h1>Promo banner</h1><p>Hello from fixture B</p></body></html>\n",
+);
 
 function electronExec() {
   const electronPath = path.dirname(require.resolve("electron"));
@@ -51,6 +64,7 @@ async function main() {
     env: {
       ...process.env,
       STORY_STUDIO_MOCK_RUNS: "1",
+      STORY_STUDIO_MOCK_ATTACHMENTS: `${htmlA}:${htmlB}:${fixturesDir}`,
       ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
     },
     timeout: 120_000,
@@ -94,7 +108,6 @@ async function main() {
   await page.getByText("Stop condition").waitFor();
   await shot(app, "01-bulk-selection");
 
-  // Force-show the configure button on Login Flow row for a clear screenshot.
   await page.evaluate(() => {
     const btn = document.querySelector(
       'button[aria-label="Configure variable runs for Login Flow"]',
@@ -115,16 +128,26 @@ async function main() {
   await page
     .getByRole("button", { name: /Configure variable runs for Login Flow/i })
     .click({ force: true });
-  await page.getByText("Variable runs — Login Flow").waitFor();
+  await page.getByText(/Variable runs[:\s].*Login Flow/i).waitFor();
   await wait(400);
   await shot(app, "03-variables-chat-modal");
 
+  await page.getByRole("button", { name: /^Files$/i }).click({ force: true });
+  await page.getByText("welcome.html").waitFor({ timeout: 5_000 });
+  await wait(300);
+  await shot(app, "03a-variables-chat-with-attachments");
+
   const composer = page.locator(".generate-composer textarea").first();
-  await composer.fill("Run as admin and guest with 2 different emails");
+  await composer.fill(
+    "Create one run per attached HTML file and use each file as the paste body",
+  );
   await wait(250);
   await shot(app, "03b-variables-chat-filled");
   await page.getByRole("button", { name: /^Send$/i }).click({ force: true });
-  await page.getByText(/Talking with the agent|Generating variable/i).waitFor({ timeout: 5_000 }).catch(() => {});
+  await page
+    .getByText(/Talking with the agent|Generating variable/i)
+    .waitFor({ timeout: 5_000 })
+    .catch(() => {});
   await wait(200);
   await shot(app, "03c-variables-generating");
   await page.getByRole("button", { name: /^Save for bulk$/i }).waitFor({ timeout: 15_000 });
@@ -132,9 +155,26 @@ async function main() {
   await shot(app, "04-variables-review");
 
   await page.getByRole("button", { name: /^Save for bulk$/i }).click({ force: true });
-  await page.getByText("2 runs").waitFor();
+  await page.getByText(/\d+ runs?/i).waitFor();
   await wait(400);
   await shot(app, "05-bulk-with-saved-variable-runs");
+
+  // Start a multi-story bulk so Stop all is visible.
+  await page.getByRole("button", { name: /^Select all$/i }).click({ force: true });
+  await wait(300);
+  const runBtn = page.getByRole("button", { name: /^Run \d+$/i });
+  await runBtn.waitFor();
+  await runBtn.click({ force: true });
+  await page.getByText(/Running \d+ stories/i).waitFor({ timeout: 15_000 });
+  await wait(400);
+  await shot(app, "06-bulk-running-stop-all");
+
+  const stopAll = page.getByRole("button", { name: /Stop all/i });
+  await stopAll.waitFor({ timeout: 10_000 });
+  await stopAll.click({ force: true });
+  await page.getByText(/Stopped/i).first().waitFor({ timeout: 15_000 });
+  await wait(500);
+  await shot(app, "07-bulk-stopped-all");
 
   await app.close();
   console.log("done", outDir);
