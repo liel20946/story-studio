@@ -161,6 +161,21 @@ async function symlinkInto(isolatedHome: string, realHome: string, name: string)
   await fs.symlink(target, link);
 }
 
+/** Copy nested files from src into dest without clobbering existing files. */
+async function copyDirContents(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const from = path.join(src, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirContents(from, to);
+    } else if (entry.isFile() && !existsSync(to)) {
+      await fs.copyFile(from, to);
+    }
+  }
+}
+
 function tomlString(value: string): string {
   return JSON.stringify(value);
 }
@@ -184,6 +199,9 @@ export async function prepareCodexChromeHome(isolatedHome: string): Promise<{
   await fs.mkdir(isolatedHome, { recursive: true });
 
   // Auth + installed plugins/skills must come from the real Codex home.
+  // Also share `sessions` so Chrome-mode rollouts are visible to Codex Desktop
+  // deep links (`codex://threads/…`). Keep sqlite/logs isolated so the run
+  // does not lock Desktop's state DB.
   for (const name of [
     "auth.json",
     "auth",
@@ -194,6 +212,23 @@ export async function prepareCodexChromeHome(isolatedHome: string): Promise<{
   ]) {
     await symlinkInto(isolatedHome, realHome, name);
   }
+
+  // Ensure ~/.codex/sessions exists, then link it into the isolated home so
+  // Chrome runs write rollouts Desktop can resolve.
+  const realSessions = path.join(realHome, "sessions");
+  await fs.mkdir(realSessions, { recursive: true });
+  const isolatedSessions = path.join(isolatedHome, "sessions");
+  try {
+    const st = await fs.lstat(isolatedSessions);
+    if (st.isDirectory() && !st.isSymbolicLink()) {
+      // Previous Chrome runs wrote rollouts only here — migrate before link.
+      await copyDirContents(isolatedSessions, realSessions);
+      await fs.rm(isolatedSessions, { recursive: true, force: true });
+    }
+  } catch {
+    // nothing to migrate
+  }
+  await symlinkInto(isolatedHome, realHome, "sessions");
 
   const envLines = Object.entries(nodeRepl.env)
     .map(([key, value]) => `${key} = ${tomlString(value)}`)
