@@ -532,9 +532,7 @@ function StoryLoadingShell({ title }: { title: string }) {
         <div className="detail-view-main story-sections">
           <div className="content-card">
             <div className="content-card-header">
-              <Text variant="small-strong" color="secondary">
-                Steps
-              </Text>
+              <span className="section-label">Steps</span>
             </div>
             <div className="content-card-body">
               <div className="story-loading-shell-lines" aria-hidden>

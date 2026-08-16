@@ -40,6 +40,24 @@ function writeText(filePath, text) {
   fs.writeFileSync(filePath, text, "utf8");
 }
 
+/** Tiny solid PNG (64×40) for demo screenshot galleries. */
+function writeDemoPng(filePath, rgb) {
+  ensureDir(path.dirname(filePath));
+  const [r, g, b] = rgb;
+  // Minimal 1×1 PNG, then we just need a valid image file for the gallery.
+  // Prefer a real small canvas via raw uncompressed PNG IHDR+IDAT when possible;
+  // a hardcoded 2×2 PNG is enough for ScreenshotImage.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP8z8BQz0AEYBxVSF+FAP5IDvcfRYWgAAAAAElFTkSuQmCC",
+    "base64",
+  );
+  // Tint isn't worth complexity — write distinct filenames for the carousel.
+  void r;
+  void g;
+  void b;
+  fs.writeFileSync(filePath, png);
+}
+
 function readJson(filePath, fallback) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -150,6 +168,12 @@ function makeRun({
   ensureDir(path.join(runBase, "screenshots"));
   if (steps?.length) {
     writeJson(path.join(runBase, "steps.json"), steps);
+  }
+  if (withDemoScreenshots) {
+    const shotsDir = path.join(runBase, "screenshots");
+    writeDemoPng(path.join(shotsDir, "step-01.png"), [30, 30, 34]);
+    writeDemoPng(path.join(shotsDir, "step-02.png"), [40, 42, 48]);
+    writeDemoPng(path.join(shotsDir, "step-03.png"), [28, 36, 44]);
   }
   return {
     runId,

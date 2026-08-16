@@ -972,9 +972,7 @@ function HistoricalRunView({
           <div className="content-card run-actions-card">
             <div className="content-card-header">
               <div className="flex min-w-0 items-center gap-2">
-                <Text variant="small-strong" color="secondary">
-                  Actions
-                </Text>
+                <span className="section-label">Actions</span>
                 <Text variant="small" color="tertiary">
                   {events.length}
                 </Text>
