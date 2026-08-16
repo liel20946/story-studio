@@ -188,10 +188,7 @@ export async function previewImportStories(filePaths: string[]): Promise<ImportP
 }
 
 export async function getExportPreview(): Promise<ExportPreview> {
-  const lastRunMap = new Map<
-    string,
-    { status: import("./contract-types.js").RunStatus; finishedAt: number }
-  >();
+  const lastRunMap = new Map<string, { status: import("./contract-types.js").RunStatus; finishedAt: number }>();
   const stories = await listStories(lastRunMap);
   const bySite = await collectStoriesByCanonicalSiteSlug();
   return { storyCount: stories.length, fileCount: bySite.size };
