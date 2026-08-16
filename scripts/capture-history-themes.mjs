@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Capture history redesign + light/dark theme screenshots.
+ * Capture Stories/History/Bulk tabs + light/dark themes.
  *
  * Prerequisites: npm run build && npm run seed:demo
  *   STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-history-themes.mjs
@@ -73,7 +73,7 @@ async function shot(app, name) {
 
 async function captureSuite(theme) {
   ensureThemeSettings(theme);
-  const prefix = `history-themes-${theme}`;
+  const prefix = `tabs-themes-${theme}`;
 
   const app = await electron.launch({
     executablePath: electronExec(),
@@ -90,22 +90,23 @@ async function captureSuite(theme) {
   await page.waitForLoadState("domcontentloaded");
   await wait(1800);
 
-  // Stories home — shows icon segment + theme chrome
   await page.getByRole("tab", { name: "Stories" }).click({ force: true });
   await wait(500);
   await shot(app, `${prefix}-01-stories`);
 
-  // History overview (new card list)
-  await page.getByRole("button", { name: "History" }).click({ force: true });
-  await wait(1200);
+  await page.getByRole("tab", { name: "History" }).click({ force: true });
+  await wait(1000);
   await shot(app, `${prefix}-02-history`);
 
-  // Appearance settings (simplified)
+  await page.getByRole("tab", { name: "Bulk" }).click({ force: true });
+  await wait(900);
+  await shot(app, `${prefix}-03-bulk`);
+
   await page.keyboard.press("Control+Comma");
   await wait(900);
   await page.getByRole("button", { name: "Appearance", exact: true }).click({ force: true });
   await wait(700);
-  await shot(app, `${prefix}-03-appearance`);
+  await shot(app, `${prefix}-04-appearance`);
 
   await app.close();
 }

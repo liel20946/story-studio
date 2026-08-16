@@ -32,6 +32,7 @@ import {
   CollapsibleContent,
   CollapsibleChevron,
   Button,
+  Badge,
   Text,
   Toolbar,
   ToolbarRow,
@@ -60,6 +61,7 @@ import { SidebarUpdateStatus } from "./update-status";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
 import type {
+  RunStatus,
   StorySummary,
   StoryDetail,
   RunResult,
@@ -71,6 +73,7 @@ import {
   onStoriesChanged,
   storiesDelete,
   runsList,
+  runsDelete,
   storiesRename,
   schedulesList,
   onSchedulesChanged,
@@ -159,7 +162,67 @@ function ExpandableRows<T>({
   );
 }
 
-// Status is no longer shown as sidebar pills on story rows — live runs use a spinner.
+// Status is conveyed by a small pill (no leading row icons): Passed / Failed /
+// Error / Cancelled, a yellow "Queued" pill while waiting for a free run slot,
+// or a blue "Running" pill while a run is in flight.
+function statusBadgeColor(
+  status: RunStatus,
+): "green" | "red" | "neutral" {
+  switch (status) {
+    case "passed":
+      return "green";
+    case "cancelled":
+      return "neutral";
+    default:
+      return "red";
+  }
+}
+
+function statusBadgeLabel(status: RunStatus): string {
+  switch (status) {
+    case "passed":
+      return "Passed";
+    case "failed":
+      return "Failed";
+    case "error":
+      return "Error";
+    case "cancelled":
+      return "Cancelled";
+    case "blocked":
+      return "Blocked";
+  }
+}
+
+function StatusPill({
+  status,
+  running,
+  queued,
+}: {
+  status?: RunStatus | null;
+  running?: boolean;
+  queued?: boolean;
+}) {
+  if (queued) {
+    return (
+      <Badge color="yellow" size="xs">
+        Queued
+      </Badge>
+    );
+  }
+  if (running) {
+    return (
+      <Badge color="blue" size="xs">
+        Running
+      </Badge>
+    );
+  }
+  if (!status) return null;
+  return (
+    <Badge color={statusBadgeColor(status)} size="xs">
+      {statusBadgeLabel(status)}
+    </Badge>
+  );
+}
 
 // Compact relative time — no "ago" suffix ("6m", "1h", "2d"), "now" for <1m.
 function formatRelative(epochMs: number): string | undefined {
@@ -615,7 +678,7 @@ function CreateStoryDialog({
 // dialog open unreliably).
 type DialogKind = "section-create" | "section-rename" | "story-rename";
 
-type LibraryTab = "stories" | "bulk";
+type LibraryTab = "stories" | "history" | "bulk";
 
 const DIALOG_META: Record<
   DialogKind,
@@ -650,72 +713,50 @@ const DIALOG_META: Record<
   },
 };
 
-// System actions — History / Scheduled open their own main-pane pages; Search
-// opens the command palette. Discrete Apple/Claude-style icon + label rows.
+// Scheduled + Search as system actions (History is a library tab again).
 function SystemActions({
-  active,
-  onHistory,
+  scheduledActive,
   onScheduled,
   onSearch,
 }: {
-  active: "history" | "scheduled" | null;
-  onHistory: () => void;
+  scheduledActive: boolean;
   onScheduled: () => void;
   onSearch: () => void;
 }) {
-  const actions = [
-    {
-      id: "history" as const,
-      label: "History",
-      icon: HistoryIcon,
-      onClick: onHistory,
-    },
-    {
-      id: "scheduled" as const,
-      label: "Scheduled",
-      icon: ClockIcon,
-      onClick: onScheduled,
-    },
-    {
-      id: "search" as const,
-      label: "Search",
-      icon: SearchIcon,
-      onClick: onSearch,
-      hint: "⌘K",
-    },
-  ];
-
   return (
     <nav className="system-actions" aria-label="System">
-      {actions.map((action) => {
-        const Icon = action.icon;
-        const isActive = action.id !== "search" && active === action.id;
-        return (
-          <button
-            key={action.id}
-            type="button"
-            aria-label={action.label}
-            aria-current={isActive ? "page" : undefined}
-            data-active={isActive}
-            className="system-action-row"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              action.onClick();
-            }}
-          >
-            <Icon className="system-action-row-icon size-3.5 shrink-0" />
-            <span className="system-action-row-label">{action.label}</span>
-            {action.hint ? (
-              <span className="system-action-row-hint">{action.hint}</span>
-            ) : null}
-          </button>
-        );
-      })}
+      <button
+        type="button"
+        aria-label="Scheduled"
+        aria-current={scheduledActive ? "page" : undefined}
+        data-active={scheduledActive}
+        className="system-action-row"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          onScheduled();
+        }}
+      >
+        <ClockIcon className="system-action-row-icon size-3.5 shrink-0" />
+        <span className="system-action-row-label">Scheduled</span>
+      </button>
+      <button
+        type="button"
+        aria-label="Search"
+        className="system-action-row"
+        onClick={(e) => {
+          e.currentTarget.blur();
+          onSearch();
+        }}
+      >
+        <SearchIcon className="system-action-row-icon size-3.5 shrink-0" />
+        <span className="system-action-row-label">Search</span>
+        <span className="system-action-row-hint">⌘K</span>
+      </button>
     </nav>
   );
 }
 
-// Stories | Bulk library tabs — icon-only segment + Plus dropdown.
+// Stories | History | Bulk — icon-only segment + Plus dropdown.
 function LibraryTabs({
   value,
   onChange,
@@ -729,14 +770,16 @@ function LibraryTabs({
 }) {
   const options = [
     { value: "stories" as const, label: "Stories", icon: BookOpenIcon },
+    { value: "history" as const, label: "History", icon: HistoryIcon },
     { value: "bulk" as const, label: "Bulk", icon: ListChecksIcon },
   ];
-  const activeIndex = value === "stories" ? 0 : 1;
+  const activeIndex =
+    value === "stories" ? 0 : value === "history" ? 1 : 2;
 
   return (
     <div className="library-tabs-row">
       <div
-        className="segment-control segment-control--library"
+        className="segment-control segment-control--library segment-control--three"
         role="tablist"
         aria-label="Library"
         data-active-index={activeIndex}
@@ -844,11 +887,12 @@ export function AppSidebar() {
     setCollapsed,
   } = useSections();
 
-  // Library tabs: Stories list vs Bulk runner. History / Scheduled / Search are
-  // system actions (own pages / command palette), not tabs.
-  const [tab, setTab] = React.useState<LibraryTab>(
-    activeSelection.onBulkRoute ? "bulk" : "stories",
-  );
+  // Library tabs: Stories | History | Bulk. Scheduled + Search are system actions.
+  const [tab, setTab] = React.useState<LibraryTab>(() => {
+    if (activeSelection.onBulkRoute) return "bulk";
+    if (activeSelection.historyRunId || activeSelection.liveRunId) return "history";
+    return "stories";
+  });
   const [commandSearchOpen, setCommandSearchOpen] = React.useState(false);
   const [createStoryOpen, setCreateStoryOpen] = React.useState(false);
 
@@ -862,6 +906,12 @@ export function AppSidebar() {
     if (activeSelection.onBulkRoute) {
       setTab("bulk");
     } else if (
+      activeSelection.historyRunId ||
+      activeSelection.liveRunId ||
+      activeSelection.onHistoryRoute
+    ) {
+      setTab("history");
+    } else if (
       activeSelection.onStoriesHomeRoute ||
       activeSelection.storyName ||
       activeSelection.onGenerateRoute
@@ -870,45 +920,15 @@ export function AppSidebar() {
     }
   }, [
     activeSelection.storyName,
+    activeSelection.historyRunId,
+    activeSelection.liveRunId,
     activeSelection.onStoriesHomeRoute,
     activeSelection.onBulkRoute,
+    activeSelection.onHistoryRoute,
     activeSelection.onGenerateRoute,
   ]);
 
-  const systemActive: "history" | "scheduled" | null =
-    activeSelection.onHistoryRoute || activeSelection.liveRunId
-      ? "history"
-      : activeSelection.onScheduledRoute
-        ? "scheduled"
-        : null;
-
-  function handleLibraryTabChange(next: LibraryTab) {
-    setTab(next);
-    if (next === "bulk") {
-      navigate({ to: "/bulk-run" });
-      return;
-    }
-    if (
-      activeSelection.onBulkRoute ||
-      activeSelection.onScheduledRoute ||
-      activeSelection.onHistoryRoute ||
-      activeSelection.onGenerateRoute
-    ) {
-      if (stories.length > 0) {
-        navigate({ to: "/story/$name", params: { name: stories[0].name } });
-      } else {
-        navigate({ to: "/stories" });
-      }
-    }
-  }
-
-  function openHistory() {
-    setTab("stories");
-    navigate({ to: "/history" });
-  }
-
   function openScheduled() {
-    setTab("stories");
     navigate({ to: "/scheduled" });
   }
 
@@ -1024,6 +1044,35 @@ export function AppSidebar() {
     [schedulesQuery.data],
   );
 
+  function handleLibraryTabChange(next: LibraryTab) {
+    setTab(next);
+    if (next === "bulk") {
+      navigate({ to: "/bulk-run" });
+      return;
+    }
+    if (next === "history") {
+      const runs = runsQuery.data ?? [];
+      if (runs.length > 0) {
+        navigate({ to: "/history/$runId", params: { runId: runs[0].runId } });
+      }
+      return;
+    }
+    if (
+      activeSelection.onBulkRoute ||
+      activeSelection.onScheduledRoute ||
+      activeSelection.onHistoryRoute ||
+      activeSelection.historyRunId ||
+      activeSelection.liveRunId ||
+      activeSelection.onGenerateRoute
+    ) {
+      if (stories.length > 0) {
+        navigate({ to: "/story/$name", params: { name: stories[0].name } });
+      } else {
+        navigate({ to: "/stories" });
+      }
+    }
+  }
+
   function openStory(story: StorySummary) {
     prefetchStory(story.name);
     navigate({ to: "/story/$name", params: { name: story.name } });
@@ -1049,6 +1098,12 @@ export function AppSidebar() {
         );
     }
     setDialog((d) => ({ ...d, open: false }));
+  }
+
+  async function handleDeleteRun(runId: string) {
+    await runsDelete(runId);
+    queryClient.invalidateQueries({ queryKey: ["runs:list"] });
+    queryClient.invalidateQueries({ queryKey: ["stories:list"] });
   }
 
   async function handleDeleteStory(name: string) {
@@ -1198,8 +1253,7 @@ export function AppSidebar() {
       <SidebarList className="pt-0 pb-1">
         <div className="px-2 pt-3">
           <SystemActions
-            active={systemActive}
-            onHistory={openHistory}
+            scheduledActive={activeSelection.onScheduledRoute}
             onScheduled={openScheduled}
             onSearch={openCommandSearch}
           />
@@ -1223,6 +1277,21 @@ export function AppSidebar() {
                 })
               }
               onDeleteSection={deleteSection}
+            />
+          ) : tab === "history" ? (
+            <RunsTab
+              runs={recentRuns}
+              activeRunId={
+                activeSelection.historyRunId ?? activeSelection.liveRunId
+              }
+              onOpen={(runId, running) =>
+                navigate(
+                  running
+                    ? { to: "/run/$runId", params: { runId } }
+                    : { to: "/history/$runId", params: { runId } },
+                )
+              }
+              onDelete={handleDeleteRun}
             />
           ) : (
             <div className="px-3 py-6 text-center">
@@ -1404,3 +1473,92 @@ function StoriesTab({
   );
 }
 
+
+// ---------- one history run row (title + status + trailing time) ----------
+function HistoryRunRow({
+  run,
+  selected,
+  running,
+  queued,
+  onOpen,
+  onDelete,
+}: {
+  run: RunResult;
+  selected: boolean;
+  running?: boolean;
+  queued?: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="group/row w-full">
+      <SidebarListItem
+        selected={selected}
+        onClick={onOpen}
+        className={cn(!selected && "hover:bg-surface-hover")}
+      >
+        <SidebarListItemContent>
+          <SidebarListItemTitle>{run.storyTitle}</SidebarListItemTitle>
+        </SidebarListItemContent>
+        <span className="col-start-2 flex w-[4.5rem] shrink-0 items-center justify-end self-center">
+          <StatusPill status={run.status} running={running} queued={queued} />
+        </span>
+        <RowAccessory
+          time={
+            running
+              ? formatRelative(run.startedAt)
+              : queued
+                ? undefined
+                : formatRelative(run.finishedAt)
+          }
+          isRunning={running}
+          archiveTitle="Remove run"
+          confirmTitle="Remove this run?"
+          confirmDescription="This run will be removed from history. This cannot be undone."
+          confirmLabel="Remove"
+          onConfirm={onDelete}
+        />
+      </SidebarListItem>
+    </div>
+  );
+}
+
+// ---------- History tab: flat list of recent run history ----------
+function RunsTab({
+  runs,
+  activeRunId,
+  onOpen,
+  onDelete,
+}: {
+  runs: (RunResult & { isRunning?: boolean; isQueued?: boolean })[];
+  activeRunId?: string;
+  onOpen: (runId: string, running: boolean) => void;
+  onDelete: (runId: string) => void;
+}) {
+  if (runs.length === 0) {
+    return (
+      <div className="px-3 py-6 text-center">
+        <Text variant="small" color="tertiary">
+          No runs yet.
+        </Text>
+      </div>
+    );
+  }
+  return (
+    <ExpandableRows
+      persistKey="runs"
+      items={runs}
+      renderItem={(run) => (
+        <HistoryRunRow
+          key={run.runId}
+          run={run}
+          selected={activeRunId === run.runId}
+          running={run.isRunning}
+          queued={run.isQueued}
+          onOpen={() => onOpen(run.runId, !!(run.isRunning || run.isQueued))}
+          onDelete={() => onDelete(run.runId)}
+        />
+      )}
+    />
+  );
+}

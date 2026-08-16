@@ -34,7 +34,7 @@
   --font-mono: var(--font-family-mono);
 }
 
-/* Light — clean white chrome (current look) with coral accent */
+/* Light — Claude cream canvas; warmer sidebar for clear separation */
 :root {
   --font-family-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Geist Variable", "Geist", system-ui, sans-serif;
   --font-family-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist Variable", "Geist", system-ui, sans-serif;
@@ -49,17 +49,19 @@
   --bg: #ffffff;
   --bg-secondary: #ffffff;
   --bg-elevated: #ffffff;
-  --fg: #030303;
-  --theme-accent: #ff6363;
+  --fg: #1f1e1b;
+  /* Accents: light pink (primary) + light yellow (secondary) */
+  --theme-accent: #ffb4d0;
+  --theme-accent-alt: #ffe566;
   --accent: var(--theme-accent);
-  --selection: #0a0a0a;
-  --red: #dc3b3b;
-  --orange: #d97706;
-  --yellow: #ca8a04;
+  --selection: #1f1e1b;
+  --red: #e11d48;
+  --orange: #f59e0b;
+  --yellow: #ffe566;
   --green: #16a34a;
   --blue: #2563eb;
-  --purple: #7c3aed;
-  --magenta: #db2777;
+  --purple: #a855f7;
+  --magenta: #ec4899;
   --fg-5: rgb(from var(--fg) r g b / 5%);
   --fg-8: rgb(from var(--fg) r g b / 8%);
   --fg-12: rgb(from var(--fg) r g b / 12%);
@@ -70,37 +72,37 @@
   --support-green-10: rgb(from var(--green) r g b / 10%);
   --support-orange-10: rgb(from var(--orange) r g b / 10%);
   --support-purple-10: rgb(from var(--purple) r g b / 10%);
-  --support-red-10: rgb(239 68 68 / 12%);
-  --support-yellow-10: rgb(from var(--yellow) r g b / 12%);
+  --support-red-10: rgb(225 29 72 / 12%);
+  --support-yellow-10: rgb(from var(--yellow) r g b / 35%);
   --color-text-primary: var(--fg);
-  --color-text-secondary: #161a20;
-  --color-text-tertiary: rgb(from var(--fg) r g b / 50%);
-  --color-text-quaternary: rgb(from var(--fg) r g b / 32%);
-  --color-text-link: var(--accent);
-  --color-surface-control: #f0f0f0;
-  --color-surface-control-subtle: #f6f6f6;
-  --color-surface-hover: #f0f0f0;
-  --color-surface-well: #f6f6f6;
-  --color-surface-sidebar: #f2f2f2;
+  --color-text-secondary: #3d3d3a;
+  --color-text-tertiary: #73726c;
+  --color-text-quaternary: #9c9a92;
+  --color-text-link: #d4537e;
+  --color-surface-control: #efe9de;
+  --color-surface-control-subtle: #f5f0e8;
+  --color-surface-hover: #efe9de;
+  --color-surface-well: #f5f0e8;
+  --color-surface-sidebar: #ebe8df;
   --color-surface-popover: #ffffff;
   --color-border-separator: rgb(from var(--fg) r g b / 10%);
-  --color-border-field: rgb(from var(--fg) r g b / 18%);
-  --color-window-bg: #f2f2f2;
-  --glass-bg: rgb(255 255 255 / 78%);
-  --glass-bg-elevated: rgb(255 255 255 / 88%);
+  --color-border-field: rgb(from var(--fg) r g b / 16%);
+  --color-window-bg: #faf9f5;
+  --glass-bg: rgb(250 249 245 / 82%);
+  --glass-bg-elevated: rgb(255 255 255 / 90%);
   --glass-highlight: rgb(255 255 255 / 55%);
   --glass-shadow: rgb(0 0 0 / 6%);
-  --material-sidebar: rgb(242 242 242 / 92%);
-  --material-toolbar: rgb(255 255 255 / 72%);
-  --material-card: rgb(255 255 255 / 92%);
+  --material-sidebar: rgb(235 232 223 / 94%);
+  --material-toolbar: rgb(250 249 245 / 78%);
+  --material-card: rgb(255 255 255 / 94%);
   --material-edge: rgb(255 255 255 / 65%);
-  --accent-contrast: #ffffff;
-  --accent-glow: rgb(from var(--accent) r g b / 18%);
+  --accent-contrast: #1f1e1b;
+  --accent-glow: rgb(from var(--accent) r g b / 28%);
   --radius-card: 12px;
   --radius-control: 8px;
   --radius-pill: 9999px;
   --radius-window: 16px;
-  --color-window-outline: rgb(0 0 0 / 10%);
+  --color-window-outline: rgb(0 0 0 / 8%);
   --spacing: 0.25rem;
 
   /* macOS traffic lights — tweak these to match native/Codex sizing */
@@ -123,46 +125,49 @@
   --detail-view-inset-x: 1.25rem;
 }
 
-/* Dark — Claude Code desktop warm charcoal + coral accent (not pure black) */
+/* Dark — Claude Code almost-black option */
 .dark {
-  --bg: #1c1512;
-  --bg-secondary: #241e1a;
-  --bg-elevated: #2a2320;
-  --fg: #f2ebe3;
-  --theme-accent: #d97757;
+  --bg: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-elevated: #161616;
+  --fg: #f5f5f5;
+  --theme-accent: #ffb4d0;
+  --theme-accent-alt: #ffe566;
   --accent: var(--theme-accent);
-  --selection: #f2ebe3;
-  --red: #e87070;
-  --orange: #e09a5a;
-  --yellow: #e0c060;
-  --green: #7ec98a;
-  --blue: #7aa2d4;
-  --purple: #b794d4;
-  --magenta: #d48aa8;
+  --selection: #f5f5f5;
+  --red: #fb7185;
+  --orange: #fbbf24;
+  --yellow: #ffe566;
+  --green: #4ade80;
+  --blue: #60a5fa;
+  --purple: #c084fc;
+  --magenta: #f472b6;
   --color-text-primary: var(--fg);
-  --color-text-secondary: rgb(242 235 227 / 72%);
-  --color-text-tertiary: rgb(242 235 227 / 48%);
-  --color-text-quaternary: rgb(242 235 227 / 32%);
-  --color-surface-control: #322b27;
-  --color-surface-control-subtle: #241e1a;
-  --color-surface-hover: #352e2a;
-  --color-surface-well: #241e1a;
-  --color-surface-sidebar: #181310;
-  --color-surface-popover: #2a2320;
-  --color-border-separator: rgb(242 235 227 / 10%);
-  --color-border-field: rgb(242 235 227 / 16%);
-  --color-window-bg: #1c1512;
-  --glass-bg: rgb(36 30 26 / 86%);
-  --glass-bg-elevated: rgb(42 35 32 / 90%);
-  --glass-highlight: rgb(255 255 255 / 6%);
-  --glass-shadow: rgb(0 0 0 / 40%);
-  --material-sidebar: rgb(24 19 16 / 92%);
-  --material-toolbar: rgb(36 30 26 / 78%);
-  --material-card: rgb(42 35 32 / 94%);
-  --material-edge: rgb(255 255 255 / 8%);
-  --accent-contrast: #1c1512;
+  --color-text-secondary: rgb(245 245 245 / 72%);
+  --color-text-tertiary: rgb(245 245 245 / 48%);
+  --color-text-quaternary: rgb(245 245 245 / 32%);
+  --color-text-link: #ffb4d0;
+  --color-surface-control: #1c1c1c;
+  --color-surface-control-subtle: #141414;
+  --color-surface-hover: #222222;
+  --color-surface-well: #111111;
+  --color-surface-sidebar: #000000;
+  --color-surface-popover: #161616;
+  --color-border-separator: rgb(255 255 255 / 9%);
+  --color-border-field: rgb(255 255 255 / 14%);
+  --color-window-bg: #0a0a0a;
+  --glass-bg: rgb(10 10 10 / 88%);
+  --glass-bg-elevated: rgb(22 22 22 / 92%);
+  --glass-highlight: rgb(255 255 255 / 5%);
+  --glass-shadow: rgb(0 0 0 / 50%);
+  --material-sidebar: rgb(0 0 0 / 94%);
+  --material-toolbar: rgb(10 10 10 / 80%);
+  --material-card: rgb(22 22 22 / 96%);
+  --material-edge: rgb(255 255 255 / 6%);
+  --accent-contrast: #1a1014;
   --accent-glow: rgb(from var(--accent) r g b / 22%);
-  --support-red-10: rgb(232 112 112 / 14%);
+  --support-red-10: rgb(251 113 133 / 14%);
+  --support-yellow-10: rgb(from var(--yellow) r g b / 18%);
   --color-window-outline: rgb(255 255 255 / 6%);
 }
 

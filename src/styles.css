@@ -487,15 +487,21 @@
 }
 
 .library-tabs-row .segment-control--library {
-  --segment-size: 2rem;
-  --segment-pad: 4px;
-  --thumb-size: 1.2rem;
+  /* Reference-like: nearly fills the cell, slight inset only */
+  --segment-size: 1.8rem;
+  --segment-pad: 2px;
+  --thumb-size: 1.6rem;
   display: grid;
   width: fit-content;
   flex: 0 0 auto;
   grid-template-columns: var(--segment-size) var(--segment-size);
   padding: var(--segment-pad);
   overflow: visible;
+  background: color-mix(in srgb, var(--theme-accent-alt) 22%, var(--color-surface-control));
+}
+
+.library-tabs-row .segment-control--library.segment-control--three {
+  grid-template-columns: var(--segment-size) var(--segment-size) var(--segment-size);
 }
 
 .library-tabs-row .segment-control--library .segment-control-thumb {
@@ -506,6 +512,7 @@
   border-radius: calc(var(--radius-pill) - 1px);
   transform: translateX(0);
   box-shadow: none;
+  background: var(--theme-accent);
 }
 
 .library-tabs-row
@@ -514,12 +521,22 @@
   transform: translateX(var(--segment-size));
 }
 
+.library-tabs-row
+  .segment-control--library[data-active-index="2"]
+  .segment-control-thumb {
+  transform: translateX(calc(var(--segment-size) * 2));
+}
+
 .library-tabs-row .segment-control--library button {
   width: var(--segment-size);
   height: var(--segment-size);
   min-width: 0;
   padding: 0;
   gap: 0;
+}
+
+.library-tabs-row .segment-control--library button[data-active="true"] {
+  color: var(--accent-contrast);
 }
 
 .library-tabs-row .segment-control--library button span:not(.sr-only) {
