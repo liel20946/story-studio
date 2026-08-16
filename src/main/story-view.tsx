@@ -315,10 +315,9 @@ const storyEditInputClass =
 
 // Shared body size for steps, assertions, global rules, and variables.
 const storyBodyTextClass = "text-[12px] leading-[16px] text-secondary";
-// Variable keys use the same size as steps/assertions (not mono) so the rail
-// reads as one consistent type system; weight comes from VAR_NAME_CLASS.
-const storyVarNameClass = "text-[12px] leading-[16px]";
-const storyVarValueClass = "text-[12px] leading-[16px]";
+// Variable keys/values share .detail-var-* with the run view.
+const storyVarNameClass = "detail-var-key";
+const storyVarValueClass = "detail-var-value";
 
 function focusInputAt(refs: React.RefObject<(HTMLInputElement | null)[]>, index: number) {
   requestAnimationFrame(() => {
@@ -431,7 +430,7 @@ function EditableVariables({
       {draft.variables.map((v, i) => (
         <div
           key={i}
-          className="flex items-center gap-2 py-1 min-w-0 rounded-control"
+          className="detail-var-row rounded-control"
         >
           <input
             ref={(el) => {
@@ -460,7 +459,7 @@ function EditableVariables({
             onBlur={onCommitCheckpoint}
             className={cn(
               storyEditInputClass,
-              "min-w-0 flex-1 truncate text-secondary",
+              "min-w-0 flex-1 truncate",
               storyVarValueClass,
             )}
           />
@@ -488,11 +487,10 @@ function ReadOnlyVariables({
         return (
           <div
             key={v.key}
-            className="group/var flex items-center gap-2 py-1 min-w-0"
+            className="detail-var-row group/var"
           >
             <span
               className={cn(
-                "max-w-[18rem] shrink-0 truncate",
                 storyVarNameClass,
                 nameColors[key] ?? "text-tertiary",
               )}
@@ -501,9 +499,8 @@ function ReadOnlyVariables({
             </span>
             <span
               className={cn(
-                "min-w-0 flex-1 truncate",
                 storyVarValueClass,
-                value ? "text-secondary" : "text-quaternary",
+                !value && "detail-var-value--empty",
               )}
             >
               {value ? (show ? value : "••••••") : "empty"}
@@ -918,9 +915,7 @@ export function StoryView() {
             <div className="content-card">
               <div className="content-card-header">
                 <div className="flex min-w-0 items-center gap-2">
-                  <Text variant="small-strong" color="secondary">
-                    Steps
-                  </Text>
+                  <span className="section-label">Steps</span>
                   <Text variant="small" color="tertiary">
                     {(isEditingThisStory && draft ? draft.steps : story.steps).length}
                   </Text>

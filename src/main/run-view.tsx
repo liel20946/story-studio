@@ -509,15 +509,13 @@ function RunVariablesSection({
           return (
             <div
               key={key}
-              className="flex items-center gap-2 py-1 min-w-0"
+              className="detail-var-row"
             >
-              <span className="max-w-[18rem] shrink-0 truncate text-[12px] leading-[16px] font-medium text-primary">
-                {key}
-              </span>
+              <span className="detail-var-key">{key}</span>
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate text-[12px] leading-[16px]",
-                  value ? "text-secondary" : "text-quaternary",
+                  "detail-var-value",
+                  !value && "detail-var-value--empty",
                 )}
               >
                 {value ? (secret ? "••••••" : value) : "empty"}
@@ -843,9 +841,7 @@ function LiveRunView({ runId }: { runId: string }) {
           <div className="content-card run-actions-card">
             <div className="content-card-header">
               <div className="flex min-w-0 items-center gap-2">
-                <Text variant="small-strong" color="secondary">
-                  Actions
-                </Text>
+                <span className="section-label">Actions</span>
                 {events.length > 0 && (
                   <Text variant="small" color="tertiary">
                     {events.length}

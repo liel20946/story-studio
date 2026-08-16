@@ -1,7 +1,7 @@
 import { stripCode } from "@/components/inline-code";
 
 /** Unified styling for variable names in the Variables rail. */
-export const VAR_NAME_CLASS = "text-primary font-medium";
+export const VAR_NAME_CLASS = "detail-var-key";
 
 /** Unified styling for inline variable chips in steps/assertions. */
 export const VAR_CHIP_CLASS =

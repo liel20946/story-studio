@@ -1655,15 +1655,55 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.625rem 0.875rem 0.5rem;
+  padding: 0.875rem 0.875rem 0.5rem;
 }
 
-.content-card-header .text-small-strong {
-  letter-spacing: -0.01em;
+/* Steps/Actions titles use the same section-label style as the rail. */
+.content-card-header .section-label {
+  margin-bottom: 0;
 }
 
 .content-card-body {
   padding: 0 0.25rem 0.375rem;
+}
+
+/* Shared Variables rows — story + run rails stay identical. */
+.detail-var-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-block: 0.25rem;
+}
+
+.detail-var-key {
+  max-width: 18rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.detail-var-value {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.detail-var-value--empty {
+  color: var(--color-text-quaternary);
+}
+
+.detail-var-value:not(.detail-var-value--empty) {
+  color: var(--color-text-secondary);
 }
 
 .settings-group-body {
