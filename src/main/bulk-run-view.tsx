@@ -984,9 +984,15 @@ export function BulkRunView() {
             </ToolbarContent>
             <ToolbarActions className="detail-view-toolbar-actions">
               {total > 0 && (
-                <Button variant="glass" size="titlebar" radius="full" onClick={toggleAll}>
-                  {allSelected ? "Deselect all" : "Select all"}
-                </Button>
+                <ToolbarMoreMenu
+                  items={[
+                    {
+                      id: "toggle-all",
+                      label: allSelected ? "Deselect all" : "Select all",
+                      onSelect: toggleAll,
+                    },
+                  ]}
+                />
               )}
               <Button
                 variant="accent"

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Capture toolbar More + primary CTA cleanup:
- *  1) Story view — More menu closed (Run primary)
- *  2) Story view — More menu open
- *  3) Finished run — More + Retry
- *  4) Finished run — More menu open
+ * Capture toolbar More + primary CTA cleanup across views:
+ *  1) Story — closed / open
+ *  2) Finished run — closed / open
+ *  3) Bulk selection — closed / open
+ *  4) New schedule — closed / open
  *
  * Prerequisites: npm run build && npm run seed:demo
  *   STORY_STUDIO_MOCK_RUNS=1 xvfb-run -a node scripts/capture-toolbar-more-actions.mjs
@@ -50,6 +50,18 @@ async function shot(app, name) {
   console.log("wrote", file);
 }
 
+async function captureMorePair(app, page, baseName, menuItemName) {
+  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
+  await wait(350);
+  await shot(app, `${baseName}-closed`);
+  await page.getByRole("button", { name: "More actions" }).click({ force: true });
+  await page.getByRole("menuitem", { name: menuItemName }).waitFor({ timeout: 5_000 });
+  await wait(250);
+  await shot(app, `${baseName}-open`);
+  await page.keyboard.press("Escape");
+  await wait(200);
+}
+
 async function main() {
   const app = await electron.launch({
     executablePath: electronExec(),
@@ -77,44 +89,39 @@ async function main() {
   });
   await wait(600);
 
+  // --- Story ---
   await page.getByText("Login Flow", { exact: true }).first().click({ force: true });
-  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
   await page.getByRole("button", { name: /^Run$/i }).waitFor({ timeout: 5_000 });
-  await wait(400);
-  await shot(app, "toolbar-more-story-closed");
+  await captureMorePair(app, page, "toolbar-more-story", /Edit/i);
 
-  await page.getByRole("button", { name: "More actions" }).click({ force: true });
-  await page.getByRole("menuitem", { name: /Edit/i }).waitFor({ timeout: 5_000 });
-  await wait(250);
-  await shot(app, "toolbar-more-story-open");
-
-  // Dismiss menu, then open a finished history run via Retry path if available,
-  // otherwise navigate through sidebar history under the story.
-  await page.keyboard.press("Escape");
-  await wait(200);
-
-  // Prefer an existing finished run under Login Flow in the sidebar.
+  // --- Finished run ---
+  await page.getByRole("tab", { name: "Runs" }).click({ force: true }).catch(() => {});
+  await wait(500);
   const historyRun = page
-    .locator('[data-sidebar], aside, .sidebar-scroll')
-    .getByText(/ago|passed|failed|cancelled/i)
+    .locator("aside, .sidebar-scroll")
+    .getByText(/Login Flow/i)
     .first();
   if (await historyRun.isVisible().catch(() => false)) {
     await historyRun.click({ force: true });
   } else {
-    // Start a mock run and wait for finish so Retry appears.
     await page.getByRole("button", { name: /^Run$/i }).click({ force: true });
-    await page.getByRole("button", { name: "Retry run" }).waitFor({ timeout: 60_000 });
   }
-
   await page.getByRole("button", { name: "Retry run" }).waitFor({ timeout: 60_000 });
-  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
-  await wait(400);
-  await shot(app, "toolbar-more-run-closed");
+  await captureMorePair(app, page, "toolbar-more-run", /View story/i);
 
-  await page.getByRole("button", { name: "More actions" }).click({ force: true });
-  await page.getByRole("menuitem", { name: /View story/i }).waitFor({ timeout: 5_000 });
-  await wait(250);
-  await shot(app, "toolbar-more-run-open");
+  // --- Bulk selection ---
+  await page.getByRole("tab", { name: "Stories" }).click({ force: true });
+  await wait(500);
+  await page.getByRole("button", { name: "Run stories" }).click({ force: true });
+  await page.getByRole("heading", { name: "Run stories" }).waitFor({ timeout: 15_000 });
+  await captureMorePair(app, page, "toolbar-more-bulk", /Select all|Deselect all/i);
+
+  // --- New schedule ---
+  await page.getByRole("tab", { name: "Scheduled" }).click({ force: true });
+  await wait(600);
+  await page.getByRole("button", { name: "New schedule", exact: true }).last().click({ force: true });
+  await page.getByRole("button", { name: /^Create$/i }).waitFor({ timeout: 15_000 });
+  await captureMorePair(app, page, "toolbar-more-schedule", /Select all|Deselect all/i);
 
   await app.close();
   console.log("done");

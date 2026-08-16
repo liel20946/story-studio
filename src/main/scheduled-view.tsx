@@ -13,6 +13,7 @@ import {
   ToolbarContent,
   ToolbarTitle,
   ToolbarActions,
+  ToolbarMoreMenu,
   Button,
   Text,
   Checkbox,
@@ -596,9 +597,15 @@ export function ScheduledEditorView({ scheduleId }: { scheduleId?: string }) {
         </Button>
       )}
       {total > 0 && !readOnly && (
-        <Button variant="glass" size="titlebar" radius="full" onClick={toggleAll}>
-          {allSelected ? "Deselect all" : "Select all"}
-        </Button>
+        <ToolbarMoreMenu
+          items={[
+            {
+              id: "toggle-all",
+              label: allSelected ? "Deselect all" : "Select all",
+              onSelect: toggleAll,
+            },
+          ]}
+        />
       )}
       {isNew && (
         <Button
