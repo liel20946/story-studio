@@ -60,6 +60,7 @@ import {
 import { buildClaudeSpawnEnv } from "./agent-spawn-env.js";
 import { classifyMcpTool } from "./mcp-tool-event.js";
 import { extractProviderSessionId, publishProviderSession } from "./provider-session.js";
+import { writeRunVariableFiles } from "./run-variable-files.js";
 
 interface RunState {
   runId: string;
@@ -333,6 +334,7 @@ export async function startClaudeRun(
 
   const runsDir = getRunsDir();
   const runOutputDir = await ensureRunOutputDir(runId);
+  await writeRunVariableFiles(runOutputDir, variableOverrides);
   const resultPath = path.join(runsDir, `${runId}.result.json`);
   const screenshotPath = getHeroScreenshotPath(runId);
   const stepsPath = getRunStepsPath(runId);

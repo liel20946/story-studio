@@ -20,6 +20,7 @@ export function Dialog({
   confirmDisabled,
   onConfirm,
   children,
+  modal,
 }: {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -31,11 +32,12 @@ export function Dialog({
   confirmDisabled?: boolean;
   onConfirm?: () => void;
   children?: React.ReactNode;
+  modal?: boolean;
 }) {
   if (title && onConfirm) {
     const dialogSize = size ?? (description || fieldLabel ? "medium" : "small");
     return (
-      <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} modal={modal}>
         <DialogContent size={dialogSize}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
@@ -66,7 +68,7 @@ export function Dialog({
   }
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} modal={modal}>
       {children}
     </DialogPrimitive.Root>
   );
@@ -77,11 +79,19 @@ export function DialogContent({
   size = "medium",
   children,
   onEscapeKeyDown,
+  onPointerDownOutside,
+  onInteractOutside,
+  onFocusOutside,
+  hideOverlay,
 }: {
   className?: string;
   size?: "small" | "medium" | "large";
   children: React.ReactNode;
   onEscapeKeyDown?: (e: KeyboardEvent) => void;
+  onPointerDownOutside?: (e: Event) => void;
+  onInteractOutside?: (e: Event) => void;
+  onFocusOutside?: (e: Event) => void;
+  hideOverlay?: boolean;
 }) {
   const sizeClass =
     size === "small" ? "max-w-sm" : size === "large" ? "max-w-2xl" : "max-w-md";
@@ -89,7 +99,9 @@ export function DialogContent({
     "left-[calc(var(--sidebar-width,0px)+(100vw-var(--sidebar-width,0px))/2)]";
   return (
     <DialogPrimitive.Portal container={document.body}>
-      <DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50" />
+      {hideOverlay ? null : (
+        <DialogPrimitive.Overlay className="dialog-overlay fixed inset-0 z-50" />
+      )}
       <DialogPrimitive.Content
         className={cn(
           "dialog-surface fixed top-1/2 z-50 flex w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-card border border-separator bg-popover p-4 outline-none",
@@ -98,6 +110,9 @@ export function DialogContent({
           className,
         )}
         onEscapeKeyDown={onEscapeKeyDown}
+        onPointerDownOutside={onPointerDownOutside}
+        onInteractOutside={onInteractOutside}
+        onFocusOutside={onFocusOutside}
       >
         {children}
       </DialogPrimitive.Content>

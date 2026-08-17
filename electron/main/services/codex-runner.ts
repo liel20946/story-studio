@@ -61,6 +61,7 @@ import {
 } from "./run-event-settle.js";
 import { classifyMcpTool } from "./mcp-tool-event.js";
 import { extractProviderSessionId, publishProviderSession } from "./provider-session.js";
+import { writeRunVariableFiles } from "./run-variable-files.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -300,6 +301,7 @@ export async function startRun(
   });
   const runsDir = getRunsDir();
   const runOutputDir = await ensureRunOutputDir(runId);
+  await writeRunVariableFiles(runOutputDir, variableOverrides);
   const schemaPath = path.join(runsDir, `${runId}.schema.json`);
   const resultPath = path.join(runsDir, `${runId}.result.json`);
   const screenshotPath = getHeroScreenshotPath(runId);

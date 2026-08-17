@@ -55,9 +55,8 @@ Respond with ONLY valid JSON (no markdown fences, no commentary) in this shape:
 - Start from the story's current default values above. Only change a value when the user asked for that variation.
 - Secret values (password/token/secret) must be copied exactly from the story defaults — never invent or mask them.
 - Usernames, emails, and other credentials must come from the story defaults unless the user explicitly asked to vary them (e.g. different emails). When varying emails, derive from the story's real address (e.g. insert +tag before @).
-- When attached files/folders are provided, you MUST use their real file contents for payload variables (HTML, JSON, text, CSV, etc.). Put the actual markup/text into the variable value — never only the filename/path, and never invent replacement HTML when an attachment exists.
-- Example: attached \`promo.html\` with \`<div class="banner">Sale</div>\` → set the paste/HTML variable to that exact string (or the full file contents), not \`"promo.html"\`.
-- Prefer one attached file (or a clear slice) per run when the user asks to vary by file; label runs after the file name when helpful.
+- When attached files/folders are provided, do NOT inline file contents in JSON. Set payload variables (HTML/JSON/text/CSV paste body) to a file ref: \`"@file:attachments/promo.html"\`. Story Studio substitutes the real bytes. Never invent replacement HTML.
+- Prefer one attached file per run when the user asks to vary by file; label runs after the file name.
 - Generate as many runs as the user asked for (default 2 if unspecified; if they attach N files and ask for one per file, generate N runs).
 - Labels must be short and distinct (e.g. "Admin", "Guest", "welcome.html").
 - Do not invent placeholder data like "user1@example.com" or "password123" when story defaults exist.`;

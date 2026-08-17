@@ -210,6 +210,120 @@ export async function copyContextFilesToOutput(
   return written;
 }
 
+export const FILE_REF_PREFIX = "@file:";
+const PREVIEW_CHARS = 280;
+
+function normalizeRel(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\.\/+/, "");
+}
+
+function fileBasename(relativePath: string): string {
+  const parts = normalizeRel(relativePath).split("/");
+  return parts[parts.length - 1] || relativePath;
+}
+
+export function payloadVariableKey(keys: string[]): string | undefined {
+  return keys.find((k) =>
+    /html|content|body|snippet|payload|paste|template|markup/i.test(k),
+  );
+}
+
+export function inferPayloadKeyFromFile(relativePath: string): string {
+  const ext = path.extname(relativePath).toLowerCase();
+  if (ext === ".html" || ext === ".htm") return "html_body";
+  if (ext === ".json") return "json_body";
+  if (ext === ".csv" || ext === ".tsv") return "csv";
+  return "content";
+}
+
+export function lookupAttachedFile(
+  files: BulkContextFile[],
+  value: string,
+): BulkContextFile | undefined {
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
+  if (!trimmed) return undefined;
+  const ref = trimmed.startsWith(FILE_REF_PREFIX)
+    ? trimmed.slice(FILE_REF_PREFIX.length).trim()
+    : trimmed;
+  const normalized = normalizeRel(ref);
+  const exact = files.find((f) => normalizeRel(f.relativePath) === normalized);
+  if (exact) return exact;
+  const copied = files.find(
+    (f) => normalizeRel(`attachments/${f.relativePath}`) === normalized,
+  );
+  if (copied) return copied;
+  const base = fileBasename(normalized);
+  const byBase = files.filter((f) => fileBasename(f.relativePath) === base);
+  if (byBase.length === 1) return byBase[0];
+  return files.find(
+    (f) => f.sourcePath === trimmed || f.sourcePath.endsWith(normalized),
+  );
+}
+
+function looksLikeFilenameOnly(value: string): boolean {
+  const t = value.trim();
+  if (!t) return true;
+  if (t.startsWith(FILE_REF_PREFIX)) return true;
+  if (t.includes("\n") || t.length > 240) return false;
+  if (/[<>]/.test(t)) return false;
+  return (
+    /\.(html?|txt|md|json|csv|xml|ya?ml)$/i.test(t) || /attachments\//i.test(t)
+  );
+}
+
+function fileMatchesRunLabel(file: BulkContextFile, label: string): boolean {
+  const base = fileBasename(file.relativePath);
+  const stem = base.replace(/\.[^.]+$/, "");
+  const needle = label.trim().toLowerCase();
+  if (!needle) return false;
+  return (
+    needle === base.toLowerCase() ||
+    needle === stem.toLowerCase() ||
+    needle.includes(stem.toLowerCase())
+  );
+}
+
+export function applyAttachmentContentsToRuns<
+  T extends { label: string; variables: Record<string, string> },
+>(runs: T[], files: BulkContextFile[], storyKeys: string[]): T[] {
+  if (files.length === 0 || runs.length === 0) return runs;
+  const keys =
+    storyKeys.length > 0
+      ? storyKeys
+      : Array.from(new Set(runs.flatMap((run) => Object.keys(run.variables))));
+  const payloadKey = payloadVariableKey(keys);
+
+  return runs.map((run, index) => {
+    const variables = { ...run.variables };
+    for (const [key, value] of Object.entries(variables)) {
+      if (/password|secret|token|user|email|login|account/i.test(key)) continue;
+      const file = lookupAttachedFile(files, value);
+      if (file) variables[key] = file.content;
+    }
+
+    if (!payloadKey) return { ...run, variables };
+
+    const current = variables[payloadKey] ?? "";
+    const alreadyReal = files.some((f) => f.content === current);
+    if (alreadyReal) return { ...run, variables };
+
+    const labelFile = files.find((f) => fileMatchesRunLabel(f, run.label));
+    const file = labelFile ?? files[Math.min(index, files.length - 1)];
+    if (!file) return { ...run, variables };
+
+    if (
+      looksLikeFilenameOnly(current) ||
+      !current ||
+      (/[<>]/.test(current) &&
+        !file.content.includes(current.trim()) &&
+        !current.includes(file.content.trim()))
+    ) {
+      variables[payloadKey] = file.content;
+    }
+    return { ...run, variables };
+  });
+}
+
 export function formatBulkContextForPrompt(
   attachments: BulkContextAttachment[],
   files: BulkContextFile[],
@@ -221,10 +335,19 @@ export function formatBulkContextForPrompt(
     .map((a) => `- ${a.kind}: ${a.path}`)
     .join("\n");
 
-  const fileBlocks = files.map((file, index) => {
-    const note = file.truncated ? "\n(truncated for length)" : "";
-    return `### File ${index + 1}: ${file.relativePath}${note}\n\`\`\`\n${file.content}\n\`\`\``;
-  });
+  const fileLines =
+    files.length === 0
+      ? "(no readable text files found in attachments)"
+      : files
+          .map((file) => {
+            const copied =
+              copiedRelativePaths.find((p) => p.endsWith(file.relativePath)) ??
+              `attachments/${file.relativePath}`;
+            const preview = file.content.slice(0, PREVIEW_CHARS).replace(/\s+/g, " ").trim();
+            const note = file.truncated ? ", truncated" : "";
+            return `- ${copied} (${file.content.length} chars${note}) preview: ${preview}`;
+          })
+          .join("\n");
 
   const copiedNote =
     copiedRelativePaths.length > 0
@@ -233,29 +356,24 @@ export function formatBulkContextForPrompt(
           .join("\n")}`
       : "";
 
+  const examplePath =
+    copiedRelativePaths[0] ??
+    (files[0] ? `attachments/${files[0].relativePath}` : "attachments/welcome.html");
+
   return `## Attached context
-The user attached these paths so you can put their REAL file contents into variable values.
+The user attached files/folders. Story Studio will substitute the real file bytes after you reply.
 
 Critical:
-- Copy the file text itself into the relevant variable (e.g. paste/HTML/body/content/payload).
-- Do NOT put only a filename or path in the variable.
-- Do NOT invent substitute HTML/JSON when an attached file already has the content.
-- If several files are attached and the user wants one run per file, make one run per file and use that file's full content.
-
-Example — user attaches \`welcome.html\` containing:
-\`\`\`html
-<html><body><h1>Welcome</h1><p>Hello Alice</p></body></html>
-\`\`\`
-and asks for a run that pastes that HTML into \`html_body\`. Correct variables entry:
-\`\`\`json
-{ "label": "welcome", "variables": { "html_body": "<html><body><h1>Welcome</h1><p>Hello Alice</p></body></html>" } }
-\`\`\`
-Wrong: \`{ "html_body": "welcome.html" }\` or invented markup.
+- Do NOT paste raw HTML/JSON/file contents into the JSON (quotes and braces break parsing and can hang the session).
+- For payload variables (paste/HTML/body/content), set the value to a file ref only:
+  "${FILE_REF_PREFIX}${examplePath}"
+- One run per attached file when the user asked to vary by file. Label the run after the file name.
+- Do not invent substitute markup when an attachment exists.
 
 ### Paths
 ${attachmentLines}
 ${copiedNote}
 
-### File contents (use these literally)
-${fileBlocks.join("\n\n") || "(no readable text files found in attachments)"}`;
+### Files (reference these; do not inline)
+${fileLines}`;
 }

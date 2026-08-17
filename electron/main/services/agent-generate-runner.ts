@@ -1,5 +1,6 @@
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, type ChildProcess, type StdioOptions } from "child_process";
 import * as fs from "fs/promises";
+import { createReadStream } from "fs";
 import * as path from "path";
 import type { AgentProvider } from "./contract-types.js";
 import type { AgentRunConfig } from "./agent-config.js";
@@ -103,6 +104,20 @@ function progressFromCodexLine(line: string, exploring: boolean): string | null 
   }
 }
 
+const STDIN_PROMPT_CHARS = 12_000;
+
+async function preparePromptArg(
+  outputDir: string,
+  prompt: string,
+): Promise<{ promptArg: string[]; stdinFile?: string }> {
+  if (prompt.length <= STDIN_PROMPT_CHARS) {
+    return { promptArg: [prompt] };
+  }
+  const stdinFile = path.join(outputDir, "agent-prompt.txt");
+  await fs.writeFile(stdinFile, prompt, "utf8");
+  return { promptArg: [], stdinFile };
+}
+
 function spawnTracked(
   conversationId: string,
   command: string,
@@ -113,6 +128,7 @@ function spawnTracked(
   onProgress?: (message: string) => void,
   parseStdout?: (stdout: string) => Promise<string>,
   env: NodeJS.ProcessEnv = buildBaseAgentSpawnEnv(),
+  stdinFile?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let stdout = "";
@@ -138,11 +154,17 @@ function spawnTracked(
       finish(() => reject(new Error("Generation timed out. Try again.")));
     }, timeoutMs);
 
+    const stdio: StdioOptions = [
+      stdinFile ? createReadStream(stdinFile) : "ignore",
+      "pipe",
+      "pipe",
+    ];
+
     child = spawn(command, args, {
       cwd,
       env,
       detached: true, // allows process group kill on cancel
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio,
     });
     _activeChildren.set(conversationId, { process: child });
 
@@ -307,6 +329,7 @@ async function invokeCodex(
     ...(exploring && !useCodexChrome ? await playwrightMcpSecretEnv() : {}),
     ...(chromeCodexHome ? { CODEX_HOME: chromeCodexHome } : {}),
   };
+  const { promptArg, stdinFile } = await preparePromptArg(outputDir, prompt);
 
   if (resumeSession && sessionId) {
     const args = [
@@ -317,7 +340,7 @@ async function invokeCodex(
       "-o",
       lastMessagePath,
       sessionId,
-      prompt,
+      ...promptArg,
     ];
 
     const message = await spawnTracked(
@@ -330,6 +353,7 @@ async function invokeCodex(
       onProgress,
       parseStdout,
       spawnEnv,
+      stdinFile,
     );
     return { message };
   }
@@ -347,7 +371,7 @@ async function invokeCodex(
     ...(ephemeral ? ["--ephemeral"] : []),
     "-o",
     lastMessagePath,
-    prompt,
+    ...promptArg,
   ];
 
   let capturedStdout = "";
@@ -364,6 +388,7 @@ async function invokeCodex(
       return parseStdout(stdout);
     },
     spawnEnv,
+    stdinFile,
   );
 
   const parsedSessionId = parseCodexSessionIdFromStdout(capturedStdout);
@@ -389,9 +414,10 @@ async function invokeClaude(
     onProgress,
   } = options;
 
+  const { promptArg, stdinFile } = await preparePromptArg(outputDir, prompt);
   const args = [
     "-p",
-    prompt,
+    ...promptArg,
     "--dangerously-skip-permissions",
     "--model",
     agentConfig.model,
@@ -432,6 +458,7 @@ async function invokeClaude(
     onProgress,
     undefined,
     spawnEnv,
+    stdinFile,
   );
 }
 
