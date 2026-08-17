@@ -1,5 +1,6 @@
 import * as fs from "fs/promises";
 import * as path from "path";
+import { FILE_REF_PREFIX } from "./variable-path-ref.js";
 
 export interface BulkContextAttachment {
   path: string;
@@ -210,7 +211,7 @@ export async function copyContextFilesToOutput(
   return written;
 }
 
-export const FILE_REF_PREFIX = "@file:";
+export { FILE_REF_PREFIX };
 const PREVIEW_CHARS = 280;
 
 function normalizeRel(value: string): string {

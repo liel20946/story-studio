@@ -9,6 +9,9 @@ import {
   CopyIcon,
   CheckIcon,
   HistoryIcon,
+  FileIcon,
+  FolderIcon,
+  XIcon,
 } from "lucide-react";
 import {
   ScrollArea,
@@ -29,6 +32,7 @@ import {
   storiesDuplicate,
   clipboardWriteText,
   runStart,
+  bulkPickContextPaths,
 } from "../lib/ipc";
 import { cn } from "@/lib/utils";
 import { reportAppErrorFromUnknown } from "@/lib/app-error";
@@ -37,6 +41,13 @@ import { InlineCode, stripCode } from "../components/inline-code";
 import { RailAssertionLine } from "../components/rail-assertion-line";
 import { useActiveRunForStory, useRegisterRun } from "../lib/run-store";
 import { buildVarColors } from "../lib/story-var-colors";
+import { PathAttachMenu } from "@/components/path-attach-menu";
+import {
+  formatPathRef,
+  parsePathRef,
+  pathRefLabel,
+  pathStem,
+} from "@/lib/variable-path-ref";
 
 // ---------- section (Steps on the left; Variables / Assertions on the rail) ----------
 function Section({
@@ -374,6 +385,38 @@ function isBlankVariable(row: { key: string; value: string }) {
   return row.key.trim() === "" && row.value.trim() === "";
 }
 
+function PathRefChip({
+  value,
+  onClear,
+}: {
+  value: string;
+  onClear?: () => void;
+}) {
+  const parsed = parsePathRef(value);
+  if (!parsed) return null;
+  const Icon = parsed.kind === "folder" ? FolderIcon : FileIcon;
+  const name = pathRefLabel(value) ?? parsed.path;
+  return (
+    <span
+      className="detail-var-path-chip"
+      title={parsed.path}
+    >
+      <Icon className="size-3.5 shrink-0" />
+      <span className="truncate">{name}</span>
+      {onClear ? (
+        <button
+          type="button"
+          className="detail-var-path-chip-clear"
+          aria-label={`Remove ${name}`}
+          onClick={onClear}
+        >
+          <XIcon className="size-3" />
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
 function EditableVariables({
   draft,
   onChange,
@@ -391,6 +434,8 @@ function EditableVariables({
   keyInputRefs: React.RefObject<(HTMLInputElement | null)[]>;
   valueInputRefs: React.RefObject<(HTMLInputElement | null)[]>;
 }) {
+  const [pickingIndex, setPickingIndex] = React.useState<number | null>(null);
+
   function updateVariable(
     index: number,
     patch: Partial<{ key: string; value: string }>,
@@ -425,9 +470,30 @@ function EditableVariables({
     }
   }
 
+  async function handleAttach(index: number, mode: "files" | "folder") {
+    if (pickingIndex !== null) return;
+    setPickingIndex(index);
+    try {
+      const result = await bulkPickContextPaths(mode);
+      if (result.canceled || result.paths.length === 0) return;
+      const picked = result.paths[0];
+      const kind = mode === "folder" ? "folder" : "file";
+      const next = [...draft.variables];
+      const key = next[index].key.trim() || pathStem(picked);
+      next[index] = { key, value: formatPathRef(kind, picked) };
+      onChangeNow(next);
+    } catch (err) {
+      reportAppErrorFromUnknown("Failed to attach path", err);
+    } finally {
+      setPickingIndex(null);
+    }
+  }
+
   return (
     <div className="flex flex-col">
-      {draft.variables.map((v, i) => (
+      {draft.variables.map((v, i) => {
+        const pathRef = parsePathRef(v.value);
+        return (
         <div
           key={i}
           className="detail-var-row rounded-control"
@@ -448,23 +514,37 @@ function EditableVariables({
               nameColors[v.key] ?? "text-tertiary",
             )}
           />
-          <input
-            ref={(el) => {
-              valueInputRefs.current[i] = el;
-            }}
-            aria-label={`Variable value ${v.key || i + 1}`}
-            value={v.value}
-            onChange={(e) => updateVariable(i, { value: e.target.value })}
-            onKeyDown={(e) => handleVariableKeyDown(e, i, "value")}
-            onBlur={onCommitCheckpoint}
-            className={cn(
-              storyEditInputClass,
-              "min-w-0 flex-1 truncate",
-              storyVarValueClass,
-            )}
+          {pathRef ? (
+            <PathRefChip
+              value={v.value}
+              onClear={() => updateVariable(i, { value: "" })}
+            />
+          ) : (
+            <input
+              ref={(el) => {
+                valueInputRefs.current[i] = el;
+              }}
+              aria-label={`Variable value ${v.key || i + 1}`}
+              value={v.value}
+              onChange={(e) => updateVariable(i, { value: e.target.value })}
+              onKeyDown={(e) => handleVariableKeyDown(e, i, "value")}
+              onBlur={onCommitCheckpoint}
+              className={cn(
+                storyEditInputClass,
+                "min-w-0 flex-1 truncate",
+                storyVarValueClass,
+              )}
+            />
+          )}
+          <PathAttachMenu
+            busy={pickingIndex === i}
+            disabled={pickingIndex !== null && pickingIndex !== i}
+            onAttach={(mode) => void handleAttach(i, mode)}
+            ariaLabel={`Attach file or folder for ${v.key || `variable ${i + 1}`}`}
           />
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -483,7 +563,14 @@ function ReadOnlyVariables({
       {story.variables.map((v) => {
         const key = stripCode(v.key);
         const value = stripCode(v.value);
+        const pathRef = parsePathRef(value);
         const show = !v.secret;
+        const display = pathRef
+          ? (pathRefLabel(value) ?? pathRef.path)
+          : value
+            ? (show ? value : "••••••")
+            : "empty";
+        const copyValue = pathRef ? pathRef.path : value;
         return (
           <div
             key={v.key}
@@ -497,16 +584,20 @@ function ReadOnlyVariables({
             >
               {key}
             </span>
-            <span
-              className={cn(
-                storyVarValueClass,
-                !value && "detail-var-value--empty",
-              )}
-            >
-              {value ? (show ? value : "••••••") : "empty"}
-            </span>
+            {pathRef ? (
+              <PathRefChip value={value} />
+            ) : (
+              <span
+                className={cn(
+                  storyVarValueClass,
+                  !value && "detail-var-value--empty",
+                )}
+              >
+                {display}
+              </span>
+            )}
             <span className="shrink-0 opacity-0 transition-opacity group-hover/var:opacity-100">
-              <CopyButton value={value} label={`Copy ${key}`} />
+              <CopyButton value={copyValue} label={`Copy ${key}`} />
             </span>
           </div>
         );

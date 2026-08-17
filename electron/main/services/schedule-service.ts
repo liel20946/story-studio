@@ -9,6 +9,7 @@ import { startBulkRun } from "./bulk-runner.js";
 import { startAgentRun } from "./agent-runner.js";
 import { resolveAgentBinary } from "./agent-provider.js";
 import { formatStoryForRun } from "./bowser-stories-service.js";
+import { resolveAndExpandRunVariables } from "./expand-path-ref-variables.js";
 import { getSettingsValue } from "../handlers/settings.js";
 import { getAgentRunConfig } from "./agent-config.js";
 import type { ScheduleRepeat, ScheduledRun } from "./contract-types.js";
@@ -281,14 +282,21 @@ async function fireSchedule(schedule: ScheduledRun): Promise<void> {
   const runs = await listRuns();
   const lastRunMap = buildLastRunMap(runs);
 
-  const validStories: { storyName: string; storyTitle: string; storyContents: string }[] = [];
+  const validStories: {
+    storyName: string;
+    storyTitle: string;
+    storyContents: string;
+    variableOverrides?: Record<string, string>;
+  }[] = [];
   for (const storyName of schedule.storyNames) {
     try {
       const story = await getStory(storyName, lastRunMap);
+      const variableOverrides = await resolveAndExpandRunVariables(story);
       validStories.push({
         storyName,
         storyTitle: story.title,
-        storyContents: formatStoryForRun(story),
+        storyContents: formatStoryForRun(story, variableOverrides),
+        variableOverrides,
       });
     } catch {
       // Story may have been deleted — skip it.
@@ -323,6 +331,7 @@ async function fireSchedule(schedule: ScheduledRun): Promise<void> {
       agentBinary,
       settings.runHook,
       agentConfig,
+      story.variableOverrides,
     ).catch((err) => {
       console.error("[schedule] unhandled run error", { scheduleId: schedule.id, err: String(err) });
     });
@@ -333,6 +342,7 @@ async function fireSchedule(schedule: ScheduledRun): Promise<void> {
       storyName: s.storyName,
       storyTitle: s.storyTitle,
       storyContents: s.storyContents,
+      variableOverrides: s.variableOverrides,
     }));
     runItems = bulkStories.map((s) => ({
       storyName: s.storyName,

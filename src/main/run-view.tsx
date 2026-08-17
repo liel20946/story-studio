@@ -67,6 +67,7 @@ import { useRunScreenshotIndex } from "../lib/use-run-screenshot-index";
 import { ScreenshotImage, ScreenshotLightbox } from "../components/screenshot-image";
 import { RailAssertionLine } from "../components/rail-assertion-line";
 import { useOpenInProvider } from "../components/open-in-provider-button";
+import { parsePathRef, pathRefLabel } from "@/lib/variable-path-ref";
 
 // ---------- jump back to the story detail from a run ----------
 function useViewStoryAction(storyName?: string): ToolbarMoreItem | null {
@@ -506,6 +507,12 @@ function RunVariablesSection({
       <div className="flex flex-col">
         {entries.map(([key, value]) => {
           const secret = isSecretVariableKey(key);
+          const pathRef = parsePathRef(value);
+          const display = pathRef
+            ? (pathRefLabel(value) ?? pathRef.path)
+            : value
+              ? (secret ? "••••••" : value)
+              : "empty";
           return (
             <div
               key={key}
@@ -517,8 +524,9 @@ function RunVariablesSection({
                   "detail-var-value",
                   !value && "detail-var-value--empty",
                 )}
+                title={pathRef ? pathRef.path : undefined}
               >
-                {value ? (secret ? "••••••" : value) : "empty"}
+                {display}
               </span>
             </div>
           );

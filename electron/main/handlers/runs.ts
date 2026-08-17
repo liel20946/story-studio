@@ -8,7 +8,8 @@ import { startBulkRun, stopBulkRun, resumeBulkRun, cancelPendingBulkRun } from "
 import { startAgentRun, cancelAgentRun, listActiveRuns } from "../services/agent-runner.js";
 import { resolveAgentBinary } from "../services/agent-provider.js";
 import { buildLastRunMap } from "../services/run-service.js";
-import { formatStoryForRun, resolveRunVariables } from "../services/bowser-stories-service.js";
+import { formatStoryForRun } from "../services/bowser-stories-service.js";
+import { resolveAndExpandRunVariables } from "../services/expand-path-ref-variables.js";
 import {
   buildBulkStoryInputs,
   expandBulkRunRequests,
@@ -179,7 +180,7 @@ export function registerRunsHandlers(): void {
     const runs = await listRuns();
     const lastRunMap = buildLastRunMap(runs);
     const story = await getStory(storyName, lastRunMap);
-    const variableOverrides = resolveRunVariables(story, rawOverrides);
+    const variableOverrides = await resolveAndExpandRunVariables(story, rawOverrides);
 
     const runId = randomUUID();
 
@@ -250,7 +251,7 @@ export function registerRunsHandlers(): void {
         ? options.resumeItems
         : expandBulkRunRequests(storyNames, options?.variablePlans);
 
-    const { items, bulkStories } = buildBulkStoryInputs(
+    const { items, bulkStories } = await buildBulkStoryInputs(
       runRequests,
       storyMap,
       options,
@@ -341,7 +342,7 @@ export function registerRunsHandlers(): void {
       }
     }
 
-    const { items, bulkStories } = buildBulkStoryInputs(resumeItems, storyMap, options);
+    const { items, bulkStories } = await buildBulkStoryInputs(resumeItems, storyMap, options);
 
     resumeBulkRun(
       bulkId,

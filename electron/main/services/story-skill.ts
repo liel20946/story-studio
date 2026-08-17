@@ -105,7 +105,10 @@ const RUN_STORY_PLAYBOOK_CODEX_CHROME = `## Execution tool — Codex Chrome exte
 - Prefer structured Chrome / page tools over coordinate clicking. After each consequential action, confirm the page changed before continuing.
 - Save screenshots as PNG files under the run output \`screenshots/\` directory (and the hero path) using the tools available to you.
 - Do NOT use Playwright MCP, the in-app \`@Browser\`, Computer Use (\`@Computer\`), Playwright CLI, or any other browser-driving tool.
-- Do not register or call any MCP browser server.`;
+- Do not register or call any MCP browser server.
+
+## Close the story tab (required)
+When this story ends for ANY reason — passed, failed, blocked, cancelled, or you stop early — close the Chrome tab you used for this run as the last action. Do not leave it open. Do not close other tabs.`;
 
 export function buildRunStoryPlaybook(browserMode: BrowserMode): string {
   if (browserMode === "codex-chrome") {
@@ -184,6 +187,7 @@ export function buildGenerateStoryPlaybook(browserMode: BrowserMode): string {
 - Drive the user's signed-in Google Chrome via the **Codex Chrome extension** (\`@Chrome\`).
 - Reuse the user's authenticated Chrome session. Do not clear cookies, storage, or browser data.
 - Do NOT use Playwright MCP, the in-app \`@Browser\`, Computer Use, or any other browser-driving tool.
+- When exploration finishes for any reason (YAML ready, you must stop, or you cannot continue), close the Chrome tab you used. Do not close other tabs.
 
 ${GENERATE_STORY_TASK}`;
   }
