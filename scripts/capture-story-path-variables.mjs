@@ -138,8 +138,8 @@ async function main() {
   await wait(150);
 
   await page.getByRole("button", { name: /^Save$/i }).click({ force: true });
-  await page.getByRole("button", { name: /Run story/i }).waitFor({ timeout: 10_000 });
-  await wait(400);
+  await page.getByRole("button", { name: "More actions" }).waitFor({ timeout: 15_000 });
+  await wait(500);
   await shot(app, "story-path-var-readonly");
 
   await app.close();
