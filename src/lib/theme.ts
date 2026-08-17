@@ -1,26 +1,10 @@
 import * as React from "react";
 import type { ThemePreference } from "./contract-types";
-import type { ColorThemeId } from "./color-themes";
-import {
-  colorThemeAvailable,
-  defaultColorThemeForMode,
-  type ThemeMode,
-} from "./color-themes";
-import {
-  type AppearanceSettings,
-  resolveEffectiveContrast,
-  resolveEffectivePalette,
-} from "./color-theme-config";
-import { applyColorThemePalette, clearColorThemeOverrides } from "./color-theme-apply";
+import type { ThemeMode } from "./color-themes";
 import { normalizeAppSettings } from "./app-settings";
 import { setCachedAppSettings } from "./settings-cache";
 import { settingsGet } from "./ipc";
-
-function syncSidebarVibrancy(themeId: ColorThemeId): void {
-  void window.electronAPI.invoke("window:setSidebarVibrancy", {
-    enabled: themeId === "cursor",
-  });
-}
+import { clearColorThemeOverrides } from "./color-theme-apply";
 
 const LEGACY_APPEARANCE_PROPS = [
   "--bg",
@@ -72,58 +56,43 @@ export function resolveTheme(theme: ThemePreference): ThemeMode {
   return theme;
 }
 
-export function activeColorThemeForMode(
-  mode: ThemeMode,
-  colorThemes: ColorThemePreferences,
-): ColorThemeId {
-  return mode === "light"
-    ? colorThemes.colorThemeLight
-    : colorThemes.colorThemeDark;
+/** @deprecated Color themes removed — kept for call-site compatibility. */
+export function activeColorThemeForMode(): "default" {
+  return "default";
 }
 
-export function activeColorTheme(
-  theme: ThemePreference,
-  colorThemes: ColorThemePreferences,
-): ColorThemeId {
-  return activeColorThemeForMode(resolveTheme(theme), colorThemes);
+/** @deprecated Color themes removed — kept for call-site compatibility. */
+export function activeColorTheme(): "default" {
+  return "default";
 }
 
 export type { AppearanceSettings } from "./color-theme-config";
 
 export interface ColorThemePreferences {
-  colorThemeLight: ColorThemeId;
-  colorThemeDark: ColorThemeId;
+  colorThemeLight?: string;
+  colorThemeDark?: string;
 }
 
-/** Apply light/dark class and the color theme for the resolved mode. */
+/**
+ * Apply light/dark class only. Color presets / custom palettes are retired —
+ * tokens live in globals.css (:root / .dark).
+ */
 export function applyAppearance(
   theme: ThemePreference,
-  appearance: Partial<AppearanceSettings> & ColorThemePreferences,
+  appearance?: { usePointerCursors?: boolean } | null,
 ): void {
   resetThemeStyles();
   const resolved = resolveTheme(theme);
   document.documentElement.classList.toggle("dark", resolved === "dark");
-
-  const settings = normalizeAppSettings(appearance);
-  const colorTheme = activeColorThemeForMode(resolved, settings);
-  const effectiveColorTheme = colorThemeAvailable(colorTheme, resolved)
-    ? colorTheme
-    : defaultColorThemeForMode(resolved);
-  const effectiveSettings: AppearanceSettings = {
-    ...settings,
-    ...(resolved === "light"
-      ? { colorThemeLight: effectiveColorTheme }
-      : { colorThemeDark: effectiveColorTheme }),
-  };
-  const palette = resolveEffectivePalette(effectiveSettings, resolved);
-  const contrast = resolveEffectiveContrast(settings, resolved);
-  applyColorThemePalette(palette, resolved, contrast, effectiveColorTheme);
-  document.documentElement.dataset.colorTheme = effectiveColorTheme;
-  syncSidebarVibrancy(effectiveColorTheme);
-  document.documentElement.classList.toggle(
-    "use-pointer-cursors",
-    settings.usePointerCursors,
-  );
+  delete document.documentElement.dataset.colorTheme;
+  void window.electronAPI.invoke("window:setSidebarVibrancy", {
+    enabled: false,
+  });
+  const usePointer =
+    typeof appearance?.usePointerCursors === "boolean"
+      ? appearance.usePointerCursors
+      : normalizeAppSettings(appearance as never).usePointerCursors;
+  document.documentElement.classList.toggle("use-pointer-cursors", usePointer);
 }
 
 /** @deprecated Use applyAppearance instead. */
@@ -135,13 +104,13 @@ export function applyTheme(theme: ThemePreference): void {
 export function useTheme(): void {
   React.useEffect(() => {
     let preference: ThemePreference = "dark";
-    let appearance: AppearanceSettings = normalizeAppSettings(null);
+    let usePointerCursors = false;
     let cancelled = false;
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     const sync = () => {
       if (cancelled) return;
-      applyAppearance(preference, appearance);
+      applyAppearance(preference, { usePointerCursors });
     };
 
     const onSystemThemeChange = () => {
@@ -157,13 +126,13 @@ export function useTheme(): void {
         if (cancelled) return;
         const normalized = setCachedAppSettings(settings);
         preference = normalized.theme;
-        appearance = normalized;
+        usePointerCursors = normalized.usePointerCursors;
         sync();
       })
       .catch(() => {
         if (cancelled) return;
         preference = "dark";
-        appearance = normalizeAppSettings(null);
+        usePointerCursors = false;
         sync();
       });
 
@@ -183,12 +152,10 @@ export function useTheme(): void {
       },
     );
 
+    // Ignore legacy color-theme events — CSS tokens are fixed per light/dark.
     const unsubscribeColorTheme = window.electronAPI.on(
       "settings:color-theme-changed",
-      (payload: unknown) => {
-        const data = payload as Partial<AppearanceSettings>;
-        appearance = normalizeAppSettings({ ...appearance, ...data });
-        setCachedAppSettings(data);
+      () => {
         sync();
       },
     );
@@ -198,11 +165,8 @@ export function useTheme(): void {
       (payload: unknown) => {
         const data = payload as { usePointerCursors?: boolean };
         if (typeof data.usePointerCursors !== "boolean") return;
-        appearance = normalizeAppSettings({
-          ...appearance,
-          usePointerCursors: data.usePointerCursors,
-        });
-        setCachedAppSettings({ usePointerCursors: data.usePointerCursors });
+        usePointerCursors = data.usePointerCursors;
+        setCachedAppSettings({ usePointerCursors });
         sync();
       },
     );

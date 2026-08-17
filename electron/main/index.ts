@@ -1,12 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { app, BrowserWindow, Menu, protocol, net, nativeTheme } from "./electron-api.js";
+import { app, BrowserWindow, Menu, protocol, net } from "./electron-api.js";
 import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getMainWindowLoadOptions } from "./windows/window-paths.js";
 import { getMacWindowChromeOptions, applyMacWindowChrome } from "./windows/window-chrome.js";
-import { isCursorColorTheme, setSidebarVibrancy } from "./windows/window-vibrancy.js";
-import { getSettingsValue } from "./handlers/settings.js";
+import { setSidebarVibrancy } from "./windows/window-vibrancy.js";
 import { disableReloadShortcut } from "./windows/disable-reload-shortcut.js";
 import { applyDefaultZoom } from "./windows/window-zoom.js";
 import {
@@ -110,16 +109,7 @@ async function createMainWindow(): Promise<void> {
     await mainWindow.loadFile(load.file, load.query ? { query: load.query } : undefined);
   }
 
-  const settings = getSettingsValue();
-  const resolvedMode =
-    settings.theme === "system"
-      ? nativeTheme.shouldUseDarkColors
-        ? "dark"
-        : "light"
-      : settings.theme;
-  const activeColorTheme =
-    resolvedMode === "light" ? settings.colorThemeLight : settings.colorThemeDark;
-  setSidebarVibrancy(mainWindow, isCursorColorTheme(activeColorTheme));
+  setSidebarVibrancy(mainWindow, false);
 }
 
 function setupApplicationMenu(): void {

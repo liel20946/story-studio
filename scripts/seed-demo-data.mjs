@@ -187,6 +187,9 @@ function makeRun({
     writeDemoPng(path.join(shotsDir, "step-02.png"), [40, 42, 48]);
     writeDemoPng(path.join(shotsDir, "step-03.png"), [28, 36, 44]);
   }
+  const screenshotPath = demoScreenshots
+    ? path.join(runBase, "screenshots", "step-03.png")
+    : undefined;
   return {
     runId,
     storyName,
@@ -201,6 +204,16 @@ function makeRun({
     agentProvider: "codex",
     agentModel: "gpt-5.4",
     providerSessionId: `demo-session-${runId}`,
+    ...(screenshotPath
+      ? {
+          screenshotPath,
+          screenshotPaths: [
+            path.join(runBase, "screenshots", "step-01.png"),
+            path.join(runBase, "screenshots", "step-02.png"),
+            path.join(runBase, "screenshots", "step-03.png"),
+          ],
+        }
+      : {}),
     ...(variableOverrides ? { variableOverrides } : {}),
   };
 }
@@ -258,6 +271,7 @@ const runCheckoutFailed = makeRun({
     { text: "Order confirmation page loads", passed: false },
     { text: "Order number is displayed", passed: false },
   ],
+  demoScreenshots: true,
   startedAt: now - 1_800_000,
   finishedAt: now - 1_620_000,
   events: [
@@ -288,6 +302,7 @@ const runOnboardingPassed = makeRun({
   storyTitle: "User Onboarding",
   status: "passed",
   summary: "Onboarding completed successfully.",
+  demoScreenshots: true,
   assertions: [
     { text: "Welcome dashboard is shown", passed: true },
     { text: "Onboarding checklist is complete", passed: true },
