@@ -35,3 +35,15 @@ export function pathStem(filePath: string): string {
   const stem = base.replace(/\.[^.]+$/, "") || base;
   return stem.replace(/[^A-Za-z0-9_]+/g, "_").slice(0, 40) || "content";
 }
+
+export function storyPathRefVariables(
+  variables: Array<{ key: string; value: string }>,
+): Array<{ key: string; kind: VariablePathKind }> {
+  const out: Array<{ key: string; kind: VariablePathKind }> = [];
+  for (const variable of variables) {
+    const parsed = parsePathRef(variable.value);
+    if (!parsed || !variable.key.trim()) continue;
+    out.push({ key: variable.key, kind: parsed.kind });
+  }
+  return out;
+}

@@ -29,3 +29,15 @@ export function pathRefLabel(value: string): string | null {
   const parts = parsed.path.replace(/\\/g, "/").split("/");
   return parts[parts.length - 1] || parsed.path;
 }
+
+export function storyPathRefVariables(
+  variables: Array<{ key: string; value: string }>,
+): Array<{ key: string; kind: VariablePathKind }> {
+  const out: Array<{ key: string; kind: VariablePathKind }> = [];
+  for (const variable of variables) {
+    const parsed = parsePathRef(variable.value);
+    if (!parsed || !variable.key.trim()) continue;
+    out.push({ key: variable.key, kind: parsed.kind });
+  }
+  return out;
+}
