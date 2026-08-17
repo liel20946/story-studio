@@ -246,10 +246,12 @@ export function BulkVariablesModal({
 
   if (!story) return null;
 
-  const variableKeys =
-    story.variables.length > 0
-      ? story.variables.map((v) => v.key)
-      : Array.from(new Set(runs.flatMap((run) => Object.keys(run.variables))));
+  const variableKeys = Array.from(
+    new Set([
+      ...story.variables.map((v) => v.key),
+      ...runs.flatMap((run) => Object.keys(run.variables)),
+    ]),
+  );
   const secretKeys = new Set(
     story.variables.filter((v) => v.secret).map((v) => v.key),
   );
