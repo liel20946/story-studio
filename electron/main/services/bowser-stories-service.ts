@@ -5,6 +5,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { StoryDetail, StorySummary, StoryVariable } from "./contract-types.js";
 import { getStoriesDir } from "./paths.js";
 import { shouldFileBackVariable, variablePayloadPath } from "./run-variable-files.js";
+import { parsePathRef } from "./variable-path-ref.js";
 
 // ---------- Bowser YAML v2 types ----------
 
@@ -768,6 +769,10 @@ export function formatStoryForRun(
     resolvedVariables.length > 0
       ? `\n## Variables\n${resolvedVariables
           .map((v) => {
+            const pathRef = parsePathRef(v.value);
+            if (pathRef) {
+              return `- ${v.key}: use the exact contents of the attached ${pathRef.kind} at \`${pathRef.path}\`. Do not invent replacement markup.`;
+            }
             if (shouldFileBackVariable(v.value)) {
               const rel = variablePayloadPath(v.key);
               return `- ${v.key}: read the exact contents of \`${rel}\` in the run output directory and use that text when filling/pasting. Do not invent replacement markup.`;

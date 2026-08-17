@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import type { BulkStoryRunRequest, BulkRunOptions, BulkVariableRun } from "./contract-types.js";
 import type { StoryDetail } from "./contract-types.js";
-import { formatStoryForRun, resolveRunVariables } from "./bowser-stories-service.js";
+import { formatStoryForRun } from "./bowser-stories-service.js";
+import { resolveAndExpandRunVariables } from "./expand-path-ref-variables.js";
 import type { BulkStoryInput } from "./bulk-runner.js";
 
 export interface BulkLaunchItem {
@@ -34,11 +35,11 @@ export function expandBulkRunRequests(
   return requests;
 }
 
-export function buildBulkStoryInputs(
+export async function buildBulkStoryInputs(
   requests: BulkStoryRunRequest[],
   storiesByName: Map<string, StoryDetail>,
   options?: BulkRunOptions,
-): { items: BulkLaunchItem[]; bulkStories: BulkStoryInput[] } {
+): Promise<{ items: BulkLaunchItem[]; bulkStories: BulkStoryInput[] }> {
   const items: BulkLaunchItem[] = [];
   const bulkStories: BulkStoryInput[] = [];
 
@@ -60,19 +61,24 @@ export function buildBulkStoryInputs(
         ? `${story.title} (${request.runLabel})`
         : story.title;
 
+    const variableOverrides = await resolveAndExpandRunVariables(
+      story,
+      request.variableOverrides,
+    );
+
     items.push({
       storyName: request.storyName,
       storyTitle,
       runId,
       runLabel: request.runLabel,
-      variableOverrides: request.variableOverrides,
+      variableOverrides,
     });
     bulkStories.push({
       runId,
       storyName: request.storyName,
       storyTitle,
-      storyContents: formatStoryForRun(story, request.variableOverrides),
-      variableOverrides: resolveRunVariables(story, request.variableOverrides),
+      storyContents: formatStoryForRun(story, variableOverrides),
+      variableOverrides,
     });
   }
 

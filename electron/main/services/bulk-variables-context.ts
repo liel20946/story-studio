@@ -1,5 +1,11 @@
 import * as fs from "fs/promises";
 import * as path from "path";
+import {
+  FILE_REF_PREFIX,
+  FOLDER_REF_PREFIX,
+  parsePathRef,
+  storyPathRefVariables,
+} from "./variable-path-ref.js";
 
 export interface BulkContextAttachment {
   path: string;
@@ -210,7 +216,7 @@ export async function copyContextFilesToOutput(
   return written;
 }
 
-export const FILE_REF_PREFIX = "@file:";
+export { FILE_REF_PREFIX };
 const PREVIEW_CHARS = 280;
 
 function normalizeRel(value: string): string {
@@ -236,34 +242,114 @@ export function inferPayloadKeyFromFile(relativePath: string): string {
   return "content";
 }
 
+export function attachmentTargetKey(
+  storyVariables: Array<{ key: string; value: string }>,
+  relativePath?: string,
+): string | undefined {
+  const refs = storyPathRefVariables(storyVariables);
+  if (relativePath) {
+    const stem = fileBasename(relativePath)
+      .replace(/\.[^.]+$/, "")
+      .toLowerCase();
+    const byStem = refs.find((ref) => ref.key.toLowerCase() === stem);
+    if (byStem) return byStem.key;
+  }
+  const fileKey = refs.find((ref) => ref.kind === "file")?.key;
+  if (fileKey) return fileKey;
+  const folderKey = refs.find((ref) => ref.kind === "folder")?.key;
+  if (folderKey) return folderKey;
+  return payloadVariableKey(storyVariables.map((variable) => variable.key));
+}
+
+function joinFileContents(files: BulkContextFile[]): string {
+  if (files.length === 0) return "";
+  if (files.length === 1) return files[0].content;
+  return files
+    .map((file) => `### ${file.relativePath}\n${file.content}`)
+    .join("\n\n");
+}
+
+function filesForFolder(
+  files: BulkContextFile[],
+  folderPath: string,
+): BulkContextFile[] {
+  const abs = path.resolve(folderPath);
+  const folderName = path.basename(abs);
+  return files.filter((file) => {
+    if (file.sourcePath === abs || file.sourcePath.startsWith(`${abs}${path.sep}`)) {
+      return true;
+    }
+    const rel = normalizeRel(file.relativePath);
+    return rel === folderName || rel.startsWith(`${folderName}/`);
+  });
+}
+
+function contentsAlreadyFromAttachments(
+  current: string,
+  files: BulkContextFile[],
+): boolean {
+  if (!current) return false;
+  return files.some(
+    (file) =>
+      file.content === current ||
+      (current.includes(file.content) && file.content.length > 40),
+  );
+}
+
 export function lookupAttachedFile(
   files: BulkContextFile[],
   value: string,
 ): BulkContextFile | undefined {
   const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
   if (!trimmed) return undefined;
-  const ref = trimmed.startsWith(FILE_REF_PREFIX)
-    ? trimmed.slice(FILE_REF_PREFIX.length).trim()
-    : trimmed;
+  const parsed = parsePathRef(trimmed);
+  const ref = parsed
+    ? parsed.path
+    : trimmed.startsWith(FILE_REF_PREFIX)
+      ? trimmed.slice(FILE_REF_PREFIX.length).trim()
+      : trimmed.startsWith(FOLDER_REF_PREFIX)
+        ? trimmed.slice(FOLDER_REF_PREFIX.length).trim()
+        : trimmed;
   const normalized = normalizeRel(ref);
   const exact = files.find((f) => normalizeRel(f.relativePath) === normalized);
   if (exact) return exact;
   const copied = files.find(
-    (f) => normalizeRel(`attachments/${f.relativePath}`) === normalized,
+    (f) =>
+      normalizeRel(`attachments/${f.relativePath}`) === normalized ||
+      normalizeRel(f.relativePath) === normalized.replace(/^attachments\//, ""),
   );
   if (copied) return copied;
   const base = fileBasename(normalized);
   const byBase = files.filter((f) => fileBasename(f.relativePath) === base);
   if (byBase.length === 1) return byBase[0];
   return files.find(
-    (f) => f.sourcePath === trimmed || f.sourcePath.endsWith(normalized),
+    (f) =>
+      f.sourcePath === trimmed ||
+      f.sourcePath === ref ||
+      f.sourcePath.endsWith(normalized),
   );
+}
+
+export function lookupAttachedFiles(
+  files: BulkContextFile[],
+  value: string,
+): BulkContextFile[] {
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
+  if (!trimmed) return [];
+  const parsed = parsePathRef(trimmed);
+  if (parsed?.kind === "folder") {
+    const nested = filesForFolder(files, parsed.path);
+    if (nested.length > 0) return nested;
+  }
+  const single = lookupAttachedFile(files, trimmed);
+  return single ? [single] : [];
 }
 
 function looksLikeFilenameOnly(value: string): boolean {
   const t = value.trim();
   if (!t) return true;
-  if (t.startsWith(FILE_REF_PREFIX)) return true;
+  if (t.startsWith(FILE_REF_PREFIX) || t.startsWith(FOLDER_REF_PREFIX)) return true;
+  if (parsePathRef(t)) return true;
   if (t.includes("\n") || t.length > 240) return false;
   if (/[<>]/.test(t)) return false;
   return (
@@ -283,43 +369,72 @@ function fileMatchesRunLabel(file: BulkContextFile, label: string): boolean {
   );
 }
 
+function shouldReplaceWithAttachment(current: string, file: BulkContextFile): boolean {
+  if (!current || looksLikeFilenameOnly(current)) return true;
+  return (
+    /[<>]/.test(current) &&
+    !file.content.includes(current.trim()) &&
+    !current.includes(file.content.trim())
+  );
+}
+
 export function applyAttachmentContentsToRuns<
   T extends { label: string; variables: Record<string, string> },
->(runs: T[], files: BulkContextFile[], storyKeys: string[]): T[] {
+>(
+  runs: T[],
+  files: BulkContextFile[],
+  storyVariables: Array<{ key: string; value: string }>,
+): T[] {
   if (files.length === 0 || runs.length === 0) return runs;
+  const refs = storyPathRefVariables(storyVariables);
   const keys =
-    storyKeys.length > 0
-      ? storyKeys
+    storyVariables.length > 0
+      ? storyVariables.map((variable) => variable.key)
       : Array.from(new Set(runs.flatMap((run) => Object.keys(run.variables))));
   const payloadKey = payloadVariableKey(keys);
+  const fileTargetKeys = [
+    ...refs.filter((ref) => ref.kind === "file").map((ref) => ref.key),
+    ...(payloadKey ? [payloadKey] : []),
+  ].filter((key, index, all) => all.indexOf(key) === index);
+  const folderTargetKeys = refs
+    .filter((ref) => ref.kind === "folder")
+    .map((ref) => ref.key);
 
   return runs.map((run, index) => {
     const variables = { ...run.variables };
     for (const [key, value] of Object.entries(variables)) {
       if (/password|secret|token|user|email|login|account/i.test(key)) continue;
-      const file = lookupAttachedFile(files, value);
-      if (file) variables[key] = file.content;
+      const matched = lookupAttachedFiles(files, value);
+      if (matched.length > 0) variables[key] = joinFileContents(matched);
     }
 
-    if (!payloadKey) return { ...run, variables };
-
-    const current = variables[payloadKey] ?? "";
-    const alreadyReal = files.some((f) => f.content === current);
-    if (alreadyReal) return { ...run, variables };
-
-    const labelFile = files.find((f) => fileMatchesRunLabel(f, run.label));
+    const labelFile = files.find((item) => fileMatchesRunLabel(item, run.label));
     const file = labelFile ?? files[Math.min(index, files.length - 1)];
     if (!file) return { ...run, variables };
 
-    if (
-      looksLikeFilenameOnly(current) ||
-      !current ||
-      (/[<>]/.test(current) &&
-        !file.content.includes(current.trim()) &&
-        !current.includes(file.content.trim()))
-    ) {
-      variables[payloadKey] = file.content;
+    for (const key of fileTargetKeys) {
+      if (/password|secret|token|user|email|login|account/i.test(key)) continue;
+      const current = variables[key] ?? "";
+      if (contentsAlreadyFromAttachments(current, files)) continue;
+      if (shouldReplaceWithAttachment(current, file)) {
+        variables[key] = file.content;
+      }
     }
+
+    if (fileTargetKeys.length === 0) {
+      for (const key of folderTargetKeys) {
+        const current = variables[key] ?? "";
+        if (contentsAlreadyFromAttachments(current, files)) continue;
+        if (!current || looksLikeFilenameOnly(current)) {
+          const labeled = files.filter((item) => fileMatchesRunLabel(item, run.label));
+          const fromFileDir = filesForFolder(files, path.dirname(file.sourcePath));
+          variables[key] = joinFileContents(
+            labeled.length > 0 ? labeled : fromFileDir.length > 0 ? fromFileDir : [file],
+          );
+        }
+      }
+    }
+
     return { ...run, variables };
   });
 }
@@ -328,6 +443,7 @@ export function formatBulkContextForPrompt(
   attachments: BulkContextAttachment[],
   files: BulkContextFile[],
   copiedRelativePaths: string[],
+  storyVariables: Array<{ key: string; value: string }> = [],
 ): string {
   if (attachments.length === 0) return "";
 
@@ -359,16 +475,38 @@ export function formatBulkContextForPrompt(
   const examplePath =
     copiedRelativePaths[0] ??
     (files[0] ? `attachments/${files[0].relativePath}` : "attachments/welcome.html");
+  const refs = storyPathRefVariables(storyVariables);
+  const fileVars = refs
+    .filter((ref) => ref.kind === "file")
+    .map((ref) => `\`${ref.key}\``)
+    .join(", ");
+  const folderVars = refs
+    .filter((ref) => ref.kind === "folder")
+    .map((ref) => `\`${ref.key}\``)
+    .join(", ");
+  const targetLines = [
+    fileVars
+      ? `- File variables (${fileVars}): set to "${FILE_REF_PREFIX}${examplePath}". One attached file per run.`
+      : null,
+    folderVars
+      ? `- Folder variables (${folderVars}): set to "${FOLDER_REF_PREFIX}<folder-name>" matching an attached folder.`
+      : null,
+    !fileVars && !folderVars
+      ? `- For payload variables (paste/HTML/body/content), set the value to a file ref only:\n  "${FILE_REF_PREFIX}${examplePath}"`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return `## Attached context
 The user attached files/folders. Story Studio will substitute the real file bytes after you reply.
 
 Critical:
 - Do NOT paste raw HTML/JSON/file contents into the JSON (quotes and braces break parsing and can hang the session).
-- For payload variables (paste/HTML/body/content), set the value to a file ref only:
-  "${FILE_REF_PREFIX}${examplePath}"
+${targetLines}
 - One run per attached file when the user asked to vary by file. Label the run after the file name.
 - Do not invent substitute markup when an attachment exists.
+- Do not copy the story's default @file:/@folder: path; use the attached files above.
 
 ### Paths
 ${attachmentLines}

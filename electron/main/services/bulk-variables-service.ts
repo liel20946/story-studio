@@ -8,17 +8,19 @@ import { buildLastRunMap, listRuns } from "./run-service.js";
 import { buildBulkVariablesPrompt } from "./bulk-variables-skill.js";
 import {
   applyAttachmentContentsToRuns,
+  attachmentTargetKey,
   copyContextFilesToOutput,
   formatBulkContextForPrompt,
   inferPayloadKeyFromFile,
   loadBulkVariableContext,
-  payloadVariableKey,
+  type BulkContextAttachment,
   type BulkContextFile,
 } from "./bulk-variables-context.js";
 import { invokeGenerateAgent, cancelGenerateInvocation } from "./agent-generate-runner.js";
 import { resolveAgentBinary } from "./agent-provider.js";
 import { getAgentRunConfig } from "./agent-config.js";
 import { mockRunsEnabled } from "./mock-runner.js";
+import { parsePathRef } from "./variable-path-ref.js";
 
 export interface BulkVariablesGenerateResult {
   runs: BulkVariableRun[];
@@ -57,19 +59,61 @@ function parseRunsFromAgentMessage(raw: string): BulkVariableRun[] {
   }));
 }
 
+function joinFolderContents(files: BulkContextFile[]): string {
+  if (files.length === 0) return "";
+  if (files.length === 1) return files[0].content;
+  return files
+    .map((file) => `### ${file.relativePath}\n${file.content}`)
+    .join("\n\n");
+}
+
 function runsFromAttachedFiles(
   story: StoryDetail,
   files: BulkContextFile[],
+  attachments: BulkContextAttachment[] = [],
 ): BulkVariableRun[] {
   if (files.length === 0) return [];
-  const storyKeys = story.variables.map((v) => v.key);
-  const payloadKey =
-    payloadVariableKey(storyKeys) ?? inferPayloadKeyFromFile(files[0].relativePath);
-  return files.map((file, index) => {
+  const fileKeys = story.variables
+    .filter((variable) => parsePathRef(variable.value)?.kind === "file")
+    .map((variable) => variable.key);
+  const folderKeys = story.variables
+    .filter((variable) => parsePathRef(variable.value)?.kind === "folder")
+    .map((variable) => variable.key);
+  const folders = attachments.filter((attachment) => attachment.kind === "folder");
+
+  const seedVariables = (): Record<string, string> => {
     const variables: Record<string, string> = {};
     for (const variable of story.variables) {
       variables[variable.key] = variable.value;
     }
+    return variables;
+  };
+
+  if (fileKeys.length === 0 && folderKeys.length > 0 && folders.length > 0) {
+    return folders.map((folder, index) => {
+      const nested = files.filter(
+        (file) =>
+          file.sourcePath === folder.path ||
+          file.sourcePath.startsWith(`${folder.path}${path.sep}`) ||
+          file.relativePath === folder.name ||
+          file.relativePath.startsWith(`${folder.name}/`),
+      );
+      const content = joinFolderContents(nested.length > 0 ? nested : files);
+      const variables = seedVariables();
+      for (const key of folderKeys) variables[key] = content;
+      return {
+        id: randomUUID(),
+        label: (folder.name || `Run ${index + 1}`).slice(0, 80),
+        variables,
+      };
+    });
+  }
+
+  return files.map((file, index) => {
+    const variables = seedVariables();
+    const payloadKey =
+      attachmentTargetKey(story.variables, file.relativePath) ??
+      inferPayloadKeyFromFile(file.relativePath);
     variables[payloadKey] = file.content;
     const base = file.relativePath.replace(/\\/g, "/").split("/").pop() ?? file.relativePath;
     return {
@@ -95,12 +139,13 @@ function mockRunsForStory(
   description: string,
   contextPaths: string[] = [],
   files: BulkContextFile[] = [],
+  attachments: BulkContextAttachment[] = [],
 ): BulkVariableRun[] {
   if (files.length > 0) {
     return applyAttachmentContentsToRuns(
-      runsFromAttachedFiles(story, files),
+      runsFromAttachedFiles(story, files, attachments),
       files,
-      story.variables.map((v) => v.key),
+      story.variables,
     );
   }
   const storyVars =
@@ -176,7 +221,7 @@ export async function generateBulkVariableRuns(
   if (mockRunsEnabled()) {
     onProgress?.("Generating variable sets…");
     await new Promise((r) => setTimeout(r, 600));
-    return { runs: mockRunsForStory(story, trimmed, contextPaths, files) };
+    return { runs: mockRunsForStory(story, trimmed, contextPaths, files, attachments) };
   }
 
   const outputDir = path.join(os.tmpdir(), "story-studio-bulk-vars", invocationId);
@@ -187,6 +232,7 @@ export async function generateBulkVariableRuns(
     attachments,
     files,
     copiedRelativePaths,
+    story.variables,
   );
 
   const agentBinary = await resolveAgentBinary(
@@ -209,15 +255,14 @@ export async function generateBulkVariableRuns(
     onProgress,
   });
 
-  const storyKeys = story.variables.map((v) => v.key);
   let parsedRuns: BulkVariableRun[];
   try {
     parsedRuns = parseRunsFromAgentMessage(message);
   } catch (err) {
-    parsedRuns = runsFromAttachedFiles(story, files);
+    parsedRuns = runsFromAttachedFiles(story, files, attachments);
     if (parsedRuns.length === 0) throw err;
   }
-  parsedRuns = applyAttachmentContentsToRuns(parsedRuns, files, storyKeys);
+  parsedRuns = applyAttachmentContentsToRuns(parsedRuns, files, story.variables);
   applyStoryVariableDefaults(story, parsedRuns);
   return { runs: parsedRuns };
 }

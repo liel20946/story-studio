@@ -31,6 +31,7 @@ import {
   onBulkGenerateProgress,
 } from "@/lib/ipc";
 import type { BulkVariableRun, StoryDetail } from "@/lib/contract-types";
+import { parsePathRef } from "@/lib/variable-path-ref";
 
 type Phase = "chat" | "generating" | "review";
 
@@ -276,8 +277,8 @@ export function BulkVariablesModal({
         <DialogHeader>
           <DialogTitle>Variable runs: {story.title}</DialogTitle>
           <DialogDescription>
-            Describe how to vary this story across runs. Attach files or folders
-            when the agent should use their contents.
+            Describe how to vary this story across runs. Attached files or
+            folders fill matching file/folder variables.
           </DialogDescription>
         </DialogHeader>
 
@@ -291,14 +292,24 @@ export function BulkVariablesModal({
                 </Text>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {story.variables.length > 0 ? (
-                    story.variables.map((v) => (
+                    story.variables.map((v) => {
+                      const pathRef = parsePathRef(v.value);
+                      const Icon =
+                        pathRef?.kind === "folder"
+                          ? FolderIcon
+                          : pathRef
+                            ? FileIcon
+                            : null;
+                      return (
                       <span
                         key={v.key}
-                        className="rounded-full bg-control px-2 py-0.5 font-mono text-[11px] text-secondary"
+                        className="inline-flex items-center gap-1 rounded-full bg-control px-2 py-0.5 font-mono text-[11px] text-secondary"
                       >
+                        {Icon ? <Icon className="size-3 shrink-0" /> : null}
                         {v.key}
                       </span>
-                    ))
+                      );
+                    })
                   ) : (
                     <Text variant="small" color="tertiary">
                       No variables defined. The agent will infer keys from the workflow.
@@ -341,7 +352,7 @@ export function BulkVariablesModal({
                 onSubmit={() => void handleGenerate()}
                 showSkill
                 skillLabel="bulk-variables"
-                placeholder='e.g. "One run per attached HTML file for the paste body"'
+                placeholder='e.g. "One run per attached file for the file/folder variables"'
                 leading={
                   <AttachPlusMenu
                     busy={pickingAttachments}
