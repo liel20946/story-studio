@@ -286,7 +286,7 @@ export function buildRunPromptSuffix(paths: RunPromptPaths): string {
     `Screenshots: ${screenshotsDir}\n` +
     `steps.json: ${stepsPath}\n` +
     `Hero: ${heroScreenshotPath}\n\n` +
-    `Story is below — do not read story files from disk. Follow the playbook for checkpoints, live steps.json, and hero (fresh capture after the last Execution order line → ${heroScreenshotPath}; set screenshotPath to that path).\n\n` +
+    `Story is below — do not read story YAML from disk. Follow the playbook for checkpoints, live steps.json, and hero (fresh capture after the last Execution order line → ${heroScreenshotPath}; set screenshotPath to that path). If a variable points at \`variables/<key>.txt\` in the run output, read that payload file and use its exact contents.\n\n` +
     "```markdown\n" +
     storyContents +
     "\n```" +

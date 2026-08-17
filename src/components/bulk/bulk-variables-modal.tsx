@@ -28,6 +28,7 @@ import {
   bulkCancelGenerateVariables,
   bulkGenerateVariables,
   bulkPickContextPaths,
+  onBulkGenerateProgress,
 } from "@/lib/ipc";
 import type { BulkVariableRun, StoryDetail } from "@/lib/contract-types";
 
@@ -126,6 +127,14 @@ export function BulkVariablesModal({
     setPickingAttachments(false);
     invocationRef.current = null;
   }, [open, story?.name, initialRuns]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    return onBulkGenerateProgress((progress) => {
+      if (progress.invocationId !== invocationRef.current) return;
+      if (progress.message.trim()) setStatusText(progress.message);
+    });
+  }, [open]);
 
   function cancelInFlightGenerate() {
     const id = invocationRef.current;
@@ -245,9 +254,23 @@ export function BulkVariablesModal({
     story.variables.filter((v) => v.secret).map((v) => v.key),
   );
 
+  function blockDismissWhilePicking(event: Event) {
+    if (pickingAttachments) event.preventDefault();
+  }
+
   return (
-    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent size="large" className="max-h-[min(88vh,760px)]">
+    <Dialog open={open} onOpenChange={handleDialogOpenChange} modal={!pickingAttachments}>
+      <DialogContent
+        size="large"
+        className="max-h-[min(88vh,760px)]"
+        hideOverlay={pickingAttachments}
+        onEscapeKeyDown={(e) => {
+          if (pickingAttachments) e.preventDefault();
+        }}
+        onPointerDownOutside={blockDismissWhilePicking}
+        onInteractOutside={blockDismissWhilePicking}
+        onFocusOutside={blockDismissWhilePicking}
+      >
         <DialogHeader>
           <DialogTitle>Variable runs: {story.title}</DialogTitle>
           <DialogDescription>
@@ -362,21 +385,39 @@ export function BulkVariablesModal({
                     </Button>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    {variableKeys.map((key) => (
-                      <div key={key} className="grid grid-cols-[7rem_1fr] items-center gap-2">
-                        <Text variant="small" className="truncate font-mono text-tertiary">
+                    {variableKeys.map((key) => {
+                      const value = run.variables[key] ?? "";
+                      const multiline =
+                        value.includes("\n") ||
+                        value.length > 80 ||
+                        /<[a-z][\s\S]*>/i.test(value);
+                      return (
+                      <div key={key} className="grid grid-cols-[7rem_1fr] items-start gap-2">
+                        <Text variant="small" className="truncate pt-2 font-mono text-tertiary">
                           {key}
                         </Text>
-                        <Input
-                          aria-label={`${run.label} ${key}`}
-                          type={secretKeys.has(key) ? "password" : "text"}
-                          autoComplete="off"
-                          value={run.variables[key] ?? ""}
-                          onChange={(e) => updateRunVariable(index, key, e.target.value)}
-                          className="h-8 font-mono text-[12px]"
-                        />
+                        {multiline ? (
+                          <Textarea
+                            aria-label={`${run.label} ${key}`}
+                            autoComplete="off"
+                            value={value}
+                            onChange={(e) => updateRunVariable(index, key, e.target.value)}
+                            rows={6}
+                            className="min-h-[5.5rem] font-mono text-[12px]"
+                          />
+                        ) : (
+                          <Input
+                            aria-label={`${run.label} ${key}`}
+                            type={secretKeys.has(key) ? "password" : "text"}
+                            autoComplete="off"
+                            value={value}
+                            onChange={(e) => updateRunVariable(index, key, e.target.value)}
+                            className="h-8 font-mono text-[12px]"
+                          />
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}

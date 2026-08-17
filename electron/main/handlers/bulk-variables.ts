@@ -1,13 +1,15 @@
 import * as os from "os";
 import * as fs from "fs/promises";
 import { randomUUID } from "crypto";
-import { ipcMain, dialog } from "../electron-api.js";
+import { ipcMain, dialog, BrowserWindow } from "../electron-api.js";
 import {
   cancelBulkVariablesGenerate,
   generateBulkVariableRuns,
 } from "../services/bulk-variables-service.js";
 import { mockRunsEnabled } from "../services/mock-runner.js";
 import { getSettingsValue } from "./settings.js";
+import { getMainWindow } from "../windows/main-window.js";
+import { broadcast } from "../broadcast.js";
 
 function mockAttachmentPathsFromEnv(): string[] {
   const raw = process.env.STORY_STUDIO_MOCK_ATTACHMENTS?.trim();
@@ -18,7 +20,10 @@ function mockAttachmentPathsFromEnv(): string[] {
     .filter(Boolean);
 }
 
-async function pickContextPaths(mode: "files" | "folder"): Promise<{
+async function pickContextPaths(
+  parentWindow: ReturnType<typeof BrowserWindow.fromWebContents>,
+  mode: "files" | "folder",
+): Promise<{
   paths: string[];
   canceled: boolean;
 }> {
@@ -42,14 +47,15 @@ async function pickContextPaths(mode: "files" | "folder"): Promise<{
     }
   }
 
-  const result = await dialog.showOpenDialog({
+  const win = parentWindow ?? getMainWindow() ?? undefined;
+  const dialogOpts = {
     title: mode === "folder" ? "Attach folder" : "Attach files",
     defaultPath: os.homedir(),
     buttonLabel: "Attach",
     properties:
       mode === "folder"
-        ? ["openDirectory"]
-        : ["openFile", "multiSelections"],
+        ? (["openDirectory"] as Array<"openDirectory">)
+        : (["openFile", "multiSelections"] as Array<"openFile" | "multiSelections">),
     filters:
       mode === "folder"
         ? undefined
@@ -70,7 +76,10 @@ async function pickContextPaths(mode: "files" | "folder"): Promise<{
             },
             { name: "All files", extensions: ["*"] },
           ],
-  });
+  };
+  const result = win
+    ? await dialog.showOpenDialog(win, dialogOpts)
+    : await dialog.showOpenDialog(dialogOpts);
   if (result.canceled || result.filePaths.length === 0) {
     return { paths: [], canceled: true };
   }
@@ -78,7 +87,7 @@ async function pickContextPaths(mode: "files" | "folder"): Promise<{
 }
 
 export function registerBulkVariablesHandlers(): void {
-  ipcMain.handle("bulk:pickContextPaths", async (_event, params: unknown) => {
+  ipcMain.handle("bulk:pickContextPaths", async (event, params: unknown) => {
     const mode =
       typeof params === "object" &&
       params !== null &&
@@ -86,7 +95,7 @@ export function registerBulkVariablesHandlers(): void {
         (params as Record<string, unknown>)["mode"] === "files")
         ? ((params as { mode: "files" | "folder" }).mode)
         : "files";
-    return pickContextPaths(mode);
+    return pickContextPaths(BrowserWindow.fromWebContents(event.sender), mode);
   });
 
   ipcMain.handle("bulk:generateVariables", async (_event, params: unknown) => {
@@ -114,7 +123,9 @@ export function registerBulkVariablesHandlers(): void {
       description,
       settings,
       id,
-      undefined,
+      (message) => {
+        broadcast("bulk:generateProgress", { invocationId: id, message });
+      },
       { contextPaths: paths },
     );
     return { invocationId: id, ...result };

@@ -229,6 +229,14 @@ export const bulkCancelGenerateVariables = (
 ): Promise<{ ok: boolean }> =>
   ipcInvoke("bulk:cancelGenerateVariables", { invocationId });
 
+export function onBulkGenerateProgress(
+  cb: (progress: { invocationId: string; message: string }) => void,
+): () => void {
+  return window.electronAPI.on("bulk:generateProgress", (payload: unknown) =>
+    cb(payload as { invocationId: string; message: string }),
+  );
+}
+
 export const runBulkStop = (
   bulkId: string,
   reason?: string,
